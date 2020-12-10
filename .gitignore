@@ -1,0 +1,5 @@
+/public/app.wasm
+/public/clients
+/public/*.gz
+/dist/
+/bound/
