@@ -4,19 +4,24 @@
         <meta charset="utf-8">
         <title>HomeChat</title>
         <!--style-->
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <link rel="stylesheet" href="style.css"/>
         <!--eostyle-->
     </head>
 
     <body>
         <div class="container">
-            <div class="users"></div>
-            <div class="status"></div>
             <div class="chat">
                 <div class="overflow">
-                    <table class="log">&nbsp;</table>
+                    <div class="log"></div>
                 </div>
-                <textarea autofocus class="inp"></textarea>
+                <div class="bottom">
+                    <textarea autofocus class="inp"></textarea>
+                    <div class="meta">
+                        <div class="status"></div>
+                        <div class="users"></div>
+                    </div>
+                </div>
             </div>
         </div>
 
