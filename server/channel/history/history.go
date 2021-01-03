@@ -47,10 +47,11 @@ type HistoryChannel struct {
 	output  Output
 	sender  channel.Sender
 	channel string
+	channel.Limit
 }
 
 func New(amountStore, amountSend int) *HistoryChannel {
-	return &HistoryChannel{amount: amountStore, last: amountSend}
+	return &HistoryChannel{amount: amountStore, last: amountSend, Limit: channel.Limiter(255)}
 }
 
 func (c *HistoryChannel) Add(m channel.Msg) { panic("do not use add directly") }

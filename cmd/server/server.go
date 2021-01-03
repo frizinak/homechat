@@ -268,6 +268,7 @@ func main() {
 		TCPAddress:      tcp,
 		StorePath:       store,
 		UploadsPath:     uploads,
+		MaxUploadSize:   1024 * 1024 * 1024,
 		Router:          router,
 		LogBandwidth:    time.Minute,
 	}
@@ -282,7 +283,7 @@ func main() {
 	musicState := music.StateChannel()
 	chat := chat.New(c.Log, history)
 	history.SetOutput(chat)
-	upload := upload.New(1024*1024*1024*5, chat, s)
+	upload := upload.New(c.MaxUploadSize, chat, s)
 	users := users.New(
 		[]string{vars.ChatChannel, vars.MusicChannel},
 		s,

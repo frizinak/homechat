@@ -32,13 +32,15 @@ type ChatChannel struct {
 	bots    *bot.BotCollection
 
 	channel.NoSave
+	channel.Limit
 }
 
 func New(log *log.Logger, hist *history.HistoryChannel) *ChatChannel {
 	return &ChatChannel{
-		log:  log,
-		bots: bot.NewBotCollection(serverBot),
-		hist: hist,
+		log:   log,
+		bots:  bot.NewBotCollection(serverBot),
+		hist:  hist,
+		Limit: channel.Limiter(1024 * 1024 * 5),
 	}
 }
 

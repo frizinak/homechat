@@ -13,10 +13,11 @@ type PingChannel struct {
 	channel string
 
 	channel.NoSave
+	channel.Limit
 }
 
 func New() *PingChannel {
-	return &PingChannel{}
+	return &PingChannel{Limit: channel.Limiter(255)}
 }
 
 func (c *PingChannel) Register(chnl string, s channel.Sender) error {

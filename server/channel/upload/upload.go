@@ -14,7 +14,6 @@ import (
 )
 
 type UploadChannel struct {
-	max       uint64
 	broadcast *chat.ChatChannel
 	uploader  channel.Uploader
 
@@ -22,10 +21,15 @@ type UploadChannel struct {
 	channel string
 
 	channel.NoSave
+	channel.Limit
 }
 
-func New(maxUpload uint64, broadcastChannel *chat.ChatChannel, uploader channel.Uploader) *UploadChannel {
-	return &UploadChannel{max: maxUpload, broadcast: broadcastChannel, uploader: uploader}
+func New(max int64, broadcastChannel *chat.ChatChannel, uploader channel.Uploader) *UploadChannel {
+	return &UploadChannel{
+		broadcast: broadcastChannel,
+		uploader:  uploader,
+		Limit:     channel.Limiter(max),
+	}
 }
 
 func (c *UploadChannel) Register(chnl string, s channel.Sender) error {

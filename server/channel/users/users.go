@@ -2,7 +2,6 @@ package users
 
 import (
 	"io"
-	"regexp"
 	"time"
 
 	"github.com/frizinak/binary"
@@ -10,10 +9,10 @@ import (
 	"github.com/frizinak/homechat/server/channel/users/data"
 )
 
-var (
-	reMention    = regexp.MustCompile(` @([^\s]+)`)
-	multiSpaceRE = regexp.MustCompile(`\s+`)
-)
+// var (
+// // reMention    = regexp.MustCompile(` @([^\s]+)`)
+// // multiSpaceRE = regexp.MustCompile(`\s+`)
+// )
 
 type UsersChannel struct {
 	usersChannels []string
@@ -26,10 +25,12 @@ type UsersChannel struct {
 
 	change bool
 	err    error
+
+	channel.Limit
 }
 
 func New(channels []string, col channel.UserCollection) *UsersChannel {
-	return &UsersChannel{usersChannels: channels, col: col}
+	return &UsersChannel{usersChannels: channels, col: col, Limit: channel.Limiter(255)}
 }
 
 func (c *UsersChannel) Register(chnl string, s channel.Sender) error {

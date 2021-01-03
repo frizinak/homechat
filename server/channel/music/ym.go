@@ -45,10 +45,11 @@ type YMChannel struct {
 	statusCh *status.StatusChannel
 
 	channel.NoSave
+	channel.Limit
 }
 
 func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChannel {
-	ym := &YMChannel{log: log, statusCh: status}
+	ym := &YMChannel{log: log, statusCh: status, Limit: channel.Limiter(1024 * 1024 * 5)}
 	c := di.Config{
 		StorePath: ymPath,
 		AutoSave:  true,

@@ -3,20 +3,45 @@
     <head>
         <meta charset="utf-8">
         <title>HomeChat</title>
-        <!--style-->
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <!--style-->
         <link rel="stylesheet" href="style.css"/>
         <!--eostyle-->
     </head>
 
     <body>
         <div class="container">
+            <div class="img-wrap popup popup--large">
+                <div class="popup--contents">
+                  <img />
+                <span class="popup--close"><a class="trigger">X</a></span>
+                </div>
+            </div>
+            <div class="upload-wrap popup">
+                <iframe class="if" name="upload_frame"></iframe>
+                <div class="upload popup--contents">
+                    <form target="upload_frame" enctype="multipart/form-data" action="/upload" method="post">
+                        <h3>Upload a file</h3>
+                        <div class="err"></div>
+                        <div class="throb"></div>
+                        <div class="busy">
+                            <input type="file" name="file"/><br/>
+                            <input type="submit" value="upload"/>
+                        </div>
+                    </form>
+                    <span class="popup--close"><a class="trigger">X</a></span>
+                </div>
+            </div>
             <div class="chat">
                 <div class="overflow">
                     <div class="log"></div>
                 </div>
                 <div class="bottom">
                     <textarea autofocus class="inp"></textarea>
+                    <div class="actions">
+                        <a class="upload popup-trigger" data-popup=".upload-wrap">&#128316; upload</a>
+                        <a class="scroll">&#128317; <span></span></a>
+                    </div>
                     <div class="meta">
                         <div class="status"></div>
                         <div class="users"></div>

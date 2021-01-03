@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -52,34 +53,25 @@ type Config struct {
 	StorePath string
 
 	// Path to store uploads and from which the http server can serve files
-	UploadsPath string
+	UploadsPath   string
+	MaxUploadSize int64
 
 	// HTTPS certs, leave empty to disable TLS
 	Cert    []byte
 	CertKey []byte
 
 	Router simplehttp.Router
-	// // Key = request path, Data = response body
-	// HTTPData       map[string][]byte
-	// HTTPFilesystem string
 
 	// Interval to log bandwidth, 0 = no logging
 	LogBandwidth time.Duration
 }
 
 type Server struct {
-	protoVersion string
-	tls          bool
-	address      string
-	tcpAddress   string
-
-	log *log.Logger
+	c   Config
+	tls bool
 	s   *simplehttp.Server
 	ws  websocket.Server
 	tcp net.Listener
-
-	store   string
-	uploads string
 
 	saveMutex sync.Mutex
 
@@ -91,27 +83,15 @@ type Server struct {
 
 	channels map[string]channel.Channel
 
-	router simplehttp.Router
-
 	onUserUpdate channel.UserUpdateHandler
 
-	bw   Bandwidth
-	bwIV time.Duration
+	bw Bandwidth
 }
 
 func New(c Config) (*Server, error) {
 	const workers = 8
 	s := &Server{
-		protoVersion: c.ProtocolVersion,
-		address:      c.HTTPAddress,
-		tcpAddress:   c.TCPAddress,
-		log:          c.Log,
-
-		router: c.Router,
-
-		store:   c.StorePath,
-		uploads: c.UploadsPath,
-
+		c:        c,
 		channels: make(map[string]channel.Channel),
 
 		workers:  workers,
@@ -119,8 +99,7 @@ func New(c Config) (*Server, error) {
 
 		clients: make(map[string]map[string][]*client),
 
-		bw:   &NoopBandwidth{},
-		bwIV: c.LogBandwidth,
+		bw: &NoopBandwidth{},
 	}
 
 	if c.LogBandwidth != 0 {
@@ -143,7 +122,7 @@ func New(c Config) (*Server, error) {
 
 	nilLogger := log.New(ioutil.Discard, "", 0)
 	hs := &http.Server{TLSConfig: tlsConf, ErrorLog: nilLogger}
-	s.s = simplehttp.FromHTTPServer(hs, s.route, s.log)
+	s.s = simplehttp.FromHTTPServer(hs, s.route, s.c.Log)
 
 	return s, nil
 }
@@ -158,21 +137,21 @@ func (s *Server) Init() error {
 			time.Sleep(time.Second * 5)
 			s.saveMutex.Lock()
 			if err := s.save(); err != nil {
-				s.log.Println("ERR saving ", err)
+				s.c.Log.Println("ERR saving ", err)
 			}
 			s.saveMutex.Unlock()
 		}
 	}()
 
 	go func() {
-		if s.bwIV == 0 {
+		if s.c.LogBandwidth == 0 {
 			return
 		}
 		for {
-			time.Sleep(s.bwIV)
+			time.Sleep(s.c.LogBandwidth)
 			_up, _down := s.bw.Get()
 			up, down := NewBytes(_up, B).Human(), NewBytes(_down, B).Human()
-			s.log.Printf("Bandwidth: up:%s down:%s", up, down)
+			s.c.Log.Printf("Bandwidth: up:%s down:%s", up, down)
 		}
 	}()
 
@@ -181,7 +160,7 @@ func (s *Server) Init() error {
 			for j := range s.outgoing {
 				for _, m := range j.m {
 					if err := j.c.msg(j.ch, m); err != nil {
-						s.log.Printf("ERR send to '%s': %s", j.c.name, err)
+						s.c.Log.Printf("ERR send to '%s': %s", j.c.name, err)
 						break
 					}
 				}
@@ -327,7 +306,7 @@ func (s *Server) save() error {
 		if !c.NeedsSave() {
 			continue
 		}
-		f := fmt.Sprintf("%s-%s", s.store, i)
+		f := fmt.Sprintf("%s-%s", s.c.StorePath, i)
 		tmp := f + ".tmp"
 		if err := c.Save(f); err != nil {
 			errs = append(errs, fmt.Sprintf("Save error: %s: %s", i, err))
@@ -351,7 +330,7 @@ func (s *Server) save() error {
 
 func (s *Server) load() error {
 	for i, c := range s.channels {
-		f := fmt.Sprintf("%s-%s", s.store, i)
+		f := fmt.Sprintf("%s-%s", s.c.StorePath, i)
 		if err := c.Load(f); err != nil {
 			return err
 		}
@@ -365,18 +344,20 @@ func (s *Server) route(r *http.Request, l *log.Logger) (simplehttp.HandleFunc, i
 	switch p {
 	case "/ws":
 		return s.handleWS, 0
+	case "/upload":
+		return s.handleUpload, 0
 	}
 
 	if strings.HasPrefix(p, "/f/") {
 		return func(w http.ResponseWriter, r *http.Request, l *log.Logger) (int, error) {
 			file := fileRE.ReplaceAllString(p[3:], "-")
-			file = filepath.Join(s.uploads, file)
+			file = filepath.Join(s.c.UploadsPath, file)
 			http.ServeFile(w, r, file)
 			return 0, nil
 		}, 0
 	}
 
-	return s.router(r, l)
+	return s.c.Router(r, l)
 }
 
 func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
@@ -395,7 +376,7 @@ func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
 	webfile := fmt.Sprintf("%s/%s", hstr, fn)
 	fn = fmt.Sprintf("%s-%s", hstr, fn)
 
-	dst := filepath.Join(s.uploads, fn)
+	dst := filepath.Join(s.c.UploadsPath, fn)
 	tmp := dst + ".__temp"
 	f, err := os.Create(tmp)
 	if err != nil {
@@ -416,13 +397,51 @@ func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
 	if s.tls {
 		scheme = "https"
 	}
-	u, err := url.Parse(fmt.Sprintf("%s://%s", scheme, s.address))
+	u, err := url.Parse(fmt.Sprintf("%s://%s", scheme, s.c.HTTPAddress))
 	if err != nil {
 		return nil, err
 	}
 
 	u.Path = fmt.Sprintf("/f/%s", webfile)
 	return u, nil
+}
+
+func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request, l *log.Logger) (int, error) {
+	if r.Method != "POST" {
+		return http.StatusMethodNotAllowed, nil
+	}
+	enc := json.NewEncoder(w)
+	doErr := func(err error) {
+		enc.Encode(map[string]string{"err": err.Error()})
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, s.c.MaxUploadSize)
+	defer r.Body.Close()
+	err := r.ParseMultipartForm(1024)
+	if err != nil {
+		doErr(errors.New("failed to parse form"))
+		l.Println(err)
+		return 0, nil
+	}
+	file, h, err := r.FormFile("file")
+	if err != nil {
+		if err == http.ErrMissingFile {
+			doErr(errors.New("no file uploaded"))
+			return 0, nil
+		}
+		doErr(errors.New("something went wrong"))
+		l.Println(err)
+		return 0, nil
+	}
+	defer file.Close()
+
+	uri, err := s.Upload(h.Filename, file)
+	if err != nil {
+		doErr(err)
+		return 0, nil
+	}
+
+	return 0, enc.Encode(map[string]string{"uri": uri.String()})
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, l *log.Logger) (int, error) {
@@ -458,13 +477,13 @@ func (s *Server) unsetClient(c *client) {
 		)
 
 		l := len(s.clients[h][c.name])
-		s.log.Printf("remove client '%s[%d]'  for '%s'", c.name, l, h)
+		s.c.Log.Printf("remove client '%s[%d]'  for '%s'", c.name, l, h)
 	}
 	s.clientsMutex.Unlock()
 
 	go func() {
 		if err := s.onUserUpdate.UserUpdate(c, channel.Disconnect); err != nil {
-			s.log.Printf("userupdate handler: %s", err)
+			s.c.Log.Printf("userupdate handler: %s", err)
 		}
 	}()
 }
@@ -481,7 +500,7 @@ func (s *Server) setClient(c *client) {
 
 		s.clients[h][c.name] = append(s.clients[h][c.name], c)
 	}
-	s.log.Printf(
+	s.c.Log.Printf(
 		"new client '%s' proto:%d frame:%t for '%s'",
 		c.name,
 		c.proto,
@@ -492,7 +511,7 @@ func (s *Server) setClient(c *client) {
 	s.clientsMutex.Unlock()
 	go func() {
 		if err := s.onUserUpdate.UserUpdate(c, channel.Connect); err != nil {
-			s.log.Printf("userupdate handler: %s", err)
+			s.c.Log.Printf("userupdate handler: %s", err)
 		}
 	}()
 }
@@ -504,7 +523,7 @@ func (s *Server) newClient(proto channel.Proto, frameWriter bool, id channel.Ide
 		}
 	}
 
-	if id.Version != s.protoVersion {
+	if id.Version != s.c.ProtocolVersion {
 		return nil, errProto
 	}
 
@@ -568,6 +587,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	reader := s.bw.NewReader(conn)
 	writer := s.bw.NewWriter(conn)
 
+	const jsonMax = 1024 * 1024 * 20
 	limited := &io.LimitedReader{R: reader, N: 1024}
 	id, r, err := identify(limited)
 	if err != nil {
@@ -616,9 +636,9 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 			return fmt.Errorf("impossible channel '%s'", chnl.Data)
 		}
 
-		limited.N = 1024 * 1024 * 1024 * 512
-		if proto != channel.ProtoBinary {
-			limited.N = 1024 * 1024
+		limited.N = h.LimitReader()
+		if proto != channel.ProtoBinary && limited.N > jsonMax {
+			limited.N = jsonMax
 		}
 		r, err = do(r, c, h)
 		if err != nil {
@@ -638,10 +658,10 @@ func (s *Server) onWS(conn *websocket.Conn) {
 	switch proto {
 	case channel.ProtoJSON, channel.ProtoBinary:
 		if err := s.handleConn(proto, conn, true); err != nil {
-			s.log.Printf("client error: %s", err)
+			s.c.Log.Printf("client error: %s", err)
 		}
 	default:
-		s.log.Printf("client requested invalid protocol: %d", proto)
+		s.c.Log.Printf("client requested invalid protocol: %d", proto)
 		return
 	}
 }
@@ -657,25 +677,25 @@ func (s *Server) onTCP(conn net.Conn) {
 	switch proto {
 	case channel.ProtoJSON, channel.ProtoBinary:
 		if err := s.handleConn(proto, conn, false); err != nil {
-			s.log.Printf("client error: %s", err)
+			s.c.Log.Printf("client error: %s", err)
 		}
 	default:
-		s.log.Printf("client requested invalid protocol: %d", proto)
+		s.c.Log.Printf("client requested invalid protocol: %d", proto)
 		return
 	}
 }
 
 func (s *Server) Run() error {
 	var err error
-	s.tcp, err = net.Listen("tcp", s.tcpAddress)
+	s.tcp, err = net.Listen("tcp", s.c.TCPAddress)
 	if err != nil {
-		return fmt.Errorf("could not open tcp connection %s: %w", s.tcpAddress, err)
+		return fmt.Errorf("could not open tcp connection %s: %w", s.c.TCPAddress, err)
 	}
 	go func() {
 		for {
 			conn, err := s.tcp.Accept()
 			if err != nil {
-				s.log.Println("tcp err:", err)
+				s.c.Log.Println("tcp err:", err)
 				continue
 			}
 
@@ -683,7 +703,7 @@ func (s *Server) Run() error {
 		}
 	}()
 
-	err = s.s.Start(s.address, s.tls)
+	err = s.s.Start(s.c.HTTPAddress, s.tls)
 	s.tcp.Close()
 	return err
 }

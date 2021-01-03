@@ -1,10 +1,8 @@
 package music
 
 import (
-	"io"
 	"log"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/music/data"
 	"github.com/frizinak/libym/collection"
@@ -20,6 +18,7 @@ type StateChannel struct {
 	sender  channel.Sender
 
 	channel.NoSave
+	channel.SendOnlyChannel
 }
 
 func NewState(l *log.Logger, p *player.Player, q *collection.Queue) *StateChannel {
@@ -30,14 +29,6 @@ func (c *StateChannel) Register(chnl string, s channel.Sender) error {
 	c.channel = chnl
 	c.sender = s
 	return nil
-}
-
-func (c *StateChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
-	return nil
-}
-
-func (c *StateChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader, error) {
-	return r, nil
 }
 
 func (c *StateChannel) Send() {

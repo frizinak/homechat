@@ -280,7 +280,7 @@ func (c *Client) Run() error {
 			select {
 			case <-done:
 				return
-			case <-time.After(time.Millisecond * 2500):
+			case <-time.After(time.Millisecond * 10000):
 			}
 		}
 	}()

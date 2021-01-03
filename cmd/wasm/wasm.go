@@ -109,6 +109,9 @@ func main() {
 	host := location.Get("host").String()
 	httpProto := location.Get("protocol").String()
 
+	public := window.Get("Object").New()
+	window.Set("homechat", public)
+
 	backendConf := wswasm.Config{
 		TLS:    httpProto == "https:",
 		Domain: host,
@@ -123,8 +126,18 @@ func main() {
 	var c *client.Client
 	var handler *jsHandler
 
-	public := make(map[string]interface{})
-	public["init"] = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+	createSender := func(sender func(string) error) js.Func {
+		return js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+			go func() {
+				if err := sender(args[0].String()); err != nil {
+					handler.HandleError(err)
+				}
+			}()
+			return nil
+		})
+	}
+
+	public.Set("init", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		if len(args) != 1 {
 			console.Call("error", "init requires 1 arg")
 			return nil
@@ -145,6 +158,10 @@ func main() {
 			History: true,
 		}
 		c = client.New(backend, handler, handler, conf)
+
+		public.Set("chat", createSender(c.Chat))
+		public.Set("music", createSender(c.Music))
+
 		go func() {
 			if err := c.Run(); err != nil {
 				panic(err)
@@ -152,19 +169,7 @@ func main() {
 		}()
 
 		return nil
-	})
-
-	public["chat"] = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-		go func() {
-			if err := c.Chat(args[0].String()); err != nil {
-				handler.HandleError(err)
-			}
-		}()
-		return nil
-	})
-
-	jspublic := js.ValueOf(public)
-	window.Set("homechat", jspublic)
+	}))
 
 	ch := make(chan struct{})
 	<-ch
