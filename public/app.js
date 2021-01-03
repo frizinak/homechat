@@ -22,9 +22,6 @@ function init() {
   const elLog = document.getElementsByClassName("log")[0];
   const elInput = document.getElementsByClassName("inp")[0];
   function maxScroll() {
-    console.log("elLog.offsetHeight", elLog.offsetHeight);
-    console.log("elLog.offsetTop", elLog.offsetTop);
-    console.log("elLogScroll.offsetHeight", elLogScroll.offsetHeight);
     return elLog.offsetHeight + elLog.offsetTop - elLogScroll.offsetHeight;
   }
 
@@ -50,9 +47,12 @@ function init() {
 
     el.innerHTML = `<div class="date">${date}</div>
     <div class="bubble">
-        <div class="name">${fromName}</div>
-        <div class="msg">${data}</div>
+        <div class="name"></div>
+        <div class="msg"></div>
     </div>`;
+
+    el.getElementsByClassName("name")[0].innerText = fromName;
+    el.getElementsByClassName("msg")[0].innerHTML = data;
 
     if (name === fromName) {
       el.classList.add("mine");
