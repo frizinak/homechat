@@ -69,18 +69,17 @@ testclient/%: testclient.def/%
 
 .PHONY: serve
 serve: $(SRC) bound/bound.go testclient/server.json
-	#go run ./cmd/server -c ./testclient/server.json
+	go run ./cmd/server -c ./testclient/server.json
 
 .PHONY: serve-live
 serve-live: $(SRC) bound/bound.go testclient/server.json
-	#go run ./cmd/server -c ./testclient/server.json -http ./public
+	go run ./cmd/server -c ./testclient/server.json -http ./public
 
 .PHONY: local
 local: $(NATIVE) $(TESTCLIENT)
-	echo $(TESTCLIENT)
-	#$(NATIVE) -c ./testclient
+	$(NATIVE) -c ./testclient
 
 .PHONY: local-music
 local-music: $(NATIVE) $(TESTCLIENT)
-	#$< -c ./testclient music
+	$(NATIVE) -c ./testclient music
 
