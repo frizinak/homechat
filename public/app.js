@@ -45,7 +45,7 @@ function init() {
     err: "",
     flashSince: null,
   };
-  var users = {};
+  var users = [];
 
   function closePopup(el) { el.style.display = "none"; }
   function openPopup(el) { el.style.display = "block"; }
@@ -69,19 +69,12 @@ function init() {
   }
 
   function updateUsers() {
-    var uniq = {};
     var list = [];
     for (var i in users) {
-      for (var j in users[i]) {
-        const name = users[i][j].name;
-        if (!uniq[name]) {
-          uniq[name] = true;
-          list.push(users[i][j].name);
-        }
-      }
+      list.push(users[i].name);
     }
 
-    elUsers.innerText = `Online: ${list.sort().join(", ")}`;
+    elUsers.innerText = `Online: ${list.join(", ")}`;
   }
   function maxScroll() {
     return elLog.offsetHeight + elLog.offsetTop - elLogScroll.offsetHeight;
@@ -286,8 +279,8 @@ function init() {
     onMusicStateMessage: function (msg) {
       console.log("onMusicStateMessage", msg);
     },
-    onUsersMessage: function (msg) {
-      users[msg.channel] = msg.users;
+    onUsersMessage: function (u) {
+      users = u;
       updateUsers();
     },
     onLog: function (logstr) {

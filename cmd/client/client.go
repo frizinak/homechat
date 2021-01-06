@@ -285,7 +285,7 @@ func main() {
 		var arrow bool
 		for {
 			n, err := input.ReadByte()
-			//fmt.Fprintf(debug, "%d\n", n)
+			// fmt.Fprintf(debug, "%d\n", n)
 			exit(err)
 			if n != 27 && n != 91 && !(n >= 65 && n <= 68) {
 				escape, arrow = false, false
@@ -321,14 +321,16 @@ func main() {
 				found := ""
 				foundC := 0
 				for _, n := range client.Users() {
-					if n == c.Name {
+					if n.Name == c.Name {
 						continue
 					}
-					if strings.HasPrefix(n, l[1:]) {
-						found = n
+
+					if strings.HasPrefix(n.Name, l[1:]) {
+						found = n.Name
 						foundC++
 					}
 				}
+
 				if foundC == 1 {
 					i := fmt.Sprintf(
 						"@%s ",

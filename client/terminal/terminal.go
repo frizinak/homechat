@@ -30,9 +30,7 @@ type Handler struct {
 	msgs       chan chatdata.ServerMessage
 	songs      chan musicdata.ServerMessage
 
-	name     string
-	users    []string
-	allUsers map[string][]string
+	name string
 }
 
 func New(log Updates) *Handler {
@@ -42,8 +40,6 @@ func New(log Updates) *Handler {
 		musicState: make(chan ui.State, 1),
 		msgs:       make(chan chatdata.ServerMessage, 8),
 		songs:      make(chan musicdata.ServerMessage, 8),
-
-		allUsers: make(map[string][]string),
 	}
 }
 
@@ -71,19 +67,10 @@ func (h *Handler) HandleMusicStateMessage(m musicdata.ServerStateMessage) error 
 	return nil
 }
 
-func (h *Handler) HandleUsersMessage(m usersdata.ServerMessage) error {
-	users := make([]string, 0, len(m.Users))
-	names := make([]string, 0, len(m.Users))
-	for _, u := range m.Users {
-		users = append(users, fmt.Sprintf("%s:%d", u.Name, u.Clients))
-		names = append(names, u.Name)
-	}
-	h.users = names
-	h.allUsers[m.Channel] = users
-
+func (h *Handler) HandleUsersMessage(m usersdata.ServerMessage, users client.Users) error {
 	all := make([]string, 0, len(users))
-	for i := range h.allUsers {
-		all = append(all, h.allUsers[i]...)
+	for _, u := range users {
+		all = append(all, u.Name)
 	}
 	h.log.Users(strings.Join(all, " "))
 	return nil

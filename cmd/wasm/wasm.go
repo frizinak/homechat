@@ -93,8 +93,22 @@ func (j *jsHandler) HandleMusicStateMessage(m musicdata.ServerStateMessage) erro
 	return j.on(OnMusicStateMessage, m)
 }
 
-func (j *jsHandler) HandleUsersMessage(m usersdata.ServerMessage) error {
-	return j.on(OnUsersMessage, m)
+func (j *jsHandler) HandleUsersMessage(m usersdata.ServerMessage, users client.Users) error {
+	list := make([]interface{}, len(users))
+	for i, u := range users {
+		c := make([]interface{}, len(u.Channels))
+		for i, ch := range u.Channels {
+			c[i] = ch
+		}
+		list[i] = map[string]interface{}{
+			"name":    u.Name,
+			"channel": c,
+			"amount":  u.Amount,
+		}
+	}
+
+	j.handlers[OnUsersMessage].Invoke(list)
+	return nil
 }
 
 func (j *jsHandler) Log(s string)   { j.handlers[OnLog].Invoke(s) }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 
@@ -29,8 +30,22 @@ type Handler interface {
 	HandleChatMessage(chatdata.ServerMessage) error
 	HandleMusicMessage(musicdata.ServerMessage) error
 	HandleMusicStateMessage(musicdata.ServerStateMessage) error
-	HandleUsersMessage(usersdata.ServerMessage) error
+	HandleUsersMessage(usersdata.ServerMessage, Users) error
 }
+
+type User struct {
+	Name     string
+	Amount   uint8
+	Channels []string
+}
+
+func (u User) String() string { return fmt.Sprintf("%s:%d", u.Name, u.Amount) }
+
+type Users []User
+
+func (u Users) Len() int           { return len(u) }
+func (u Users) Swap(i, j int)      { u[i], u[j] = u[j], u[i] }
+func (u Users) Less(i, j int) bool { return u[i].Name < u[j].Name }
 
 type Conn interface {
 	io.Writer
@@ -51,7 +66,8 @@ type Client struct {
 
 	sem sync.Mutex
 
-	users []string
+	users    Users
+	allUsers map[string]map[string]User
 
 	conn        Conn
 	lastConnect time.Time
@@ -75,10 +91,12 @@ func New(b Backend, h Handler, log Logger, c Config) *Client {
 		handler: h,
 		log:     log,
 		c:       c,
+
+		allUsers: make(map[string]map[string]User),
 	}
 }
 
-func (c *Client) Users() []string {
+func (c *Client) Users() Users {
 	return c.users
 }
 
@@ -317,7 +335,40 @@ func (c *Client) Run() error {
 			if err != nil {
 				return err
 			}
-			return c.handler.HandleUsersMessage(_msg.(usersdata.ServerMessage))
+			msg := _msg.(usersdata.ServerMessage)
+			users := make(map[string]User, len(msg.Users))
+			for _, u := range msg.Users {
+				users[u.Name] = User{Name: u.Name, Amount: u.Clients}
+			}
+
+			c.allUsers[msg.Channel] = users
+
+			list := make(Users, 0, len(users))
+			v := make(map[string]struct{}, len(users))
+			for _, ch := range c.c.Channels {
+				us, ok := c.allUsers[ch]
+				if !ok {
+					continue
+				}
+
+				for _, user := range us {
+					for dch := range c.allUsers {
+						if _, ok := c.allUsers[dch][user.Name]; !ok {
+							continue
+						}
+						user.Channels = append(user.Channels, dch)
+					}
+					if _, ok := v[user.Name]; ok {
+						continue
+					}
+					v[user.Name] = struct{}{}
+					list = append(list, user)
+				}
+			}
+
+			sort.Sort(list)
+			c.users = list
+			return c.handler.HandleUsersMessage(msg, list)
 		case vars.MusicErrorChannel:
 			_msg, _, err := c.read(r, channel.StatusMsg{})
 			if err != nil {
