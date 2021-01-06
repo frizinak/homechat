@@ -100,6 +100,10 @@ func (c *Client) Users() Users {
 	return c.users
 }
 
+func (c *Client) Name() string {
+	return c.c.Name
+}
+
 func (c *Client) Err() error {
 	return c.fatal
 }

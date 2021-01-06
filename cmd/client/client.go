@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -130,10 +131,38 @@ func main() {
 	configNotify := filepath.Join(configDir, "notify")
 	configUsername := filepath.Join(configDir, "username")
 	configServer := filepath.Join(configDir, "server")
+	configKeymap := filepath.Join(configDir, "keymap.json")
+
+	defaultKeymap := map[Action]string{
+		PageDown:   "ctrl-d",
+		PageUp:     "ctrl-u",
+		ScrollDown: "ctrl-j",
+		ScrollUp:   "ctrl-k",
+
+		Backspace:  "backspace",
+		Completion: "tab",
+		Quit:       "ctrl-q",
+		ClearInput: "ctrl-c",
+		Submit:     "enter",
+		InputDown:  "down",
+		InputUp:    "up",
+
+		MusicVolumeUp:     "up",
+		MusicVolumeDown:   "down",
+		MusicNext:         "right",
+		MusicPrevious:     "left",
+		MusicPause:        "space",
+		MusicSeekForward:  "]",
+		MusicSeekBackward: "[",
+	}
+
+	defaultKeymapJSON, err := json.MarshalIndent(defaultKeymap, "", "    ")
+	exit(err)
 
 	exit(ensureFile(configNotify, []byte("notify-send 'HomeChat' '%u: %m'")))
 	exit(ensureFile(configUsername, nil))
 	exit(ensureFile(configServer, nil))
+	exit(ensureFile(configKeymap, defaultKeymapJSON))
 
 	rnotifCmd, err := ioutil.ReadFile(configNotify)
 	exit(err)
@@ -141,6 +170,45 @@ func main() {
 	exit(err)
 	raddress, err := ioutil.ReadFile(configServer)
 	exit(err)
+
+	keymap := make(map[Action]string, len(defaultKeymap))
+	exit(func() error {
+		f, err := os.Open(configKeymap)
+		if err != nil {
+			return err
+		}
+		err = json.NewDecoder(f).Decode(&keymap)
+		f.Close()
+		if err != nil {
+			return fmt.Errorf("failed to parse keymap ('%s'): %w", configKeymap, err)
+		}
+
+		resave := false
+		for i := range defaultKeymap {
+			if _, ok := keymap[i]; !ok {
+				resave = true
+				keymap[i] = defaultKeymap[i]
+			}
+		}
+		for i := range keymap {
+			if _, ok := defaultKeymap[i]; !ok {
+				return fmt.Errorf("unknown action '%s' in keymap", i)
+			}
+		}
+
+		if resave {
+			f, err := os.Create(configKeymap)
+			if err != nil {
+				return err
+			}
+			enc := json.NewEncoder(f)
+			enc.SetIndent("", "    ")
+			err = enc.Encode(keymap)
+			f.Close()
+			return err
+		}
+		return nil
+	}())
 
 	var c client.Config
 	c.Name = strings.TrimSpace(string(rusername))
@@ -270,58 +338,38 @@ func main() {
 		}
 	}()
 
-	current := console.Current()
-	exit(current.SetRaw())
+	currentConsole := console.Current()
 	resetTTY := func() {
-		current.Reset()
+		currentConsole.Reset()
 	}
 
-	input := bufio.NewReader(os.Stdin)
-	//debug, _ := os.Create("/tmp/debug")
-	go func() {
-		inputs := make([]string, 1)
-		current := 0
-		var escape bool
-		var arrow bool
-		for {
-			n, err := input.ReadByte()
-			// fmt.Fprintf(debug, "%d\n", n)
-			exit(err)
-			if n != 27 && n != 91 && !(n >= 65 && n <= 68) {
-				escape, arrow = false, false
-			}
-
-			input := tui.GetInput()
-			if current == len(inputs)-1 || inputs[current] != input {
-				inputs[len(inputs)-1] = input
-			}
-
-			switch n {
-			case 4: // ctrl-d
-				tui.ScrollPageDown()
-			case 21: // ctrl-u
-				tui.ScrollPageUp()
-			case 10: // ctrl-j
-				tui.Scroll(-1)
-			case 11: // ctrl-k
-				tui.Scroll(1)
-
-			case 9: // tab
+	inputs := make([]string, 1)
+	current := 0
+	keys, err := NewKeys(
+		keymap,
+		map[Action]KeyHandler{
+			PageDown:   Simple(tui.ScrollPageDown),
+			PageUp:     Simple(tui.ScrollPageUp),
+			ScrollDown: func() bool { tui.Scroll(-1); return false },
+			ScrollUp:   func() bool { tui.Scroll(1); return false },
+			Backspace:  Simple(tui.BackspaceInput),
+			Completion: func() bool {
 				cur := tui.GetInput()
 				if len(cur) == 0 {
-					continue
+					return false
 				}
 
 				p := strings.Split(cur, " ")
 				l := p[len(p)-1]
 				if l[0] != '@' {
-					continue
+					return false
 				}
 
 				found := ""
 				foundC := 0
+				name := client.Name()
 				for _, n := range client.Users() {
-					if n.Name == c.Name {
+					if n.Name == name {
 						continue
 					}
 
@@ -347,86 +395,18 @@ func main() {
 					tui.SetInput(i)
 				}
 
-			case 27: // escape arrow
-				escape = true
-
-			case ' ':
-				if mode == modeMusic && strings.TrimSpace(tui.GetInput()) == "" {
-					send("p")
-					continue
-				}
-				tui.Input(n)
-
-			case 93: // ]
-				if mode == modeMusic && strings.TrimSpace(tui.GetInput()) == "" {
-					send("seek 5")
-					continue
-				}
-
-				tui.Input(n)
-			case 91: // [
-				if escape {
-					arrow = true
-					continue
-				}
-
-				if mode == modeMusic && strings.TrimSpace(tui.GetInput()) == "" {
-					send("seek -5")
-					continue
-				}
-				tui.Input(n)
-			case 65, 66, 67, 68: // arrow
-				if !arrow {
-					tui.Input(n)
-					continue
-				}
-
-				if mode == modeMusic {
-					switch n {
-					case 65: // up
-						send("volume +5")
-					case 66: // down
-						send("volume -5")
-					case 67: // right
-						send("next")
-					case 68: // left
-						send("prev")
-					}
-					continue
-				}
-
-				switch n {
-				case 65: // up
-					current--
-					if current < 0 {
-						current = 0
-					}
-					i := ""
-					if len(inputs) > current {
-						i = inputs[current]
-					}
-					tui.SetInput(i)
-				case 66: // down
-					current++
-					if len(inputs) > current {
-						tui.SetInput(inputs[current])
-						continue
-					}
-					current--
-					tui.Flush()
-				case 67: // right
-					tui.Flush()
-				case 68: // left
-					tui.Flush()
-				}
-
-			case 17: // ctrl-q
+				return false
+			},
+			Quit: func() bool {
 				resetTTY()
 				os.Exit(0)
-			case 3: // ctrl-c
+				return false
+			},
+			ClearInput: func() bool {
 				tui.ResetInput()
-
-			case 13:
+				return false
+			},
+			Submit: func() bool {
 				s := tui.ResetInput()
 				cmd := strings.TrimSpace(string(s))
 				inputs = append(inputs, "")
@@ -436,9 +416,89 @@ func main() {
 				}
 				current = len(inputs) - 1
 				send(cmd)
-			case 8, 127:
-				tui.BackspaceInput()
-			default:
+				return false
+			},
+			InputDown: func() bool {
+				current++
+				if len(inputs) > current {
+					tui.SetInput(inputs[current])
+					return false
+				}
+				current--
+				tui.Flush()
+				return false
+			},
+			InputUp: func() bool {
+				current--
+				if current < 0 {
+					current = 0
+				}
+				i := ""
+				if len(inputs) > current {
+					i = inputs[current]
+				}
+				tui.SetInput(i)
+				return false
+			},
+			MusicVolumeUp: func() bool {
+				send("volume +5")
+				return false
+			},
+			MusicVolumeDown: func() bool {
+				send("volume -5")
+				return false
+			},
+			MusicNext: func() bool {
+				send("next")
+				return false
+			},
+			MusicPrevious: func() bool {
+				send("prev")
+				return false
+			},
+			MusicPause: func() bool {
+				if strings.TrimSpace(tui.GetInput()) == "" {
+					send("p")
+					return false
+				}
+				return true
+			},
+			MusicSeekForward: func() bool {
+				if strings.TrimSpace(tui.GetInput()) == "" {
+					send("seek 5")
+					return false
+				}
+
+				return true
+			},
+			MusicSeekBackward: func() bool {
+				if strings.TrimSpace(tui.GetInput()) == "" {
+					send("seek -5")
+					return false
+				}
+
+				return true
+			},
+		},
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	exit(currentConsole.SetRaw())
+	input := bufio.NewReader(os.Stdin)
+	go func() {
+		for {
+			n, err := input.ReadByte()
+			exit(err)
+
+			input := tui.GetInput()
+			if current == len(inputs)-1 || inputs[current] != input {
+				inputs[len(inputs)-1] = input
+			}
+
+			if keys.Do(mode, n) {
 				tui.Input(n)
 			}
 		}
