@@ -71,25 +71,8 @@ func (c *ChatChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader, err
 }
 
 func (c *ChatChannel) UserUpdate(cl channel.Client, r channel.ConnectionReason) error {
+	// @see 9d037f8
 	return nil
-	var verb string
-	switch r {
-	case channel.Disconnect:
-		verb = "disconnected"
-	case channel.Connect:
-		verb = "connected"
-	default:
-		return nil
-	}
-
-	s := data.ServerMessage{
-		From:    serverBot,
-		Message: data.Message{Data: fmt.Sprintf("%s %s", cl.Name(), verb)},
-		Stamp:   time.Now(),
-		Bot:     true,
-	}
-	f := channel.ClientFilter{Channel: c.channel}
-	return c.sender.Broadcast(f, s)
 }
 
 func (c *ChatChannel) FromHistory(to, from channel.Client, m channel.Msg) ([]channel.Batch, error) {
