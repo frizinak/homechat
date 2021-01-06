@@ -10,6 +10,8 @@ PCLIENTS:= $(patsubst dist/%, public/clients/%, $(CLIENTS))
 PCLIENTS_GZ := $(foreach f, $(PCLIENTS), $(f).gz)
 NATIVE := dist/homechat-$(shell go env GOOS)-$(shell go env GOARCH)
 
+TESTCLIENT := $(patsubst testclient.def/%, testclient/%, $(wildcard testclient.def/*))
+
 .PHONY: all
 all: dist/homechat-server $(CLIENTS)
 
@@ -61,19 +63,24 @@ clean:
 	rm -f bound/bound.go
 	find public -type f -name '*.gz' -exec rm {} \;
 
+testclient/%: testclient.def/%
+	@-mkdir testclient &>/dev/null
+	cp "$<" "$@"
+
 .PHONY: serve
-serve: $(SRC) bound/bound.go
-	go run ./cmd/server -c ./testclient/server.json
+serve: $(SRC) bound/bound.go testclient/server.json
+	#go run ./cmd/server -c ./testclient/server.json
 
 .PHONY: serve-live
-serve-live: $(SRC) bound/bound.go
-	go run ./cmd/server -c ./testclient/server.json -http ./public
+serve-live: $(SRC) bound/bound.go testclient/server.json
+	#go run ./cmd/server -c ./testclient/server.json -http ./public
 
 .PHONY: local
-local: $(NATIVE)
-	$(NATIVE) -c ./testclient
+local: $(NATIVE) $(TESTCLIENT)
+	echo $(TESTCLIENT)
+	#$(NATIVE) -c ./testclient
 
 .PHONY: local-music
-local-music: $(NATIVE)
-	$< -c ./testclient music
+local-music: $(NATIVE) $(TESTCLIENT)
+	#$< -c ./testclient music
 
