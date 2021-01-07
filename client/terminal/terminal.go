@@ -59,10 +59,11 @@ func (h *Handler) HandleMusicMessage(m musicdata.ServerMessage) error {
 
 func (h *Handler) HandleMusicStateMessage(m musicdata.ServerStateMessage) error {
 	h.musicState <- ui.State{
-		Song:   m.Song,
-		Paused: m.Paused,
-		Pos:    m.Pos,
-		Volume: m.Volume,
+		Song:     m.Song,
+		Paused:   m.Paused,
+		Pos:      m.Pos,
+		Duration: m.Duration,
+		Volume:   m.Volume,
 	}
 	return nil
 }

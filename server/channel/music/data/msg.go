@@ -3,6 +3,7 @@ package data
 import (
 	"encoding/json"
 	"io"
+	"time"
 
 	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
@@ -113,10 +114,11 @@ func JSONServerMessage(r io.Reader) (ServerMessage, io.Reader, error) {
 }
 
 type ServerStateMessage struct {
-	Song   string  `json:"title"`
-	Paused bool    `json:"paused"`
-	Pos    float64 `json:"position"`
-	Volume float64 `json:"volume"`
+	Song     string        `json:"title"`
+	Paused   bool          `json:"paused"`
+	Pos      float64       `json:"position"`
+	Duration time.Duration `json:"duration"`
+	Volume   float64       `json:"volume"`
 }
 
 func (m ServerStateMessage) Equal(msg channel.Msg) bool { return m == msg }
@@ -132,6 +134,7 @@ func (m ServerStateMessage) Binary(w *binary.Writer) error {
 	w.WriteString(m.Song, 8)
 	w.WriteUint8(pause)
 	w.WriteUint16(pos)
+	w.WriteUint32(uint32(m.Duration.Seconds()))
 	w.WriteUint8(vol)
 	return w.Err()
 }
@@ -152,6 +155,7 @@ func BinaryServerStateMessage(r *binary.Reader) (ServerStateMessage, error) {
 	c.Song = r.ReadString(8)
 	c.Paused = r.ReadUint8() == 1
 	c.Pos = float64(r.ReadUint16()) / 1000
+	c.Duration = time.Second * time.Duration(r.ReadUint32())
 	c.Volume = float64(r.ReadUint8()) / 255
 	return c, r.Err()
 }

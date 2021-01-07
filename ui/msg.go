@@ -21,8 +21,9 @@ type Msg struct {
 }
 
 type State struct {
-	Song   string
-	Paused bool
-	Pos    float64
-	Volume float64
+	Song     string
+	Paused   bool
+	Pos      float64
+	Duration time.Duration
+	Volume   float64
 }

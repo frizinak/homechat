@@ -328,6 +328,11 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\r')
 		s = append(s, '\n')
 		mw := rw
+
+		duration, timeParts := formatDur(state.Duration, 2)
+		position, _ := formatDur(time.Duration(state.Pos*float64(state.Duration)), timeParts)
+		mw -= len(duration) + len(position) + 4
+
 		p := int(state.Pos * float64(mw))
 		if p > mw {
 			p = mw
@@ -340,6 +345,8 @@ func (ui *TermUI) Flush() {
 		for i := mw - 1 - p; i > 0; i-- {
 			rest += chrBar
 		}
+
+		rest += fmt.Sprintf(" %s/%s", position, duration)
 
 		playStatus := chrPlaying
 		if state.Paused {

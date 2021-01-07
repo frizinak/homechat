@@ -36,6 +36,7 @@ func (c *StateChannel) Send() {
 	state := data.ServerStateMessage{}
 	state.Paused = c.p.Paused()
 	state.Pos = c.p.Position()
+	state.Duration = c.p.Duration()
 	state.Song = ""
 	state.Volume = c.p.Volume()
 
