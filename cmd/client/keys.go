@@ -5,9 +5,6 @@ import (
 	"strings"
 )
 
-type KeyConfig struct {
-}
-
 type KeyHandler func() bool
 
 type Action string

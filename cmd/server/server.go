@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"mime"
 	"net/http"
 	"os"
@@ -103,6 +104,8 @@ func (c *Config) Merge(def *Config) bool {
 }
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
+
 	_confDir, err := os.UserConfigDir()
 	var confFile string
 	if err == nil {

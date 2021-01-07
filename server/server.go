@@ -577,12 +577,8 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	}
 
 	if proto == channel.ProtoJSON {
-		identify = func(r io.Reader) (channel.IdentifyMsg, io.Reader, error) {
-			return channel.JSONIdentifyMsg(r)
-		}
-		getChannel = func(r io.Reader) (channel.ChannelMsg, io.Reader, error) {
-			return channel.JSONChannelMsg(r)
-		}
+		identify = channel.JSONIdentifyMsg
+		getChannel = channel.JSONChannelMsg
 		do = func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 			return h.HandleJSON(cl, r)
 		}

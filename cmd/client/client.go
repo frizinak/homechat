@@ -336,12 +336,11 @@ func main() {
 	tui := ui.Term(mode == modeDefault, indent, mode == modeMusic)
 	handler := terminal.New(tui)
 	tcp, err := tcp.New(bc)
-	//ws, err := ws.New(ws.Config{TLS: false, Domain: bc.Domain, Path: "ws"})
 	exit(err)
 	client := client.New(tcp, handler, tui, c)
-	send := func(msg string) error { return client.Chat(msg) }
+	send := client.Chat
 	if mode == modeMusic {
-		send = func(msg string) error { return client.Music(msg) }
+		send = client.Music
 	}
 
 	go func() {

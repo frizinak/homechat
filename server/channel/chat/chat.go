@@ -77,11 +77,7 @@ func (c *ChatChannel) UserUpdate(cl channel.Client, r channel.ConnectionReason) 
 
 func (c *ChatChannel) FromHistory(to, from channel.Client, m channel.Msg) ([]channel.Batch, error) {
 	msg := m.(data.Message)
-	_b, err := c.batch(false, from, msg)
-	if err != nil {
-		return nil, err
-	}
-
+	_b := c.batch(false, from, msg)
 	b := make([]channel.Batch, 0, len(_b))
 	for _, bat := range _b {
 		f := bat.Filter
@@ -100,11 +96,7 @@ func (c *ChatChannel) DecodeHistoryItem(r *binary.Reader) (channel.Msg, error) {
 
 func (c *ChatChannel) handle(cl channel.Client, m data.Message) error {
 	c.hist.AddLog(cl, m)
-	b, err := c.batch(true, cl, m)
-
-	if err != nil {
-		return err
-	}
+	b := c.batch(true, cl, m)
 
 	var gerr error
 	for _, bat := range b {
@@ -153,7 +145,7 @@ func (c *ChatChannel) botMessage(cl channel.Client, m data.Message) error {
 	return c.handle(channel.NewBot(name), data.Message{Data: d})
 }
 
-func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) ([]channel.Batch, error) {
+func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) []channel.Batch {
 	var b = make([]channel.Batch, 0, 1)
 	var f channel.ClientFilter
 	f.Channel = c.channel
@@ -174,7 +166,7 @@ func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) ([]c
 	if len(s.Data) > 0 && s.Data[0] == ':' {
 		f.To = []string{cl.Name()}
 		b = append(b, channel.Batch{f, s})
-		return b, nil
+		return b
 	}
 
 	if len(s.Data) > 0 && s.Data[0] == '!' {
@@ -197,7 +189,7 @@ func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) ([]c
 			s.Notify = false
 			b = append(b, channel.Batch{f, s})
 
-			return b, nil
+			return b
 		}
 	}
 
@@ -223,9 +215,9 @@ func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) ([]c
 		f.To = nil
 		s.Notify = false
 		b = append(b, channel.Batch{f, s})
-		return b, nil
+		return b
 	}
 
 	b = append(b, channel.Batch{f, s})
-	return b, nil
+	return b
 }

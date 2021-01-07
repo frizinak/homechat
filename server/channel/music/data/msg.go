@@ -75,6 +75,7 @@ func (m ServerMessage) Equal(msg channel.Msg) bool {
 		m.Title != rm.Title ||
 		m.Text != rm.Text ||
 		len(m.Songs) != len(rm.Songs) {
+
 		return false
 	}
 

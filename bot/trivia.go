@@ -9,12 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 type triviaResult struct {
 	Results results `json:"results"`
