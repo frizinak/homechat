@@ -330,10 +330,10 @@ func (ui *TermUI) Flush() {
 		mw := rw
 
 		duration, timeParts := formatDur(state.Duration, 2)
-		position, _ := formatDur(time.Duration(state.Pos*float64(state.Duration)), timeParts)
+		position, _ := formatDur(state.Position, timeParts)
 		mw -= len(duration) + len(position) + 4
 
-		p := int(state.Pos * float64(mw))
+		p := int(state.Pos() * float64(mw))
 		if p > mw {
 			p = mw
 		}

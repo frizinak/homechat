@@ -61,7 +61,7 @@ func (h *Handler) HandleMusicStateMessage(m client.MusicState) error {
 	h.musicState <- ui.State{
 		Song:     m.Song,
 		Paused:   m.Paused,
-		Pos:      m.Pos,
+		Position: m.Position,
 		Duration: m.Duration,
 		Volume:   m.Volume,
 	}

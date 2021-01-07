@@ -11,8 +11,8 @@ func formatDur(d time.Duration, minParts int) (str string, parts int) {
 		int64(d / time.Minute),
 		int64(d / time.Second),
 	}
-	p[1] -= p[0] * 60
 	p[2] -= p[1] * 60
+	p[1] -= p[0] * 60
 
 	l := make([]byte, 0, 3*minParts)
 	for i := range p {

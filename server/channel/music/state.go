@@ -2,6 +2,7 @@ package music
 
 import (
 	"log"
+	"time"
 
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/music/data"
@@ -33,8 +34,8 @@ func (c *StateChannel) Send() {
 	f := channel.ClientFilter{Channel: c.channel}
 	state := data.ServerStateMessage{}
 	state.Paused = c.p.Paused()
-	state.Pos = c.p.Position()
 	state.Duration = c.p.Duration()
+	state.Position = time.Duration(c.p.Position() * float64(state.Duration))
 	state.Volume = c.p.Volume()
 	if err := c.sender.Broadcast(f, state); err != nil {
 		c.log.Println(err)
