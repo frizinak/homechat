@@ -78,9 +78,12 @@ func main() {
 	var uploadMsg string
 	var uploadFile string
 
+	var linemode bool
+
 	out := os.Stdout
 	chatFlags := flag.NewFlagSet("chat", flag.ExitOnError)
 	chatFlags.SetOutput(out)
+	chatFlags.BoolVar(&linemode, "l", false, "when piping treat every line as a new message, thus streaming line by line")
 	musicFlags := flag.NewFlagSet("music", flag.ExitOnError)
 	musicFlags.SetOutput(out)
 	uploadFlags := flag.NewFlagSet("upload", flag.ExitOnError)
@@ -303,6 +306,16 @@ func main() {
 		client := client.New(tcp, handler, log, c)
 		if oneOff == "" {
 			r := io.LimitReader(os.Stdin, 1024*1024)
+			if linemode {
+				s := bufio.NewScanner(r)
+				s.Split(bufio.ScanLines)
+				for s.Scan() {
+					exit(client.Chat(s.Text()))
+				}
+				exit(s.Err())
+				os.Exit(0)
+			}
+
 			d, err := ioutil.ReadAll(r)
 			exit(err)
 			oneOff = string(d)
