@@ -13,19 +13,20 @@ NATIVE := dist/homechat-$(shell go env GOOS)-$(shell go env GOARCH)
 TESTCLIENT := $(patsubst testclient.def/%, testclient/%, $(wildcard testclient.def/*))
 
 .PHONY: all
-all: dist/homechat-server $(CLIENTS)
+all: clients server
 
-.PHONY: test
-test:
-	go test ./...
+.PHONY: server
+server: dist/homechat-server
+
+.PHONY: client
+client: $(NATIVE)
+
+.PHONY: clients
+clients: $(CLIENTS)
 
 .PHONY: install
 install: $(NATIVE)
 	cp -f $< "$$GOBIN/homechat"
-
-.PHONY: release
-release: all
-	s3cmd put -P $(CLIENTS) s3://clipee.be/bin/
 
 dist/homechat-server: $(SRC) bound/bound.go | dist
 	go build -o "$@" ./cmd/server
