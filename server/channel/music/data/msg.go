@@ -160,8 +160,8 @@ func (m ServerStateMessage) Equal(msg channel.Msg) bool {
 		return false
 	}
 	return m1.Paused == m.Paused &&
-		m1.Position == m.Position &&
-		m1.Duration == m.Duration &&
+		m1.Position/time.Second == m.Position/time.Second &&
+		m1.Duration/time.Second == m.Duration/time.Second &&
 		m1.Volume == m.Volume
 }
 
