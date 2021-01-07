@@ -32,6 +32,8 @@ type Client struct {
 
 	jobs chan Job
 	errs chan<- Error
+
+	stopped bool
 }
 
 type Config struct {
@@ -68,10 +70,15 @@ func (c *Client) Run() {
 }
 
 func (c *Client) Stop() {
+	c.stopped = true
 	close(c.jobs)
 }
 
 func (c *Client) Queue(job Job) {
+	if c.stopped {
+		c.errs <- Error{c, errors.New("client was stopped but still received a message")}
+		return
+	}
 	c.jobs <- job
 }
 

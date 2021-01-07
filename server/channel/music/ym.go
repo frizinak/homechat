@@ -42,6 +42,7 @@ type YMChannel struct {
 	sender  channel.Sender
 
 	stateCh  *StateChannel
+	songCh   *SongChannel
 	statusCh *status.StatusChannel
 
 	channel.NoSave
@@ -60,12 +61,14 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 
 	di := di.New(c)
 	ym.ym = di.BaseUI()
-	ym.stateCh = NewState(log, di.Player(), di.Queue())
+	ym.stateCh = NewState(log, di.Player())
+	ym.songCh = NewSong(log, di.Queue())
 
 	return ym
 }
 
 func (c *YMChannel) StateChannel() *StateChannel { return c.stateCh }
+func (c *YMChannel) SongChannel() *SongChannel   { return c.songCh }
 
 func (c *YMChannel) Register(chnl string, s channel.Sender) error {
 	c.channel = chnl
@@ -78,6 +81,13 @@ func (c *YMChannel) SendInterval(iv time.Duration) {
 	for {
 		time.Sleep(iv)
 		c.ym.Refresh()
+	}
+}
+
+func (c *YMChannel) StateSendInterval(iv time.Duration) {
+	for {
+		time.Sleep(iv)
+		c.flushState()
 	}
 }
 
@@ -144,8 +154,13 @@ func (c *YMChannel) Errf(n string, i ...interface{}) {
 	c.Err(err)
 }
 
-func (c *YMChannel) flush() {
+func (c *YMChannel) flushState() {
+	c.songCh.Send()
 	c.stateCh.Send()
+}
+
+func (c *YMChannel) flush() {
+	// c.flushState()
 	if c.state.mode == modeNone {
 		return
 	}

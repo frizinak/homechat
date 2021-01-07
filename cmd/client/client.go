@@ -272,6 +272,7 @@ func main() {
 		}
 		ch = vars.MusicChannel
 		c.Channels = append(c.Channels, vars.MusicStateChannel)
+		c.Channels = append(c.Channels, vars.MusicSongChannel)
 		c.Channels = append(c.Channels, vars.MusicErrorChannel)
 	}
 	c.Channels = append(c.Channels, ch)

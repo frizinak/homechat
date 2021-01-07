@@ -29,7 +29,7 @@ type Handler interface {
 	HandleName(name string)
 	HandleChatMessage(chatdata.ServerMessage) error
 	HandleMusicMessage(musicdata.ServerMessage) error
-	HandleMusicStateMessage(musicdata.ServerStateMessage) error
+	HandleMusicStateMessage(MusicState) error
 	HandleUsersMessage(usersdata.ServerMessage, Users) error
 }
 
@@ -307,6 +307,8 @@ func (c *Client) Run() error {
 		}
 	}()
 
+	musicState := MusicState{}
+
 	doOne := func(r io.Reader) error {
 		_chnl, nr, err := c.read(r, channel.ChannelMsg{})
 		if err != nil {
@@ -333,7 +335,15 @@ func (c *Client) Run() error {
 			if err != nil {
 				return err
 			}
-			return c.handler.HandleMusicStateMessage(_msg.(musicdata.ServerStateMessage))
+			musicState.ServerStateMessage = _msg.(musicdata.ServerStateMessage)
+			return c.handler.HandleMusicStateMessage(musicState)
+		case vars.MusicSongChannel:
+			_msg, _, err := c.read(r, musicdata.ServerSongMessage{})
+			if err != nil {
+				return err
+			}
+			musicState.ServerSongMessage = _msg.(musicdata.ServerSongMessage)
+			return c.handler.HandleMusicStateMessage(musicState)
 		case vars.UserChannel:
 			_msg, _, err := c.read(r, usersdata.ServerMessage{})
 			if err != nil {

@@ -2,7 +2,7 @@ package vars
 
 const (
 	Version         = "0.1.3"
-	ProtocolVersion = "1009"
+	ProtocolVersion = "1010"
 
 	ChatChannel    = "c"  // rw
 	HistoryChannel = "h"  // w
@@ -11,7 +11,8 @@ const (
 	PingChannel = "p" // w
 
 	MusicChannel      = "m"  // rw
-	MusicStateChannel = "ms" // r
+	MusicStateChannel = ">"  // r
+	MusicSongChannel  = "<"  // r
 	MusicErrorChannel = "mr" // r
 
 	UserChannel = "u" // r

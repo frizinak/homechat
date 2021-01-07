@@ -91,7 +91,7 @@ func (j *jsHandler) HandleMusicMessage(m musicdata.ServerMessage) error {
 	return j.on(OnMusicMessage, m)
 }
 
-func (j *jsHandler) HandleMusicStateMessage(m musicdata.ServerStateMessage) error {
+func (j *jsHandler) HandleMusicStateMessage(m client.MusicState) error {
 	return j.on(OnMusicStateMessage, m)
 }
 
@@ -167,6 +167,7 @@ func main() {
 				vars.ChatChannel,
 				vars.MusicChannel,
 				vars.MusicStateChannel,
+				vars.MusicSongChannel,
 				vars.MusicErrorChannel,
 			},
 			Proto:   channel.ProtoJSON,

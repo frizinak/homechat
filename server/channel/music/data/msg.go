@@ -113,27 +113,75 @@ func JSONServerMessage(r io.Reader) (ServerMessage, io.Reader, error) {
 	return m, nr, err
 }
 
+type ServerSongMessage struct {
+	Song string `json:"song"`
+}
+
+func (m ServerSongMessage) Equal(msg channel.Msg) bool { return m == msg }
+
+func (m ServerSongMessage) Binary(w *binary.Writer) error {
+	w.WriteString(m.Song, 8)
+	return w.Err()
+}
+
+func (m ServerSongMessage) JSON(w io.Writer) error {
+	return json.NewEncoder(w).Encode(m)
+}
+
+func (m ServerSongMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
+	return BinaryServerSongMessage(r)
+}
+func (m ServerSongMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
+	return JSONServerSongMessage(r)
+}
+
+func BinaryServerSongMessage(r *binary.Reader) (ServerSongMessage, error) {
+	c := ServerSongMessage{}
+	c.Song = r.ReadString(8)
+	return c, r.Err()
+}
+
+func JSONServerSongMessage(r io.Reader) (ServerSongMessage, io.Reader, error) {
+	c := ServerSongMessage{}
+	nr, err := channel.JSON(r, &c)
+	return c, nr, err
+}
+
 type ServerStateMessage struct {
-	Song     string        `json:"title"`
 	Paused   bool          `json:"paused"`
 	Pos      float64       `json:"position"`
 	Duration time.Duration `json:"duration"`
 	Volume   float64       `json:"volume"`
 }
 
-func (m ServerStateMessage) Equal(msg channel.Msg) bool { return m == msg }
+func (m ServerStateMessage) Equal(msg channel.Msg) bool {
+	m1, ok := msg.(ServerStateMessage)
+	if !ok {
+		return false
+	}
+	dur := float64(m.Duration / (time.Millisecond * 500))
+	posDiff := m1.Pos - m.Pos
+	thresh := 0.02
+	if dur != 0 {
+		thresh = 1.0 / dur
+	}
+
+	return m1.Paused == m.Paused &&
+		m1.Duration == m.Duration &&
+		m1.Volume == m.Volume &&
+		posDiff < thresh && posDiff > -thresh
+}
 
 func (m ServerStateMessage) Binary(w *binary.Writer) error {
 	var pause uint8
 	if m.Paused {
 		pause = 1
 	}
-	pos := uint16(1000 * m.Pos)
+	pos := uint8(255 * m.Pos)
 	vol := uint8(255 * m.Volume)
 
-	w.WriteString(m.Song, 8)
 	w.WriteUint8(pause)
-	w.WriteUint16(pos)
+	w.WriteUint8(pos)
 	w.WriteUint32(uint32(m.Duration.Seconds()))
 	w.WriteUint8(vol)
 	return w.Err()
@@ -152,9 +200,9 @@ func (m ServerStateMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error
 
 func BinaryServerStateMessage(r *binary.Reader) (ServerStateMessage, error) {
 	c := ServerStateMessage{}
-	c.Song = r.ReadString(8)
+	// c.Song = r.ReadString(8)
 	c.Paused = r.ReadUint8() == 1
-	c.Pos = float64(r.ReadUint16()) / 1000
+	c.Pos = float64(r.ReadUint8()) / 255
 	c.Duration = time.Second * time.Duration(r.ReadUint32())
 	c.Volume = float64(r.ReadUint8()) / 255
 	return c, r.Err()
