@@ -26,16 +26,23 @@ import (
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bandwidth"
 	"github.com/frizinak/homechat/server/channel"
+	"github.com/frizinak/homechat/server/client"
 	"golang.org/x/net/websocket"
 )
 
 var fileRE = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
 var errProto = errors.New("unsupported protocol version")
 
+const (
+	clientJobBuf = 50
+	clientErrBuf = 8
+	outgoingBuf  = 50
+	saveInterval = time.Second * 5
+)
+
 type writeJob struct {
-	ch string
-	c  *client
-	m  []channel.Msg
+	c *client.Client
+	client.Job
 }
 
 type Config struct {
@@ -76,9 +83,10 @@ type Server struct {
 	saveMutex sync.Mutex
 
 	clientsMutex sync.RWMutex
-	clients      map[string]map[string][]*client
+	clients      map[string]map[string][]*client.Client
 
-	workers  int
+	clientErrs chan client.Error
+
 	outgoing chan writeJob
 
 	channels map[string]channel.Channel
@@ -89,15 +97,14 @@ type Server struct {
 }
 
 func New(c Config) (*Server, error) {
-	const workers = 8
 	s := &Server{
 		c:        c,
 		channels: make(map[string]channel.Channel),
 
-		workers:  workers,
-		outgoing: make(chan writeJob, workers),
+		outgoing: make(chan writeJob, outgoingBuf),
 
-		clients: make(map[string]map[string][]*client),
+		clients:    make(map[string]map[string][]*client.Client),
+		clientErrs: make(chan client.Error, clientErrBuf),
 
 		bw: &NoopBandwidth{},
 	}
@@ -134,7 +141,7 @@ func (s *Server) Init() error {
 
 	go func() {
 		for {
-			time.Sleep(time.Second * 5)
+			time.Sleep(saveInterval)
 			s.saveMutex.Lock()
 			if err := s.save(); err != nil {
 				s.c.Log.Println("ERR saving ", err)
@@ -155,18 +162,18 @@ func (s *Server) Init() error {
 		}
 	}()
 
-	for i := 0; i < s.workers; i++ {
-		go func() {
-			for j := range s.outgoing {
-				for _, m := range j.m {
-					if err := j.c.msg(j.ch, m); err != nil {
-						s.c.Log.Printf("ERR send to '%s': %s", j.c.name, err)
-						break
-					}
-				}
-			}
-		}()
-	}
+	go func() {
+		for j := range s.outgoing {
+			j.c.Queue(j.Job)
+		}
+	}()
+
+	go func() {
+		for err := range s.clientErrs {
+			s.c.Log.Printf("ERR send to '%s': %s", err.Client.Name(), err.Err)
+			break
+		}
+	}()
 
 	return nil
 }
@@ -183,14 +190,14 @@ func (s *Server) jobs(b channel.Batch) ([]writeJob, error) {
 		return nil, nil
 	}
 
-	clients := make([]*client, 0)
+	clients := make([]*client.Client, 0)
 	for n, c := range h {
 		if !f.CheckName(n) {
 			continue
 		}
 
 		for _, cl := range c {
-			if !f.CheckChannels(cl.channels) {
+			if !f.CheckChannels(cl.Channels()) {
 				continue
 			}
 			if !f.CheckIdentity(cl) {
@@ -205,7 +212,7 @@ func (s *Server) jobs(b channel.Batch) ([]writeJob, error) {
 	}
 
 	for _, c := range clients {
-		j = append(j, writeJob{f.Channel, c, []channel.Msg{msg}})
+		j = append(j, writeJob{c, client.Job{f.Channel, []channel.Msg{msg}}})
 	}
 
 	return j, nil
@@ -230,9 +237,9 @@ func (s *Server) BroadcastBatch(b []channel.Batch) error {
 	not := make(map[int]struct{})
 	for i := range jobs {
 		for j := i + 1; j < len(jobs); j++ {
-			if jobs[i].ch == jobs[j].ch && jobs[i].c == jobs[j].c {
+			if jobs[i].Channel == jobs[j].Channel && jobs[i].c == jobs[j].c {
 				not[j] = struct{}{}
-				jobs[i].m = append(jobs[i].m, jobs[j].m...)
+				jobs[i].Msgs = append(jobs[i].Msgs, jobs[j].Msgs...)
 			}
 		}
 	}
@@ -453,15 +460,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, l *log.Logger)
 	return 0, nil
 }
 
-func (s *Server) unsetClient(c *client) {
+func (s *Server) unsetClient(c *client.Client) {
 	s.clientsMutex.Lock()
-	for _, h := range c.channels {
+	c.Stop()
+	for _, h := range c.Channels() {
 		ix := -1
 		if _, ok := s.clients[h]; !ok {
 			continue
 		}
 
-		for i, cl := range s.clients[h][c.name] {
+		name := c.Name()
+		for i, cl := range s.clients[h][c.Name()] {
 			if cl == c {
 				ix = i
 				break
@@ -471,13 +480,13 @@ func (s *Server) unsetClient(c *client) {
 			continue
 		}
 
-		s.clients[h][c.name] = append(
-			s.clients[h][c.name][:ix],
-			s.clients[h][c.name][ix+1:]...,
+		s.clients[h][name] = append(
+			s.clients[h][name][:ix],
+			s.clients[h][name][ix+1:]...,
 		)
 
-		l := len(s.clients[h][c.name])
-		s.c.Log.Printf("remove client '%s[%d]'  for '%s'", c.name, l, h)
+		l := len(s.clients[h][name])
+		s.c.Log.Printf("remove client '%s[%d]'  for '%s'", name, l, h)
 	}
 	s.clientsMutex.Unlock()
 
@@ -488,25 +497,28 @@ func (s *Server) unsetClient(c *client) {
 	}()
 }
 
-func (s *Server) setClient(c *client) {
+func (s *Server) setClient(conf client.Config, c *client.Client) {
 	s.clientsMutex.Lock()
-	for _, h := range c.channels {
+	for _, h := range conf.Channels {
 		if _, ok := s.clients[h]; !ok {
-			s.clients[h] = make(map[string][]*client)
-		}
-		if _, ok := s.clients[h][c.name]; !ok {
-			s.clients[h][c.name] = make([]*client, 0, 1)
+			s.clients[h] = make(map[string][]*client.Client)
 		}
 
-		s.clients[h][c.name] = append(s.clients[h][c.name], c)
+		if _, ok := s.clients[h][conf.Name]; !ok {
+			s.clients[h][conf.Name] = make([]*client.Client, 0, 1)
+		}
+
+		s.clients[h][conf.Name] = append(s.clients[h][conf.Name], c)
 	}
 	s.c.Log.Printf(
 		"new client '%s' proto:%d frame:%t for '%s'",
-		c.name,
-		c.proto,
-		c.frameWriter,
-		strings.Join(c.channels, ", "),
+		conf.Name,
+		conf.Proto,
+		conf.FrameWriter,
+		strings.Join(conf.Channels, ", "),
 	)
+
+	c.Run()
 
 	s.clientsMutex.Unlock()
 	go func() {
@@ -516,36 +528,36 @@ func (s *Server) setClient(c *client) {
 	}()
 }
 
-func (s *Server) newClient(proto channel.Proto, frameWriter bool, id channel.IdentifyMsg, conn io.Writer) (*client, error) {
+func (s *Server) newClient(proto channel.Proto, frameWriter bool, id channel.IdentifyMsg, conn io.Writer) (client.Config, *client.Client, error) {
+	var conf client.Config
 	for _, h := range id.Channels {
 		if _, ok := s.channels[h]; !ok {
-			return nil, fmt.Errorf("invalid channel subscribe: %s", h)
+			return conf, nil, fmt.Errorf("invalid channel subscribe: %s", h)
 		}
 	}
 
 	if id.Version != s.c.ProtocolVersion {
-		return nil, errProto
+		return conf, nil, errProto
 	}
 
 	name := strings.Join(strings.Fields(id.Data), "")
 	if name == "" {
-		return nil, errors.New("invalid name")
+		return conf, nil, errors.New("invalid name")
 	}
 
 	for _, h := range id.Channels {
 		if _, ok := s.channels[h]; !ok {
-			return nil, fmt.Errorf("invalid channel subscribe: %s", h)
+			return conf, nil, fmt.Errorf("invalid channel subscribe: %s", h)
 		}
 	}
 
-	return &client{
-		w:           conn,
-		frameWriter: frameWriter,
-		proto:       proto,
-		name:        name,
-		channels:    id.Channels,
-		last:        make(map[string]channel.Msg),
-	}, nil
+	conf.FrameWriter = frameWriter
+	conf.Proto = proto
+	conf.Name = name
+	conf.Channels = id.Channels
+	conf.JobBuffer = clientJobBuf
+
+	return conf, client.New(conf, conn, s.clientErrs), nil
 }
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool) error {
@@ -557,7 +569,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		m, err := channel.BinaryChannelMsg(binary.NewReader(r))
 		return m, r, err
 	}
-	do := func(r io.Reader, cl *client, h channel.Channel) (io.Reader, error) {
+	do := func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 		return r, h.HandleBIN(cl, binary.NewReader(r))
 	}
 	write := func(w io.Writer, m channel.Msg) error {
@@ -571,7 +583,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		getChannel = func(r io.Reader) (channel.ChannelMsg, io.Reader, error) {
 			return channel.JSONChannelMsg(r)
 		}
-		do = func(r io.Reader, cl *client, h channel.Channel) (io.Reader, error) {
+		do = func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 			return h.HandleJSON(cl, r)
 		}
 		write = func(w io.Writer, m channel.Msg) error {
@@ -594,7 +606,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		return fmt.Errorf("identify: %w", err)
 	}
 
-	c, err := s.newClient(proto, frameWriter, id, writer)
+	conf, c, err := s.newClient(proto, frameWriter, id, writer)
 	status := channel.StatusMsg{Code: channel.StatusOK, Err: ""}
 	if err != nil {
 		status.Code = channel.StatusNOK
@@ -610,10 +622,10 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	if err != nil {
 		return err
 	}
-	if err := write(writer, channel.IdentifyMsg{Data: c.name}); err != nil {
+	if err := write(writer, channel.IdentifyMsg{Data: conf.Name}); err != nil {
 		return err
 	}
-	s.setClient(c)
+	s.setClient(conf, c)
 	defer s.unsetClient(c)
 
 	var chnl channel.ChannelMsg
