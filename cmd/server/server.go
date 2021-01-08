@@ -37,6 +37,9 @@ type Config struct {
 	HTTPAddr  string
 	YMDir     string
 
+	BandwidthIntervalSeconds *int
+	MaxUploadKBytes          *int64
+
 	WttrCity           string
 	HolidayCountryCode string
 
@@ -100,6 +103,14 @@ func (c *Config) Merge(def *Config) bool {
 		resave = true
 		c.HTTPAddr = def.HTTPAddr
 	}
+	if c.BandwidthIntervalSeconds == nil {
+		resave = true
+		c.BandwidthIntervalSeconds = def.BandwidthIntervalSeconds
+	}
+	if c.MaxUploadKBytes == nil {
+		resave = true
+		c.MaxUploadKBytes = def.MaxUploadKBytes
+	}
 	return resave
 }
 
@@ -134,14 +145,22 @@ func main() {
 		}
 	}
 
+	bandwidthIntervalSeconds := 0
+	var maxUploadKBytes int64 = 1024 * 10
 	resave := appConf.Merge(&Config{
 		Directory: cache,
 		HTTPAddr:  "127.0.0.1:1200",
 		YMDir:     filepath.Join(cache, "ym"),
 
+		BandwidthIntervalSeconds: &bandwidthIntervalSeconds,
+		MaxUploadKBytes:          &maxUploadKBytes,
+
 		WttrCity:           "tashkent",
 		HolidayCountryCode: "UZ",
 	})
+
+	bandwidthIntervalSeconds = *appConf.BandwidthIntervalSeconds
+	maxUploadKBytes = *appConf.MaxUploadKBytes
 
 	if resave {
 		if err := appConf.Encode(confFile); err != nil {
@@ -271,9 +290,9 @@ func main() {
 		TCPAddress:      tcp,
 		StorePath:       store,
 		UploadsPath:     uploads,
-		MaxUploadSize:   1024 * 1024 * 1024,
+		MaxUploadSize:   maxUploadKBytes * 1024,
 		Router:          router,
-		LogBandwidth:    time.Minute,
+		LogBandwidth:    time.Duration(bandwidthIntervalSeconds) * time.Second,
 	}
 	s, err := server.New(c)
 	if err != nil {
