@@ -283,8 +283,6 @@ func main() {
 	history := history.New(100000, 1000)
 	musicErr := status.New()
 	music := music.NewYM(c.Log, musicErr, appConf.YMDir)
-	musicState := music.StateChannel()
-	musicSong := music.SongChannel()
 	chat := chat.New(c.Log, history)
 	history.SetOutput(chat)
 	upload := upload.New(c.MaxUploadSize, chat, s)
@@ -299,14 +297,16 @@ func main() {
 	s.MustAddChannel(vars.PingChannel, ping.New())
 	s.MustAddChannel(vars.UserChannel, users)
 	s.MustAddChannel(vars.MusicChannel, music)
-	s.MustAddChannel(vars.MusicStateChannel, musicState)
-	s.MustAddChannel(vars.MusicSongChannel, musicSong)
+	s.MustAddChannel(vars.MusicStateChannel, music.StateChannel())
+	s.MustAddChannel(vars.MusicSongChannel, music.SongChannel())
+	s.MustAddChannel(vars.MusicPlaylistChannel, music.PlaylistChannel())
 	s.MustAddChannel(vars.MusicErrorChannel, musicErr)
 
 	s.MustSetUserUpdateHandler(channel.MultiUserUpdateHandler(users, chat))
 
 	go music.SendInterval(time.Millisecond * 1000)
 	go music.StateSendInterval(time.Millisecond * 100)
+	go music.PlaylistSendInterval(time.Millisecond * 5000)
 	go users.SendInterval(time.Millisecond * 500)
 
 	quoteBots := bot.NewBotCollection("quote-bot")

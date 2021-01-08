@@ -46,6 +46,13 @@ type Users []User
 func (u Users) Len() int           { return len(u) }
 func (u Users) Swap(i, j int)      { u[i], u[j] = u[j], u[i] }
 func (u Users) Less(i, j int) bool { return u[i].Name < u[j].Name }
+func (u Users) Names() []string {
+	n := make([]string, len(u))
+	for i, us := range u {
+		n[i] = us.Name
+	}
+	return n
+}
 
 type Conn interface {
 	io.Writer
@@ -68,6 +75,8 @@ type Client struct {
 
 	users    Users
 	allUsers map[string]map[string]User
+
+	playlists []string
 
 	conn        Conn
 	lastConnect time.Time
@@ -96,17 +105,10 @@ func New(b Backend, h Handler, log Logger, c Config) *Client {
 	}
 }
 
-func (c *Client) Users() Users {
-	return c.users
-}
-
-func (c *Client) Name() string {
-	return c.c.Name
-}
-
-func (c *Client) Err() error {
-	return c.fatal
-}
+func (c *Client) Users() Users        { return c.users }
+func (c *Client) Playlists() []string { return c.playlists }
+func (c *Client) Name() string        { return c.c.Name }
+func (c *Client) Err() error          { return c.fatal }
 
 func (c *Client) Chat(msg string) error {
 	return c.Send(vars.ChatChannel, chatdata.Message{Data: msg})
@@ -344,6 +346,13 @@ func (c *Client) Run() error {
 			}
 			musicState.ServerSongMessage = _msg.(musicdata.ServerSongMessage)
 			return c.handler.HandleMusicStateMessage(musicState)
+		case vars.MusicPlaylistChannel:
+			_msg, _, err := c.read(r, musicdata.ServerPlaylistMessage{})
+			if err != nil {
+				return err
+			}
+
+			c.playlists = _msg.(musicdata.ServerPlaylistMessage).List
 		case vars.UserChannel:
 			_msg, _, err := c.read(r, usersdata.ServerMessage{})
 			if err != nil {

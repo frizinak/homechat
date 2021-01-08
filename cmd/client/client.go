@@ -150,13 +150,14 @@ func main() {
 		InputDown:  "down",
 		InputUp:    "up",
 
-		MusicVolumeUp:     "up",
-		MusicVolumeDown:   "down",
-		MusicNext:         "right",
-		MusicPrevious:     "left",
-		MusicPause:        "space",
-		MusicSeekForward:  "]",
-		MusicSeekBackward: "[",
+		MusicPlaylistCompletion: "tab",
+		MusicVolumeUp:           "up",
+		MusicVolumeDown:         "down",
+		MusicNext:               "right",
+		MusicPrevious:           "left",
+		MusicPause:              "space",
+		MusicSeekForward:        "]",
+		MusicSeekBackward:       "[",
 	}
 
 	defaultKeymapJSON, err := json.MarshalIndent(defaultKeymap, "", "    ")
@@ -273,6 +274,7 @@ func main() {
 		ch = vars.MusicChannel
 		c.Channels = append(c.Channels, vars.MusicStateChannel)
 		c.Channels = append(c.Channels, vars.MusicSongChannel)
+		c.Channels = append(c.Channels, vars.MusicPlaylistChannel)
 		c.Channels = append(c.Channels, vars.MusicErrorChannel)
 	}
 	c.Channels = append(c.Channels, ch)
@@ -367,47 +369,15 @@ func main() {
 			ScrollUp:   func() bool { tui.Scroll(1); return false },
 			Backspace:  Simple(tui.BackspaceInput),
 			Completion: func() bool {
-				cur := tui.GetInput()
-				if len(cur) == 0 {
-					return false
+				n := complete(
+					tui.GetInput(),
+					"@",
+					client.Users().Names(),
+					map[string]struct{}{client.Name(): struct{}{}},
+				)
+				if n != "" {
+					tui.SetInput(n)
 				}
-
-				p := strings.Split(cur, " ")
-				l := p[len(p)-1]
-				if l[0] != '@' {
-					return false
-				}
-
-				found := ""
-				foundC := 0
-				name := client.Name()
-				for _, n := range client.Users() {
-					if n.Name == name {
-						continue
-					}
-
-					if strings.HasPrefix(n.Name, l[1:]) {
-						found = n.Name
-						foundC++
-					}
-				}
-
-				if foundC == 1 {
-					i := fmt.Sprintf(
-						"@%s ",
-						found,
-					)
-					if len(p) > 1 {
-						i = fmt.Sprintf(
-							"%s %s",
-							strings.Join(p[:len(p)-1], " "),
-							i,
-						)
-					}
-
-					tui.SetInput(i)
-				}
-
 				return false
 			},
 			Quit: func() bool {
@@ -451,6 +421,18 @@ func main() {
 					i = inputs[current]
 				}
 				tui.SetInput(i)
+				return false
+			},
+			MusicPlaylistCompletion: func() bool {
+				n := complete(
+					tui.GetInput(),
+					"",
+					client.Playlists(),
+					nil,
+				)
+				if n != "" {
+					tui.SetInput(n)
+				}
 				return false
 			},
 			MusicVolumeUp: func() bool {

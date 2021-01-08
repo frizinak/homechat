@@ -29,13 +29,14 @@ const (
 	InputDown  Action = "input-down"
 	InputUp    Action = "input-up"
 
-	MusicVolumeUp     Action = "music-volume-up"
-	MusicVolumeDown   Action = "music-volume-down"
-	MusicNext         Action = "music-next"
-	MusicPrevious     Action = "music-previous"
-	MusicPause        Action = "music-pause"
-	MusicSeekForward  Action = "music-seek-forward"
-	MusicSeekBackward Action = "music-seek-backward"
+	MusicPlaylistCompletion Action = "music-playlist-complete"
+	MusicVolumeUp           Action = "music-volume-up"
+	MusicVolumeDown         Action = "music-volume-down"
+	MusicNext               Action = "music-next"
+	MusicPrevious           Action = "music-previous"
+	MusicPause              Action = "music-pause"
+	MusicSeekForward        Action = "music-seek-forward"
+	MusicSeekBackward       Action = "music-seek-backward"
 )
 
 type key struct {
@@ -141,12 +142,6 @@ func NewKeys(keyMap map[Action]string, actionMap map[Action]KeyHandler) (*Keys, 
 }
 
 func (k *Keys) Do(mod mode, n byte) (print bool) {
-	// debug, err := os.OpenFile("/tmp/debug", os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0666)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer debug.Close()
-
 	print = true
 	switch n {
 	case 27:
@@ -165,11 +160,6 @@ func (k *Keys) Do(mod mode, n byte) (print bool) {
 		}
 		k.escape = 0
 	}
-
-	// _, err = fmt.Fprintln(debug, mod, n, k.escape)
-	// if err != nil {
-	// 	panic(err)
-	// }
 
 	if k.escape != 0 && k.escape != 3 {
 		return

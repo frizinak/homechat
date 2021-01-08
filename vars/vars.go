@@ -10,10 +10,11 @@ const (
 
 	PingChannel = "p" // w
 
-	MusicChannel      = "m"  // rw
-	MusicStateChannel = ">"  // r
-	MusicSongChannel  = "<"  // r
-	MusicErrorChannel = "mr" // r
+	MusicChannel         = "m"  // rw
+	MusicStateChannel    = ">"  // r
+	MusicSongChannel     = "<"  // r
+	MusicPlaylistChannel = "-"  // r
+	MusicErrorChannel    = "mr" // r
 
 	UserChannel = "u" // r
 )
