@@ -137,6 +137,11 @@ func (c *Client) Send(chnl string, msg channel.Msg) error {
 	return nil
 }
 
+func (c *Client) Connect() error {
+	_, err := c.connect()
+	return err
+}
+
 func (c *Client) Close() {
 	c.disconnect()
 }

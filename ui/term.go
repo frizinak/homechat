@@ -32,6 +32,8 @@ type TermUI struct {
 	scroll       int
 
 	s State
+
+	disabled bool
 }
 
 type msg struct {
@@ -41,7 +43,17 @@ type msg struct {
 }
 
 func Term(metaPrefix bool, indent int, scrollTop bool) *TermUI {
-	return &TermUI{metaPrefix: metaPrefix, indent: indent, scrollTop: scrollTop}
+	return &TermUI{
+		metaPrefix: metaPrefix,
+		indent:     indent,
+		scrollTop:  scrollTop,
+		disabled:   true,
+	}
+}
+
+func (ui *TermUI) Start() {
+	ui.disabled = false
+	ui.Flush()
 }
 
 func (ui *TermUI) Users(msg string) {
@@ -154,6 +166,10 @@ const (
 )
 
 func (ui *TermUI) Flush() {
+	if ui.disabled {
+		return
+	}
+
 	ui.sem.Lock()
 	defer ui.sem.Unlock()
 	size, err := console.Current().Size()

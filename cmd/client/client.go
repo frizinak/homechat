@@ -221,7 +221,7 @@ func main() {
 	}
 	notifCmd, err := shlex.Split(string(rnotifCmd))
 	if err != nil {
-		panic(err)
+		exit(err)
 	}
 
 	if len(raddress) == 0 {
@@ -484,8 +484,11 @@ func main() {
 	)
 
 	if err != nil {
-		panic(err)
+		exit(err)
 	}
+
+	exit(client.Connect())
+	tui.Start()
 
 	exit(currentConsole.SetRaw())
 	input := bufio.NewReader(os.Stdin)
