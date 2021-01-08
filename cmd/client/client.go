@@ -460,7 +460,7 @@ func main() {
 			},
 			MusicSeekForward: func() bool {
 				if strings.TrimSpace(tui.GetInput()) == "" {
-					send("seek 5")
+					send("seek +5")
 					return false
 				}
 
