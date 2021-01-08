@@ -83,8 +83,7 @@ func (c *Client) Queue(job Job) {
 }
 
 func (c *Client) send(chnl string, msg channel.Msg) error {
-	last, ok := c.last[chnl]
-	if ok && msg.Equal(last) {
+	if last, ok := c.last[chnl]; ok && msg.Equal(last) {
 		return nil
 	}
 
