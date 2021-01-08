@@ -1,11 +1,11 @@
 package vars
 
 const (
-	Version         = "0.1.4"
-	ProtocolVersion = "1011"
+	Version         = "0.1.5"
+	ProtocolVersion = "1012"
 
 	ChatChannel    = "c"  // rw
-	HistoryChannel = "h"  // w
+	HistoryChannel = "h"  // rw
 	UploadChannel  = "up" // w
 
 	PingChannel = "p" // w

@@ -27,6 +27,7 @@ type Backend interface {
 
 type Handler interface {
 	HandleName(name string)
+	HandleHistory()
 	HandleChatMessage(chatdata.ServerMessage) error
 	HandleMusicMessage(musicdata.ServerMessage) error
 	HandleMusicStateMessage(MusicState) error
@@ -184,10 +185,6 @@ func (c *Client) connect() (Conn, error) {
 	c.log.Log("connected")
 	c.conn = conn
 
-	h := c.c.History
-	if c.c.History {
-		c.c.History = false
-	}
 	if err := c.c.Proto.Write(conn); err != nil {
 		c.sem.Unlock()
 		return conn, err
@@ -232,8 +229,8 @@ func (c *Client) connect() (Conn, error) {
 	c.handler.HandleName(c.c.Name)
 	c.sem.Unlock()
 
-	if h {
-		if err = c.Send(vars.HistoryChannel, historydata.Message{}); err != nil {
+	if c.c.History {
+		if err = c.Send(vars.HistoryChannel, historydata.New(1000)); err != nil {
 			return conn, err
 		}
 	}
@@ -320,6 +317,12 @@ func (c *Client) Run() error {
 		r = nr
 
 		switch chnl.Data {
+		case vars.HistoryChannel:
+			_, _, err := c.read(r, historydata.ServerMessage{})
+			if err != nil {
+				return err
+			}
+			c.handler.HandleHistory()
 		case vars.ChatChannel:
 			_msg, _, err := c.read(r, chatdata.ServerMessage{})
 			if err != nil {

@@ -3,6 +3,7 @@ package history
 import (
 	"errors"
 	"io"
+	"time"
 
 	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
@@ -10,8 +11,9 @@ import (
 )
 
 type Log struct {
-	From channel.Client
-	Msg  channel.Msg
+	From  channel.Client
+	Stamp time.Time
+	Msg   channel.Msg
 	*channel.NeverEqual
 }
 
@@ -22,6 +24,7 @@ func (l Log) Binary(w *binary.Writer) error {
 	}
 	w.WriteString(l.From.Name(), 8)
 	w.WriteUint8(b)
+	w.WriteUint64(uint64(l.Stamp.Unix()))
 	return l.Msg.Binary(w)
 }
 
@@ -34,7 +37,7 @@ func (l Log) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 }
 
 type Output interface {
-	FromHistory(to channel.Client, from channel.Client, msg channel.Msg) ([]channel.Batch, error)
+	FromHistory(to channel.Client, l Log) ([]channel.Batch, error)
 	DecodeHistoryItem(*binary.Reader) (channel.Msg, error)
 }
 
@@ -57,7 +60,7 @@ func New(amountStore, amountSend int) *HistoryChannel {
 func (c *HistoryChannel) Add(m channel.Msg) { panic("do not use add directly") }
 
 func (c *HistoryChannel) AddLog(cl channel.Client, m channel.Msg) {
-	c.BinaryHistory.Add(Log{From: cl, Msg: m})
+	c.BinaryHistory.Add(Log{From: cl, Msg: m, Stamp: time.Now()})
 }
 
 func (c *HistoryChannel) SetOutput(o Output) {
@@ -67,12 +70,20 @@ func (c *HistoryChannel) SetOutput(o Output) {
 
 	c.BinaryHistory = channel.NewBinaryHistory(
 		c.amount,
-		"v1",
+		"v2",
 		map[channel.DecoderVersion]channel.Decoder{
 			"v1": func(r *binary.Reader) (channel.Msg, error) {
 				var l Log
 				var err error
 				l.From = channel.NewClient(r.ReadString(8), r.ReadUint8() == 1)
+				l.Msg, err = c.output.DecodeHistoryItem(r)
+				return l, err
+			},
+			"v2": func(r *binary.Reader) (channel.Msg, error) {
+				var l Log
+				var err error
+				l.From = channel.NewClient(r.ReadString(8), r.ReadUint8() == 1)
+				l.Stamp = time.Unix(int64(r.ReadUint64()), 0)
 				l.Msg, err = c.output.DecodeHistoryItem(r)
 				return l, err
 			},
@@ -88,27 +99,39 @@ func (c *HistoryChannel) Register(chnl string, s channel.Sender) error {
 }
 
 func (c *HistoryChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
-	_, err := data.BinaryMessage(r)
+	msg, err := data.BinaryMessage(r)
 	if err != nil {
 		return err
 	}
-	return c.handle(cl)
+	return c.handle(cl, msg)
 }
 
 func (c *HistoryChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader, error) {
-	_, nr, err := data.JSONMessage(r)
+	msg, nr, err := data.JSONMessage(r)
 	if err != nil {
 		return nr, err
 	}
-	return nr, c.handle(cl)
+	return nr, c.handle(cl, msg)
 }
 
-func (c *HistoryChannel) handle(cl channel.Client) error {
-	b := make([]channel.Batch, 0)
+func (c *HistoryChannel) handle(cl channel.Client, msg data.Message) error {
 	var gerr error
-	c.BinaryHistory.Last(c.last, func(m channel.Msg) bool {
-		msg := m.(Log)
-		bat, err := c.output.FromHistory(cl, msg.From, msg.Msg)
+	last := int(msg.Amount)
+	if last > c.last {
+		last = c.last
+	}
+	if last == 0 {
+		return nil
+	}
+
+	b := make([]channel.Batch, 1)
+	b[0] = channel.Batch{
+		Filter: channel.ClientFilter{Channel: c.channel},
+		Msg:    data.ServerMessage{},
+	}
+
+	c.BinaryHistory.Last(last, func(m channel.Msg) bool {
+		bat, err := c.output.FromHistory(cl, m.(Log))
 		if err != nil {
 			gerr = err
 			return false

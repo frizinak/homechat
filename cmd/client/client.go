@@ -263,21 +263,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	c.Channels = []string{vars.UserChannel}
+	c.Channels = []string{
+		vars.UserChannel,
+		vars.HistoryChannel,
+		vars.ChatChannel,
+	}
+
 	c.History = true
-	ch := vars.ChatChannel
 	if mode == modeMusic {
-		c.History = false
 		if isNonInteractive {
 			exit(errors.New("music can only be used with an interactive terminal"))
 		}
-		ch = vars.MusicChannel
-		c.Channels = append(c.Channels, vars.MusicStateChannel)
-		c.Channels = append(c.Channels, vars.MusicSongChannel)
-		c.Channels = append(c.Channels, vars.MusicPlaylistChannel)
-		c.Channels = append(c.Channels, vars.MusicErrorChannel)
+
+		c.History = false
+		c.Channels = []string{
+			vars.MusicChannel,
+			vars.MusicStateChannel,
+			vars.MusicSongChannel,
+			vars.MusicPlaylistChannel,
+			vars.MusicErrorChannel,
+		}
 	}
-	c.Channels = append(c.Channels, ch)
 
 	if mode == modeUpload {
 		c.History = false

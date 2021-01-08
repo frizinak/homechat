@@ -47,6 +47,10 @@ func (h *Handler) HandleName(name string) {
 	h.name = name
 }
 
+func (h *Handler) HandleHistory() {
+	h.log.Clear()
+}
+
 func (h *Handler) HandleChatMessage(m chatdata.ServerMessage) error {
 	h.msgs <- m
 	return nil

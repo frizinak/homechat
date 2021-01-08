@@ -270,6 +270,9 @@ function init() {
       status.err = "";
       updateStatus();
     },
+    onHistory : function () {
+        elLog.innerHTML = '';
+    },
     onChatMessage: function (msg) {
       message(msg);
     },

@@ -75,15 +75,18 @@ func (c *ChatChannel) UserUpdate(cl channel.Client, r channel.ConnectionReason) 
 	return nil
 }
 
-func (c *ChatChannel) FromHistory(to, from channel.Client, m channel.Msg) ([]channel.Batch, error) {
-	msg := m.(data.Message)
-	_b := c.batch(false, from, msg)
+func (c *ChatChannel) FromHistory(to channel.Client, l history.Log) ([]channel.Batch, error) {
+	msg := l.Msg.(data.Message)
+	_b := c.batch(false, l.From, msg)
 	b := make([]channel.Batch, 0, len(_b))
 	for _, bat := range _b {
 		f := bat.Filter
 		if !f.CheckIdentityAndName(to) {
 			continue
 		}
+		m := bat.Msg.(data.ServerMessage)
+		m.Stamp = l.Stamp
+		bat.Msg = m
 		b = append(b, bat)
 	}
 

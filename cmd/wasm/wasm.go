@@ -20,6 +20,7 @@ type handler string
 
 const (
 	OnName              handler = "onName"
+	OnHistory           handler = "onHistory"
 	OnChatMessage       handler = "onChatMessage"
 	OnMusicMessage      handler = "onMusicMessage"
 	OnMusicStateMessage handler = "onMusicStateMessage"
@@ -39,6 +40,7 @@ type jsHandler struct {
 func newJSHandler(h js.Value) *jsHandler {
 	methods := []handler{
 		OnName,
+		OnHistory,
 		OnChatMessage,
 		OnMusicMessage,
 		OnMusicStateMessage,
@@ -81,6 +83,10 @@ func (j *jsHandler) HandleError(err error) {
 func (j *jsHandler) HandleName(name string) {
 	j.name = name
 	j.handlers[OnName].Invoke(name)
+}
+
+func (j *jsHandler) HandleHistory() {
+	j.handlers[OnHistory].Invoke()
 }
 
 func (j *jsHandler) HandleChatMessage(m chatdata.ServerMessage) error {
@@ -164,6 +170,7 @@ func main() {
 			Name:      args[0].Get("name").String(),
 			Channels: []string{
 				vars.UserChannel,
+				vars.HistoryChannel,
 				vars.ChatChannel,
 				vars.MusicChannel,
 				vars.MusicStateChannel,
