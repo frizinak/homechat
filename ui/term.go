@@ -12,6 +12,8 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
+const stampFormat = "01-02 15:04"
+
 type TermUI struct {
 	metaPrefix bool
 	indent     int
@@ -33,6 +35,7 @@ type TermUI struct {
 }
 
 type msg struct {
+	prefix    string
 	msg       string
 	highlight Highlight
 }
@@ -64,25 +67,19 @@ func (ui *TermUI) Clear() {
 func (ui *TermUI) BroadcastMulti(msgs []Msg, scroll bool) {
 	const max = 8000
 	ui.sem.Lock()
-	const stampFormat = "01-02 15:04"
 	for _, m := range msgs {
 		texts := strings.Split(strings.ReplaceAll(m.Message, "\r", ""), "\n")
 		for _, text := range texts {
-			s := fmt.Sprintf("\x00%s", text)
+			msg := msg{"", text, m.Highlight}
 			if ui.metaPrefix {
-				pref := fmt.Sprintf(
+				msg.prefix = fmt.Sprintf(
 					"%s %s",
 					m.Stamp.Format(stampFormat),
 					m.From,
 				)
-
-				s = fmt.Sprintf(
-					"%s│ %s",
-					runewidth.FillRight(pref, len(stampFormat)+15+1),
-					s,
-				)
+				msg.prefix = runewidth.FillRight(msg.prefix, len(stampFormat)+15+1) + "│ "
 			}
-			ui.log = append(ui.log, msg{s, m.Highlight})
+			ui.log = append(ui.log, msg)
 		}
 	}
 
@@ -220,9 +217,10 @@ func (ui *TermUI) Flush() {
 
 	logs := make([]string, 0, len(ui.log))
 	for i := 0; i < len(ui.log); i++ {
+		meta := ui.log[i].prefix
 		log := ui.log[i].msg
-		ln := runewidth.StringWidth(log)
-		parts := strings.SplitN(log, "\x00", 2)
+		both := meta + log
+		ln := runewidth.StringWidth(both)
 
 		var prefix, suffix string
 		if p, ok := hl[ui.log[i].highlight]; ok {
@@ -231,15 +229,11 @@ func (ui *TermUI) Flush() {
 		}
 
 		if ln <= w {
-			logs = append(logs, suffpref(prefix, suffix, log))
+			logs = append(logs, suffpref(prefix, suffix, both))
 			continue
 		}
-		if len(parts) != 2 {
-			continue
-		}
-		maxw := w - runewidth.StringWidth(parts[0]) - 2
+		maxw := w - runewidth.StringWidth(meta) - 2
 
-		log = parts[1]
 		count := 0
 		lastSpace := 0
 		lastCut := 0
@@ -251,14 +245,14 @@ func (ui *TermUI) Flush() {
 
 			if count >= maxw {
 				if lastSpace > lastCut {
-					clean := suffpref(prefix, suffix, parts[0]+log[lastCut:lastSpace])
+					clean := suffpref(prefix, suffix, meta+log[lastCut:lastSpace])
 					logs = append(logs, clean)
 					count = ci - lastSpace
 					lastCut = lastSpace + 1
 					continue
 				}
 
-				clean := suffpref(prefix, suffix, parts[0]+log[lastCut:ci-2]+"-")
+				clean := suffpref(prefix, suffix, meta+log[lastCut:ci-2]+"-")
 				logs = append(logs, clean)
 				count = 0
 				lastCut = ci - 2
@@ -266,7 +260,7 @@ func (ui *TermUI) Flush() {
 		}
 
 		if lastCut < runewidth.StringWidth(log) {
-			clean := suffpref(prefix, suffix, parts[0]+log[lastCut:])
+			clean := suffpref(prefix, suffix, meta+log[lastCut:])
 			logs = append(logs, clean)
 		}
 	}
