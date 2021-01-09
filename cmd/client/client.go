@@ -48,7 +48,7 @@ func main() {
 	}
 
 	var defaultDir string
-	if userConfDir, err := os.UserCacheDir(); err == nil {
+	if userConfDir, err := os.UserConfigDir(); err == nil {
 		defaultDir = filepath.Join(userConfDir, "homechat")
 	}
 
