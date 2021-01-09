@@ -23,13 +23,16 @@ type TermUI struct {
 	flash       string
 	flashExpiry time.Time
 
-	sem          sync.Mutex
-	log          []msg
-	input        []byte
-	users        []string
+	sem   sync.Mutex
+	log   []msg
+	input []byte
+	users []string
+
 	scrollPage   int
 	scrollSimple int
 	scroll       int
+
+	maxMessages int
 
 	s State
 
@@ -42,12 +45,13 @@ type msg struct {
 	highlight Highlight
 }
 
-func Term(metaPrefix bool, indent int, scrollTop bool) *TermUI {
+func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool) *TermUI {
 	return &TermUI{
-		metaPrefix: metaPrefix,
-		indent:     indent,
-		scrollTop:  scrollTop,
-		disabled:   true,
+		metaPrefix:  metaPrefix,
+		indent:      indent,
+		scrollTop:   scrollTop,
+		maxMessages: maxMessages,
+		disabled:    true,
 	}
 }
 
@@ -77,7 +81,6 @@ func (ui *TermUI) Clear() {
 }
 
 func (ui *TermUI) BroadcastMulti(msgs []Msg, scroll bool) {
-	const max = 8000
 	ui.sem.Lock()
 	for _, m := range msgs {
 		texts := strings.Split(strings.ReplaceAll(m.Message, "\r", ""), "\n")
@@ -95,8 +98,8 @@ func (ui *TermUI) BroadcastMulti(msgs []Msg, scroll bool) {
 		}
 	}
 
-	if len(ui.log) > max {
-		ui.log = ui.log[len(ui.log)-max:]
+	if len(ui.log) > ui.maxMessages {
+		ui.log = ui.log[len(ui.log)-ui.maxMessages:]
 	}
 	if ui.scrollTop && scroll {
 		ui.scroll = math.MaxInt32

@@ -143,6 +143,7 @@ func NewKeys(keyMap map[Action]string, actionMap map[Action]KeyHandler) (*Keys, 
 
 func (k *Keys) Do(mod mode, n byte) (print bool) {
 	print = true
+
 	switch n {
 	case 27:
 		k.escape = 1

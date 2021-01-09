@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,27 +23,6 @@ import (
 
 	"github.com/containerd/console"
 )
-
-func ensureFile(file string, defaultContents []byte) error {
-	f, err := os.Open(file)
-	if os.IsNotExist(err) {
-		f, err = os.Create(file)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		if defaultContents != nil {
-			_, err = f.Write(defaultContents)
-		}
-		return err
-	}
-
-	if err != nil {
-		return err
-	}
-	f.Close()
-	return nil
-}
 
 func exit(err error) {
 	if err == nil {
@@ -70,8 +48,8 @@ func main() {
 	}
 
 	var defaultDir string
-	if home, err := os.UserHomeDir(); err == nil {
-		defaultDir = filepath.Join(home, ".config", "homechat")
+	if userConfDir, err := os.UserCacheDir(); err == nil {
+		defaultDir = filepath.Join(userConfDir, "homechat")
 	}
 
 	var configDir string
@@ -131,10 +109,40 @@ func main() {
 		exit(errors.New("please specify a config directory"))
 	}
 	os.MkdirAll(configDir, 0o755)
-	configNotify := filepath.Join(configDir, "notify")
-	configUsername := filepath.Join(configDir, "username")
-	configServer := filepath.Join(configDir, "server")
-	configKeymap := filepath.Join(configDir, "keymap.json")
+
+	confFile := filepath.Join(configDir, "client.json")
+	keymapFile := filepath.Join(configDir, "keymap.json")
+
+	appConf := &Config{}
+	if err := appConf.Decode(confFile); err != nil {
+		if os.IsNotExist(err) {
+			exit(appConf.Encode(confFile))
+			err = nil
+		}
+		exit(err)
+	}
+
+	notifyCmd := "notify-send 'HomeChat' '%u: %m'"
+	resave := appConf.Merge(&Config{
+		NotifyCommand: &notifyCmd,
+		ServerAddress: "",
+		Username:      "",
+		MaxMessages:   250,
+	})
+	notifyCmd = *appConf.NotifyCommand
+
+	if resave {
+		exit(appConf.Encode(confFile))
+	}
+
+	keymap := make(Keymap)
+	if err := keymap.Decode(keymapFile); err != nil {
+		if os.IsNotExist(err) {
+			exit(keymap.Encode(keymapFile))
+			err = nil
+		}
+		exit(err)
+	}
 
 	defaultKeymap := map[Action]string{
 		PageDown:   "ctrl-d",
@@ -160,75 +168,31 @@ func main() {
 		MusicSeekBackward:       "[",
 	}
 
-	defaultKeymapJSON, err := json.MarshalIndent(defaultKeymap, "", "    ")
-	exit(err)
+	if resave = keymap.Merge(defaultKeymap); resave {
+		exit(keymap.Encode(keymapFile))
+	}
 
-	exit(ensureFile(configNotify, []byte("notify-send 'HomeChat' '%u: %m'")))
-	exit(ensureFile(configUsername, nil))
-	exit(ensureFile(configServer, nil))
-	exit(ensureFile(configKeymap, defaultKeymapJSON))
-
-	rnotifCmd, err := ioutil.ReadFile(configNotify)
-	exit(err)
-	rusername, err := ioutil.ReadFile(configUsername)
-	exit(err)
-	raddress, err := ioutil.ReadFile(configServer)
-	exit(err)
-
-	keymap := make(map[Action]string, len(defaultKeymap))
-	exit(func() error {
-		f, err := os.Open(configKeymap)
-		if err != nil {
-			return err
+	for i := range keymap {
+		if _, ok := defaultKeymap[i]; !ok {
+			exit(fmt.Errorf("unknown action '%s' in keymap", i))
 		}
-		err = json.NewDecoder(f).Decode(&keymap)
-		f.Close()
-		if err != nil {
-			return fmt.Errorf("failed to parse keymap ('%s'): %w", configKeymap, err)
-		}
-
-		resave := false
-		for i := range defaultKeymap {
-			if _, ok := keymap[i]; !ok {
-				resave = true
-				keymap[i] = defaultKeymap[i]
-			}
-		}
-		for i := range keymap {
-			if _, ok := defaultKeymap[i]; !ok {
-				return fmt.Errorf("unknown action '%s' in keymap", i)
-			}
-		}
-
-		if resave {
-			f, err := os.Create(configKeymap)
-			if err != nil {
-				return err
-			}
-			enc := json.NewEncoder(f)
-			enc.SetIndent("", "    ")
-			err = enc.Encode(keymap)
-			f.Close()
-			return err
-		}
-		return nil
-	}())
+	}
 
 	var c client.Config
-	c.Name = strings.TrimSpace(string(rusername))
+	c.Name = strings.TrimSpace(appConf.Username)
 	if c.Name == "" {
-		exit(fmt.Errorf("please specify your desired username in %s", configUsername))
+		exit(fmt.Errorf("please specify your desired username in %s", confFile))
 	}
-	notifCmd, err := shlex.Split(string(rnotifCmd))
+	notifCmd, err := shlex.Split(notifyCmd)
 	if err != nil {
 		exit(err)
 	}
 
-	if len(raddress) == 0 {
-		exit(fmt.Errorf("please specify the server ip:port in %s", configServer))
+	if len(appConf.ServerAddress) == 0 {
+		exit(fmt.Errorf("please specify the server ip:port in %s", confFile))
 	}
 
-	bc := tcp.Config{Domain: strings.TrimSpace(string(raddress))}
+	bc := tcp.Config{Domain: strings.TrimSpace(appConf.ServerAddress)}
 	c.Framed = false
 	c.Proto = channel.ProtoBinary
 	c.ServerURL = "http://" + bc.Domain
@@ -269,13 +233,13 @@ func main() {
 		vars.ChatChannel,
 	}
 
-	c.History = true
+	c.History = uint16(appConf.MaxMessages)
 	if mode == modeMusic {
 		if isNonInteractive {
 			exit(errors.New("music can only be used with an interactive terminal"))
 		}
 
-		c.History = false
+		c.History = 0
 		c.Channels = []string{
 			vars.MusicChannel,
 			vars.MusicStateChannel,
@@ -286,7 +250,7 @@ func main() {
 	}
 
 	if mode == modeUpload {
-		c.History = false
+		c.History = 0
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
 
@@ -306,7 +270,7 @@ func main() {
 	}
 
 	if oneOff != "" || isNonInteractive {
-		c.History = false
+		c.History = 0
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
 		c.Channels = []string{}
@@ -342,7 +306,7 @@ func main() {
 	if mode == modeMusic {
 		indent = 2
 	}
-	tui := ui.Term(mode == modeDefault, indent, mode == modeMusic)
+	tui := ui.Term(mode == modeDefault, appConf.MaxMessages, indent, mode == modeMusic)
 	handler := terminal.New(tui)
 	tcp, err := tcp.New(bc)
 	exit(err)

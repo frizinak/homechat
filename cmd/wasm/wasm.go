@@ -179,7 +179,7 @@ func main() {
 			},
 			Proto:   channel.ProtoJSON,
 			Framed:  true,
-			History: true,
+			History: 100,
 		}
 		c = client.New(backend, handler, handler, conf)
 

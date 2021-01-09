@@ -92,7 +92,7 @@ type Config struct {
 	Channels  []string
 	Proto     channel.Proto
 	Framed    bool
-	History   bool
+	History   uint16
 }
 
 func New(b Backend, h Handler, log Logger, c Config) *Client {
@@ -234,8 +234,8 @@ func (c *Client) connect() (Conn, error) {
 	c.handler.HandleName(c.c.Name)
 	c.sem.Unlock()
 
-	if c.c.History {
-		if err = c.Send(vars.HistoryChannel, historydata.New(1000)); err != nil {
+	if c.c.History > 0 {
+		if err = c.Send(vars.HistoryChannel, historydata.New(c.c.History)); err != nil {
 			return conn, err
 		}
 	}
