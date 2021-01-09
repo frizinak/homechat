@@ -56,8 +56,10 @@ func (u Unit) Format() string {
 	return "%.2f"
 }
 
-var order = []Unit{B, KiB, MiB, GiB}
-var ZeroBytes = NewBytes(0, B)
+var (
+	order     = []Unit{B, KiB, MiB, GiB}
+	ZeroBytes = NewBytes(0, B)
+)
 
 type Bytes struct {
 	value float64

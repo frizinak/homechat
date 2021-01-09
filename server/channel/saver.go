@@ -17,8 +17,7 @@ type Saver interface {
 
 type Decoder = func(r *binary.Reader) (Msg, error)
 
-type NoSave struct {
-}
+type NoSave struct{}
 
 type DecoderVersion string
 

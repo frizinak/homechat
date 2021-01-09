@@ -32,6 +32,7 @@ func (l Log) JSON(r io.Writer) error { return errors.New("not implemented") }
 func (l Log) FromBinary(r *binary.Reader) (channel.Msg, error) {
 	return l, errors.New("not implemented")
 }
+
 func (l Log) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 	return l, r, errors.New("not implemented")
 }

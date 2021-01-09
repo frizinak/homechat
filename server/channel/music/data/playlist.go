@@ -46,6 +46,7 @@ func (m ServerPlaylistMessage) JSON(w io.Writer) error {
 func (m ServerPlaylistMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
 	return BinaryServerPlaylistMessage(r)
 }
+
 func (m ServerPlaylistMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 	return JSONServerPlaylistMessage(r)
 }

@@ -48,6 +48,7 @@ func (m ServerStateMessage) JSON(w io.Writer) error {
 func (m ServerStateMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
 	return BinaryServerStateMessage(r)
 }
+
 func (m ServerStateMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 	return JSONServerStateMessage(r)
 }
@@ -85,6 +86,7 @@ func (m ServerSongMessage) JSON(w io.Writer) error {
 func (m ServerSongMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
 	return BinaryServerSongMessage(r)
 }
+
 func (m ServerSongMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 	return JSONServerSongMessage(r)
 }

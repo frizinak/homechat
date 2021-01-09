@@ -27,20 +27,20 @@ type Limit struct {
 func (l Limit) LimitReader() int64 { return l.max }
 func Limiter(n int64) Limit        { return Limit{n} }
 
-type SendOnlyChannel struct {
-}
+type SendOnlyChannel struct{}
 
 func (s SendOnlyChannel) LimitReader() int64 { return 0 }
 func (s SendOnlyChannel) HandleBIN(cl Client, r *binary.Reader) error {
 	return errors.New("this channel can not receive messages")
 }
+
 func (s SendOnlyChannel) HandleJSON(cl Client, r io.Reader) (io.Reader, error) {
 	return r, errors.New("this channel can not receive messages")
 }
 
 type Sender interface {
 	Broadcast(ClientFilter, Msg) error
-	//BroadcastError(ClientFilter, error) error
+	// BroadcastError(ClientFilter, error) error
 	BroadcastBatch([]Batch) error
 }
 

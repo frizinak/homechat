@@ -149,7 +149,7 @@ func (c *ChatChannel) botMessage(cl channel.Client, m data.Message) error {
 }
 
 func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) []channel.Batch {
-	var b = make([]channel.Batch, 0, 1)
+	b := make([]channel.Batch, 0, 1)
 	var f channel.ClientFilter
 	f.Channel = c.channel
 

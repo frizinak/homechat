@@ -170,7 +170,7 @@ func main() {
 
 	store := filepath.Join(appConf.Directory, "chat.log")
 	uploads := filepath.Join(appConf.Directory, "uploads")
-	os.MkdirAll(uploads, 0700)
+	os.MkdirAll(uploads, 0o700)
 
 	addr := strings.Split(appConf.HTTPAddr, ":")
 	if len(addr) != 2 {

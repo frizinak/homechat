@@ -145,8 +145,8 @@ var (
 	clrStatus = []byte("\033[40;37m")
 	clrUser   = []byte("\033[40;37m")
 	clrReset  = []byte("\033[0m")
-	//clrBot    = []byte("\033[40;37m")
-	//clrBot       = []byte("\033[40;37m")
+	// clrBot    = []byte("\033[40;37m")
+	// clrBot       = []byte("\033[40;37m")
 	clrMusicSeek = []byte("\033[1;32m")
 	clrMusicIcon = []byte("\033[1;32m")
 )
@@ -203,7 +203,7 @@ func (ui *TermUI) Flush() {
 		nmsgs = 0
 	}
 
-	pad := func(n string, padchr string, total int) string {
+	pad := func(n, padchr string, total int) string {
 		width := runewidth.StringWidth(n)
 		padwidth := runewidth.StringWidth(padchr)
 		count := total - width
@@ -221,7 +221,7 @@ func (ui *TermUI) Flush() {
 		return n + string(b)
 	}
 
-	suffpref := func(prefix, suffix string, str string) string {
+	suffpref := func(prefix, suffix, str string) string {
 		if prefix == "" && suffix == "" {
 			return str
 		}

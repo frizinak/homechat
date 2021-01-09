@@ -52,8 +52,7 @@ type Msg interface {
 	FromJSON(io.Reader) (Msg, io.Reader, error)
 }
 
-type NeverEqual struct {
-}
+type NeverEqual struct{}
 
 func (n *NeverEqual) Equal(Msg) bool { return false }
 
@@ -179,7 +178,7 @@ func JSON(r io.Reader, data interface{}) (io.Reader, error) {
 		return r, err
 	}
 
-	//if !d.More() { // will cause a read, nooope
+	// if !d.More() { // will cause a read, nooope
 
 	// Is this correct? docs are not very clear.
 	// But even if correct, it might not be as optimal as just

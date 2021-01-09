@@ -30,8 +30,10 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-var fileRE = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
-var errProto = errors.New("unsupported protocol version")
+var (
+	fileRE   = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
+	errProto = errors.New("unsupported protocol version")
+)
 
 const (
 	clientJobBuf = 50
@@ -255,7 +257,7 @@ func (s *Server) BroadcastBatch(b []channel.Batch) error {
 }
 
 func (s *Server) Broadcast(f channel.ClientFilter, m channel.Msg) error {
-	return s.BroadcastBatch([]channel.Batch{channel.Batch{f, m}})
+	return s.BroadcastBatch([]channel.Batch{{f, m}})
 }
 
 func (s *Server) MustSetUserUpdateHandler(h channel.UserUpdateHandler) {
@@ -378,7 +380,7 @@ func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
 	hsh := fnv.New64()
 	hsh.Write(inp.Bytes())
 	h := hsh.Sum(nil)
-	hstr := base64.RawURLEncoding.EncodeToString(h[:])
+	hstr := base64.RawURLEncoding.EncodeToString(h)
 
 	webfile := fmt.Sprintf("%s/%s", hstr, fn)
 	fn = fmt.Sprintf("%s-%s", hstr, fn)

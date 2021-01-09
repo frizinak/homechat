@@ -130,7 +130,7 @@ func main() {
 	if configDir == "" {
 		exit(errors.New("please specify a config directory"))
 	}
-	os.MkdirAll(configDir, 0755)
+	os.MkdirAll(configDir, 0o755)
 	configNotify := filepath.Join(configDir, "notify")
 	configUsername := filepath.Join(configDir, "username")
 	configServer := filepath.Join(configDir, "server")
@@ -379,7 +379,7 @@ func main() {
 					tui.GetInput(),
 					"@",
 					client.Users().Names(),
-					map[string]struct{}{client.Name(): struct{}{}},
+					map[string]struct{}{client.Name(): {}},
 				)
 				if n != "" {
 					tui.SetInput(n)
@@ -482,7 +482,6 @@ func main() {
 			},
 		},
 	)
-
 	if err != nil {
 		exit(err)
 	}

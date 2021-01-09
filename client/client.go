@@ -146,7 +146,7 @@ func (c *Client) Close() {
 	c.disconnect()
 }
 
-func (c *Client) Upload(chnl string, filename, msg string, r io.Reader) error {
+func (c *Client) Upload(chnl, filename, msg string, r io.Reader) error {
 	if err := c.Send(chnl, uploaddata.NewMessage(filename, msg, r)); err != nil {
 		return err
 	}

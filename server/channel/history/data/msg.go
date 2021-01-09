@@ -47,6 +47,7 @@ type ServerMessage struct {
 func (m ServerMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
 	return BinaryServerMessage(r)
 }
+
 func (m ServerMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 	return JSONServerMessage(r)
 }
