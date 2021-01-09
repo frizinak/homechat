@@ -53,10 +53,13 @@ func main() {
 	}
 
 	var configDir string
+	var confFile string
 	var uploadMsg string
 	var uploadFile string
 
 	var linemode bool
+
+	appConf := &Config{}
 
 	out := os.Stdout
 	chatFlags := flag.NewFlagSet("chat", flag.ExitOnError)
@@ -67,6 +70,8 @@ func main() {
 	uploadFlags := flag.NewFlagSet("upload", flag.ExitOnError)
 	uploadFlags.SetOutput(out)
 	uploadFlags.StringVar(&uploadMsg, "m", "Download: ", "prefix upload url with this message")
+	configFlags := flag.NewFlagSet("config", flag.ExitOnError)
+	configFlags.SetOutput(out)
 
 	flag.CommandLine.SetOutput(out)
 	flag.StringVar(&configDir, "c", defaultDir, "config directory")
@@ -77,6 +82,7 @@ func main() {
 		fmt.Fprintln(out, "  - chat | <empty>: Chat client")
 		fmt.Fprintln(out, "  - music:          Music client")
 		fmt.Fprintln(out, "  - upload:         Upload a file from stdin or commandline to chat")
+		fmt.Fprintln(out, "  - config:         Config options explained")
 		fmt.Fprintln(out, "  - version:        Print version and exit")
 	}
 	chatFlags.Usage = func() {
@@ -103,6 +109,10 @@ func main() {
 		fmt.Fprintln(out, " - homechat upload <filepath>")
 		fmt.Fprintln(out, " - command | homechat upload")
 	}
+	configFlags.Usage = func() {
+		fmt.Fprintf(out, "Config file used: '%s'\n\n", confFile)
+		exit(appConf.Help(out))
+	}
 	flag.Parse()
 
 	if configDir == "" {
@@ -110,10 +120,14 @@ func main() {
 	}
 	os.MkdirAll(configDir, 0o755)
 
-	confFile := filepath.Join(configDir, "client.json")
+	confFile = filepath.Join(configDir, "client.json")
 	keymapFile := filepath.Join(configDir, "keymap.json")
 
-	appConf := &Config{}
+	if flag.Arg(0) == "config" {
+		configFlags.Usage()
+		os.Exit(0)
+	}
+
 	if err := appConf.Decode(confFile); err != nil {
 		if os.IsNotExist(err) {
 			exit(appConf.Encode(confFile))
@@ -125,6 +139,7 @@ func main() {
 	notifyCmd := "notify-send 'HomeChat' '%u: %m'"
 	resave := appConf.Merge(&Config{
 		NotifyCommand: &notifyCmd,
+		NotifyWhen:    NotifyDefault,
 		ServerAddress: "",
 		Username:      "",
 		MaxMessages:   250,
@@ -190,6 +205,12 @@ func main() {
 
 	if len(appConf.ServerAddress) == 0 {
 		exit(fmt.Errorf("please specify the server ip:port in %s", confFile))
+	}
+
+	switch appConf.NotifyWhen {
+	case NotifyDefault, NotifyAlways:
+	default:
+		exit(fmt.Errorf("please specify a valid NotifyWhen in %s", confFile))
 	}
 
 	bc := tcp.Config{Domain: strings.TrimSpace(appConf.ServerAddress)}
@@ -498,9 +519,15 @@ func main() {
 		for {
 			select {
 			case msg := <-msgs:
-				if c.Name != msg.From && msg.Notify {
-					lmsg = &msg
+				if c.Name == msg.From || msg.NotifyNever() {
+					break
 				}
+
+				if appConf.NotifyWhen == NotifyDefault && !msg.NotifyPersonal() {
+					break
+				}
+
+				lmsg = &msg
 			case <-after:
 				if lmsg == nil {
 					after = time.After(time.Millisecond * 500)

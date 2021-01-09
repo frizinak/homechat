@@ -1,6 +1,10 @@
 package ui
 
-import "time"
+import (
+	"time"
+
+	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
+)
 
 type Highlight byte
 
@@ -16,8 +20,16 @@ type Msg struct {
 	From      string
 	Stamp     time.Time
 	Message   string
-	Notify    bool
+	Notify    chatdata.Notify
 	Highlight Highlight
+}
+
+func (m Msg) NotifyPersonal() bool {
+	return m.Notify&chatdata.NotifyPersonal != 0
+}
+
+func (m Msg) NotifyNever() bool {
+	return m.Notify&chatdata.NotifyNever != 0
 }
 
 type State struct {

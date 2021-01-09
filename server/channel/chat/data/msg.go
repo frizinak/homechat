@@ -43,23 +43,28 @@ func JSONMessage(r io.Reader) (Message, io.Reader, error) {
 	return c, nr, err
 }
 
+type Notify byte
+
+const (
+	NotifyDefault  Notify = 0
+	NotifyPersonal Notify = 1 << iota
+	NotifyNever
+)
+
 type ServerMessage struct {
 	Message
 
 	From   string    `json:"from"`
 	Stamp  time.Time `json:"stamp"`
 	PM     string    `json:"pm"`
-	Notify bool      `json:"notify"`
+	Notify Notify    `json:"notify"`
 	Bot    bool      `json:"bot"`
 
 	*channel.NeverEqual
 }
 
 func (m ServerMessage) Binary(w *binary.Writer) error {
-	var notify, bot byte
-	if m.Notify {
-		notify = 1
-	}
+	var bot byte
 	if m.Bot {
 		bot = 1
 	}
@@ -71,7 +76,7 @@ func (m ServerMessage) Binary(w *binary.Writer) error {
 	w.WriteString(m.From, 8)
 	w.WriteUint64(uint64(m.Stamp.Unix()))
 	w.WriteString(m.PM, 8)
-	w.WriteUint8(notify)
+	w.WriteUint8(byte(m.Notify))
 	w.WriteUint8(bot)
 	return w.Err()
 }
@@ -97,7 +102,7 @@ func BinaryServerMessage(r *binary.Reader) (msg ServerMessage, err error) {
 	msg.From = r.ReadString(8)
 	msg.Stamp = time.Unix(int64(r.ReadUint64()), 0)
 	msg.PM = r.ReadString(8)
-	msg.Notify = r.ReadUint8() == 1
+	msg.Notify = Notify(r.ReadUint8())
 	msg.Bot = r.ReadUint8() == 1
 	return msg, r.Err()
 }

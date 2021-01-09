@@ -1,8 +1,8 @@
 package vars
 
 const (
-	Version         = "0.1.6"
-	ProtocolVersion = "1012"
+	Version         = "0.1.7"
+	ProtocolVersion = "1013"
 
 	ChatChannel    = "c"  // rw
 	HistoryChannel = "h"  // rw

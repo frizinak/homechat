@@ -77,7 +77,7 @@ func (c *ChatChannel) UserUpdate(cl channel.Client, r channel.ConnectionReason) 
 
 func (c *ChatChannel) FromHistory(to channel.Client, l history.Log) ([]channel.Batch, error) {
 	msg := l.Msg.(data.Message)
-	_b := c.batch(false, l.From, msg)
+	_b := c.batch(data.NotifyNever, l.From, msg)
 	b := make([]channel.Batch, 0, len(_b))
 	for _, bat := range _b {
 		f := bat.Filter
@@ -99,7 +99,7 @@ func (c *ChatChannel) DecodeHistoryItem(r *binary.Reader) (channel.Msg, error) {
 
 func (c *ChatChannel) handle(cl channel.Client, m data.Message) error {
 	c.hist.AddLog(cl, m)
-	b := c.batch(true, cl, m)
+	b := c.batch(data.NotifyDefault, cl, m)
 
 	var gerr error
 	for _, bat := range b {
@@ -148,14 +148,14 @@ func (c *ChatChannel) botMessage(cl channel.Client, m data.Message) error {
 	return c.handle(channel.NewBot(name), data.Message{Data: d})
 }
 
-func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) []channel.Batch {
+func (c *ChatChannel) batch(notify data.Notify, cl channel.Client, m data.Message) []channel.Batch {
 	b := make([]channel.Batch, 0, 1)
 	var f channel.ClientFilter
 	f.Channel = c.channel
 
 	fromBot := cl.Bot()
 	if fromBot {
-		notify = false
+		notify |= data.NotifyNever
 	}
 
 	msg := channel.StripUnprintable(m.Data)
@@ -164,6 +164,7 @@ func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) []ch
 		Stamp:   time.Now(),
 		Message: data.Message{Data: msg},
 		Bot:     fromBot,
+		Notify:  notify,
 	}
 
 	if len(s.Data) > 0 && s.Data[0] == ':' {
@@ -173,7 +174,7 @@ func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) []ch
 	}
 
 	if len(s.Data) > 0 && s.Data[0] == '!' {
-		s.Notify = notify
+		s.Notify = notify | data.NotifyPersonal
 	}
 
 	if len(s.Data) > 0 && s.Data[0] == '@' {
@@ -185,11 +186,11 @@ func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) []ch
 				s.Data = p[1]
 			}
 			s.PM = p[0][1:]
-			s.Notify = notify
+			s.Notify = notify | data.NotifyPersonal
 			b = append(b, channel.Batch{f, s})
 
 			f.To = []string{s.From}
-			s.Notify = false
+			s.Notify = notify | data.NotifyNever
 			b = append(b, channel.Batch{f, s})
 
 			return b
@@ -211,12 +212,12 @@ func (c *ChatChannel) batch(notify bool, cl channel.Client, m data.Message) []ch
 		}
 
 		f.To = mentionNames
-		s.Notify = notify
+		s.Notify = notify | data.NotifyPersonal
 		b = append(b, channel.Batch{f, s})
 
 		f.NotTo = mentionNames
 		f.To = nil
-		s.Notify = false
+		s.Notify = notify | data.NotifyNever
 		b = append(b, channel.Batch{f, s})
 		return b
 	}
