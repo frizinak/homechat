@@ -63,7 +63,7 @@ func (h *Handler) HandleMusicMessage(m musicdata.ServerMessage) error {
 
 func (h *Handler) HandleMusicStateMessage(m client.MusicState) error {
 	h.musicState <- ui.State{
-		Song:     m.Song,
+		Song:     m.Title,
 		Paused:   m.Paused,
 		Position: m.Position,
 		Duration: m.Duration,
@@ -139,7 +139,9 @@ func (h *Handler) Run(notify chan ui.Msg) {
 			}
 
 			msgsBatch <- m
-			notify <- m
+			if notify != nil {
+				notify <- m
+			}
 		}
 	}()
 

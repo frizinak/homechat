@@ -69,13 +69,17 @@ func JSONServerStateMessage(r io.Reader) (ServerStateMessage, io.Reader, error) 
 }
 
 type ServerSongMessage struct {
-	Song string `json:"song"`
+	NS    string `json:"ns"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
 
 func (m ServerSongMessage) Equal(msg channel.Msg) bool { return m == msg }
 
 func (m ServerSongMessage) Binary(w *binary.Writer) error {
-	w.WriteString(m.Song, 8)
+	w.WriteString(m.NS, 8)
+	w.WriteString(m.ID, 8)
+	w.WriteString(m.Title, 8)
 	return w.Err()
 }
 
@@ -93,7 +97,9 @@ func (m ServerSongMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error)
 
 func BinaryServerSongMessage(r *binary.Reader) (ServerSongMessage, error) {
 	c := ServerSongMessage{}
-	c.Song = r.ReadString(8)
+	c.NS = r.ReadString(8)
+	c.ID = r.ReadString(8)
+	c.Title = r.ReadString(8)
 	return c, r.Err()
 }
 
