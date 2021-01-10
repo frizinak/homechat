@@ -262,6 +262,7 @@ func main() {
 
 		c.History = 0
 		c.Channels = []string{
+			vars.UserChannel,
 			vars.MusicChannel,
 			vars.MusicStateChannel,
 			vars.MusicSongChannel,
