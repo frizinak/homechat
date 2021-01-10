@@ -11,13 +11,13 @@ import (
 type NotifyWhen string
 
 const (
-	NotifyDefault = "default"
-	NotifyAlways  = "always"
+	NotifyDefault NotifyWhen = "default"
+	NotifyAlways  NotifyWhen = "always"
 )
 
 type Config struct {
 	NotifyCommand *string
-	NotifyWhen    string
+	NotifyWhen    NotifyWhen
 	ServerAddress string
 	Username      string
 	MaxMessages   int

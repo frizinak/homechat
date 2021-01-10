@@ -9,11 +9,11 @@ type KeyHandler func() bool
 
 type Action string
 
-func (a Action) Mode() mode {
+func (a Action) Mode() Mode {
 	if strings.HasPrefix(string(a), "music-") {
-		return modeMusic
+		return ModeMusic
 	}
-	return modeDefault
+	return ModeDefault
 }
 
 const (
@@ -107,15 +107,15 @@ func Simple(cb func()) KeyHandler {
 
 type Keys struct {
 	funcs  map[Action]KeyHandler
-	keymap map[bool]map[mode]map[byte]Action
+	keymap map[bool]map[Mode]map[byte]Action
 	escape byte
 }
 
 func NewKeys(keyMap map[Action]string, actionMap map[Action]KeyHandler) (*Keys, error) {
-	keys := &Keys{funcs: actionMap, keymap: make(map[bool]map[mode]map[byte]Action)}
+	keys := &Keys{funcs: actionMap, keymap: make(map[bool]map[Mode]map[byte]Action)}
 
-	keys.keymap[true] = make(map[mode]map[byte]Action)
-	keys.keymap[false] = make(map[mode]map[byte]Action)
+	keys.keymap[true] = make(map[Mode]map[byte]Action)
+	keys.keymap[false] = make(map[Mode]map[byte]Action)
 	for a, k := range keyMap {
 		if _, ok := actionMap[a]; !ok {
 			return nil, fmt.Errorf("key mapped to missing action: %s: %s", k, a)
@@ -141,7 +141,7 @@ func NewKeys(keyMap map[Action]string, actionMap map[Action]KeyHandler) (*Keys, 
 	return keys, nil
 }
 
-func (k *Keys) Do(mod mode, n byte) (print bool) {
+func (k *Keys) Do(mode Mode, n byte) (print bool) {
 	print = true
 
 	switch n {
@@ -167,16 +167,16 @@ func (k *Keys) Do(mod mode, n byte) (print bool) {
 	}
 
 	var ok bool
-	ok, print = k.do(mod, n)
-	if ok || mod == modeDefault {
+	ok, print = k.do(mode, n)
+	if ok || mode == ModeDefault {
 		return
 	}
 
-	_, print = k.do(modeDefault, n)
+	_, print = k.do(ModeDefault, n)
 	return print
 }
 
-func (k *Keys) do(mode mode, n byte) (bool, bool) {
+func (k *Keys) do(mode Mode, n byte) (bool, bool) {
 	m := k.keymap[k.escape == 3]
 	if modemap, ok := m[mode]; ok {
 		if a, ok := modemap[n]; ok {
