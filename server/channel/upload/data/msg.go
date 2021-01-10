@@ -11,7 +11,6 @@ type Message struct {
 	Filename string
 	Message  string
 	Size     int64
-	Hash     []byte
 
 	r io.Reader
 

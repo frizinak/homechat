@@ -36,6 +36,7 @@ type Handler interface {
 	HandleMusicMessage(musicdata.ServerMessage) error
 	HandleMusicStateMessage(MusicState) error
 	HandleUsersMessage(usersdata.ServerMessage, Users) error
+	HandleMusicNodeMessage(musicdata.SongDataMessage) error
 }
 
 type User struct {
@@ -138,6 +139,10 @@ func (c *Client) Chat(msg string) error {
 
 func (c *Client) Music(msg string) error {
 	return c.Send(vars.MusicChannel, musicdata.Message{Command: msg})
+}
+
+func (c *Client) MusicDownload(ns, id string) error {
+	return c.Send(vars.MusicNodeChannel, musicdata.NodeMessage{ns, id})
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {
@@ -533,6 +538,12 @@ func (c *Client) Run() error {
 				return r, nil
 			}
 			c.log.Flash(msg.Err)
+		case vars.MusicNodeChannel:
+			msg, r, err = c.read(r, musicdata.SongDataMessage{})
+			if err != nil {
+				return r, err
+			}
+			return r, c.handler.HandleMusicNodeMessage(msg.(musicdata.SongDataMessage))
 		default:
 			return r, fmt.Errorf("received unknown message type: '%s'", chnl)
 		}

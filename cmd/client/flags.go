@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +18,7 @@ import (
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
+	"github.com/frizinak/libym/di"
 	"github.com/google/shlex"
 )
 
@@ -26,6 +29,7 @@ const (
 	ModeMusic
 	ModeUpload
 	ModeFingerprint
+	ModeMusicNode
 )
 
 type Flags struct {
@@ -34,6 +38,7 @@ type Flags struct {
 	All struct {
 		Key        *crypto.Key
 		ConfigDir  string
+		CacheDir   string
 		ConfigFile string
 		KeymapFile string
 		Linemode   bool
@@ -50,6 +55,10 @@ type Flags struct {
 		Msg  string
 		File string
 	}
+	MusicNode struct {
+		CacheDir   string
+		LowLatency bool
+	}
 
 	flags struct {
 		chat        *flag.FlagSet
@@ -57,22 +66,25 @@ type Flags struct {
 		upload      *flag.FlagSet
 		config      *flag.FlagSet
 		fingerprint *flag.FlagSet
+		musicnode   *flag.FlagSet
 	}
 
-	AppConf    *Config
-	ClientConf client.Config
-	TCPConf    tcp.Config
-	WSConf     ws.Config
+	AppConf         *Config
+	ClientConf      client.Config
+	TCPConf         tcp.Config
+	WSConf          ws.Config
+	MusicNodeConfig di.Config
 
 	Keymap Keymap
 }
 
-func NewFlags(output io.Writer, defaultConfigDir string, interactive bool) *Flags {
+func NewFlags(output io.Writer, defaultConfigDir, defaultCacheDir string, interactive bool) *Flags {
 	f := &Flags{
 		out:     output,
 		AppConf: &Config{},
 	}
 	f.All.ConfigDir = defaultConfigDir
+	f.All.CacheDir = defaultCacheDir
 	f.All.Interactive = interactive
 
 	return f
@@ -101,6 +113,10 @@ func (f *Flags) Flags() {
 	f.flags.fingerprint = flag.NewFlagSet("fingerprint", flag.ExitOnError)
 	f.flags.fingerprint.SetOutput(f.out)
 
+	f.flags.musicnode = flag.NewFlagSet("musicnode", flag.ExitOnError)
+	f.flags.musicnode.BoolVar(&f.MusicNode.LowLatency, "low-latency", false, "Enable low latency mode")
+	f.flags.musicnode.SetOutput(f.out)
+
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
 
@@ -113,6 +129,7 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "  - upload:         Upload a file from stdin or commandline to chat")
 		fmt.Fprintln(f.out, "  - config:         Config options explained")
 		fmt.Fprintln(f.out, "  - fingerprint:    Show your and the server's trusted publickey fingerprint")
+		fmt.Fprintln(f.out, "  - musicnode:      Run a music node")
 		fmt.Fprintln(f.out, "  - version:        Print version and exit")
 	}
 	f.flags.chat.Usage = func() {
@@ -148,6 +165,10 @@ func (f *Flags) Flags() {
 	f.flags.fingerprint.Usage = func() {
 		fmt.Fprintln(f.out, "Show your and the server's trusted publickey fingerprint")
 		f.flags.fingerprint.PrintDefaults()
+	}
+	f.flags.musicnode.Usage = func() {
+		f.flags.musicnode.PrintDefaults()
+		fmt.Fprintln(f.out, "Run a music node")
 	}
 }
 
@@ -228,6 +249,15 @@ func (f *Flags) Parse() error {
 		vars.ChatChannel,
 	}
 
+	f.MusicNode.CacheDir = filepath.Join(f.All.CacheDir, "musicnode")
+	f.MusicNodeConfig = di.Config{
+		Log:           log.New(os.Stdout, "", 0),
+		StorePath:     f.MusicNode.CacheDir,
+		BackendLogger: ioutil.Discard,
+		AutoSave:      true,
+		SimpleOutput:  ioutil.Discard,
+	}
+
 	switch f.All.Mode {
 	case ModeDefault:
 	case ModeMusic:
@@ -248,6 +278,19 @@ func (f *Flags) Parse() error {
 	case ModeUpload:
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{}
+	case ModeMusicNode:
+		os.MkdirAll(f.MusicNode.CacheDir, 0o755)
+		f.ClientConf.Name += "-music-node"
+		f.ClientConf.History = 0
+		f.ClientConf.Channels = []string{
+			vars.PingChannel,
+			vars.MusicChannel,
+			vars.MusicStateChannel,
+			vars.MusicSongChannel,
+			vars.MusicPlaylistChannel,
+			vars.MusicNodeChannel,
+		}
+
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
@@ -376,6 +419,11 @@ func (f *Flags) parseCommand() error {
 	case "fingerprint":
 		f.All.Mode = ModeFingerprint
 		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
+			return err
+		}
+	case "musicnode":
+		f.All.Mode = ModeMusicNode
+		if err := f.flags.musicnode.Parse(args[1:]); err != nil {
 			return err
 		}
 	case "version":

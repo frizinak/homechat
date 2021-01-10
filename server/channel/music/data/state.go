@@ -34,8 +34,8 @@ func (m ServerStateMessage) Binary(w channel.BinaryWriter) error {
 	vol := uint8(255 * m.Volume)
 
 	w.WriteUint8(pause)
-	w.WriteUint32(uint32(m.Position / time.Second))
-	w.WriteUint32(uint32(m.Duration / time.Second))
+	w.WriteUint32(uint32(m.Position / time.Millisecond))
+	w.WriteUint32(uint32(m.Duration / time.Millisecond))
 	w.WriteUint8(vol)
 	return w.Err()
 }
@@ -55,8 +55,8 @@ func (m ServerStateMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error
 func BinaryServerStateMessage(r channel.BinaryReader) (ServerStateMessage, error) {
 	c := ServerStateMessage{}
 	c.Paused = r.ReadUint8() == 1
-	c.Position = time.Second * time.Duration(r.ReadUint32())
-	c.Duration = time.Second * time.Duration(r.ReadUint32())
+	c.Position = time.Millisecond * time.Duration(r.ReadUint32())
+	c.Duration = time.Millisecond * time.Duration(r.ReadUint32())
 	c.Volume = float64(r.ReadUint8()) / 255
 	return c, r.Err()
 }

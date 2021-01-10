@@ -66,6 +66,10 @@ func (h *Handler) HandleMusicMessage(m musicdata.ServerMessage) error {
 	return nil
 }
 
+func (h *Handler) HandleMusicNodeMessage(musicdata.SongDataMessage) error {
+	return nil
+}
+
 func (h *Handler) HandleMusicStateMessage(m client.MusicState) error {
 	h.musicState <- ui.State{
 		Song:     m.Title,

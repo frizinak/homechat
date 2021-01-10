@@ -301,6 +301,7 @@ func serve(flock flock, f *Flags) error {
 	s.MustAddChannel(vars.MusicSongChannel, music.SongChannel())
 	s.MustAddChannel(vars.MusicPlaylistChannel, music.PlaylistChannel())
 	s.MustAddChannel(vars.MusicErrorChannel, musicErr)
+	s.MustAddChannel(vars.MusicNodeChannel, music.NodeChannel())
 
 	s.MustSetUserUpdateHandler(channel.MultiUserUpdateHandler(users, chat))
 

@@ -15,6 +15,7 @@ const (
 	MusicSongChannel     = "<"  // r
 	MusicPlaylistChannel = "-"  // r
 	MusicErrorChannel    = "mr" // r
+	MusicNodeChannel     = "mn" // rw
 
 	EOFChannel = "eof"
 

@@ -755,7 +755,6 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 
 		reader, err = do(reader, c, h)
 		if err != nil {
-			panic(err)
 			return fmt.Errorf("channel %s: %w", chnl.Data, err)
 		}
 	}

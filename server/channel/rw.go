@@ -57,8 +57,7 @@ func NewRWFactory(debug io.Writer) RWFactory {
 	return &defaultRWFactory{}
 }
 
-type defaultRWFactory struct {
-}
+type defaultRWFactory struct{}
 
 func (d *defaultRWFactory) Reader(r io.Reader) io.Reader          { return r }
 func (d *defaultRWFactory) Writer(w io.Writer) io.Writer          { return w }

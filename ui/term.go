@@ -184,6 +184,7 @@ func (ui *TermUI) Flush() {
 	ui.sem.Lock()
 	defer ui.sem.Unlock()
 	size, err := console.Current().Size()
+	// todo
 	if err != nil {
 		panic(err)
 	}
