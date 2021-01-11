@@ -59,14 +59,18 @@ type ServerMessage struct {
 	PM     string    `json:"pm"`
 	Notify Notify    `json:"notify"`
 	Bot    bool      `json:"bot"`
+	Shout  bool      `json:"shout"`
 
 	*channel.NeverEqual
 }
 
 func (m ServerMessage) Binary(w *binary.Writer) error {
-	var bot byte
+	var bot, shout byte
 	if m.Bot {
 		bot = 1
+	}
+	if m.Shout {
+		shout = 1
 	}
 
 	if err := m.Message.Binary(w); err != nil {
@@ -78,6 +82,7 @@ func (m ServerMessage) Binary(w *binary.Writer) error {
 	w.WriteString(m.PM, 8)
 	w.WriteUint8(byte(m.Notify))
 	w.WriteUint8(bot)
+	w.WriteUint8(shout)
 	return w.Err()
 }
 
@@ -104,6 +109,7 @@ func BinaryServerMessage(r *binary.Reader) (msg ServerMessage, err error) {
 	msg.PM = r.ReadString(8)
 	msg.Notify = Notify(r.ReadUint8())
 	msg.Bot = r.ReadUint8() == 1
+	msg.Shout = r.ReadUint8() == 1
 	return msg, r.Err()
 }
 

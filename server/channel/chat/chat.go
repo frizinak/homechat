@@ -97,6 +97,22 @@ func (c *ChatChannel) DecodeHistoryItem(r *binary.Reader) (channel.Msg, error) {
 	return data.BinaryMessage(r)
 }
 
+func (c *ChatChannel) isShout(str string) (int, bool) {
+	return 1, len(str) != 0 && str[0] == '!'
+}
+
+func (c *ChatChannel) isToBot(str string) (n int, bot, silent bool) {
+	bot = len(str) != 0 && str[0] == '/'
+	silent = bot && len(str) > 1 && str[1] == '/'
+	switch {
+	case silent:
+		n = 2
+	case bot:
+		n = 1
+	}
+	return
+}
+
 func (c *ChatChannel) handle(cl channel.Client, m data.Message) error {
 	c.hist.AddLog(cl, m)
 	b := c.batch(data.NotifyDefault, cl, m)
@@ -108,12 +124,14 @@ func (c *ChatChannel) handle(cl channel.Client, m data.Message) error {
 		}
 	}
 
-	if len(m.Data) == 0 || (m.Data[0] != ':' && m.Data[0] != '/') {
+	n, isToBot, silent := c.isToBot(m.Data)
+	if !isToBot {
 		return gerr
 	}
 
+	m.Data = m.Data[n:]
 	go func() {
-		if err := c.botMessage(cl, m); err != nil {
+		if err := c.botMessage(cl, m, silent); err != nil {
 			c.log.Println("bot err", err)
 		}
 	}()
@@ -121,9 +139,8 @@ func (c *ChatChannel) handle(cl channel.Client, m data.Message) error {
 	return gerr
 }
 
-func (c *ChatChannel) botMessage(cl channel.Client, m data.Message) error {
-	silent := m.Data[0] == ':'
-	cmd := multiSpaceRE.Split(channel.StripUnprintable(m.Data[1:]), -1)
+func (c *ChatChannel) botMessage(cl channel.Client, m data.Message, silent bool) error {
+	cmd := multiSpaceRE.Split(channel.StripUnprintable(m.Data), -1)
 	name, d, err := c.bots.Message(cl.Name(), cmd...)
 	if err == bot.ErrNotExists {
 		return nil
@@ -167,13 +184,15 @@ func (c *ChatChannel) batch(notify data.Notify, cl channel.Client, m data.Messag
 		Notify:  notify,
 	}
 
-	if len(s.Data) > 0 && s.Data[0] == ':' {
+	if _, _, isToBotSilent := c.isToBot(s.Data); isToBotSilent {
 		f.To = []string{cl.Name()}
 		b = append(b, channel.Batch{f, s})
 		return b
 	}
 
-	if len(s.Data) > 0 && s.Data[0] == '!' {
+	if n, isShout := c.isShout(s.Data); isShout {
+		s.Data = s.Data[n:]
+		s.Shout = true
 		s.Notify = notify | data.NotifyPersonal
 	}
 

@@ -130,7 +130,7 @@ func (h *Handler) Run(notify chan ui.Msg) {
 				}
 			}
 
-			if len(m.Message) != 0 && m.Message[0] == '!' {
+			if msg.Shout {
 				m.Highlight = ui.HLActive
 			}
 
