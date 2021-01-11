@@ -73,6 +73,9 @@ func main() {
 		BandwidthIntervalSeconds: &bandwidthIntervalSeconds,
 		MaxUploadKBytes:          &maxUploadKBytes,
 
+		MaxChatMessagesOnDisk:      1000000,
+		MaxChatMessagesTransmitted: 500,
+
 		WttrCity:           "tashkent",
 		HolidayCountryCode: "UZ",
 	})
@@ -217,7 +220,7 @@ func main() {
 		panic(err)
 	}
 
-	history := history.New(100000, 1000)
+	history := history.New(appConf.MaxChatMessagesOnDisk, appConf.MaxChatMessagesTransmitted)
 	musicErr := status.New()
 	music := music.NewYM(c.Log, musicErr, appConf.YMDir)
 	chat := chat.New(c.Log, history)

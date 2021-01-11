@@ -11,8 +11,10 @@ type Config struct {
 	HTTPAddr  string
 	YMDir     string
 
-	BandwidthIntervalSeconds *int
-	MaxUploadKBytes          *int64
+	BandwidthIntervalSeconds   *int
+	MaxUploadKBytes            *int64
+	MaxChatMessagesOnDisk      int
+	MaxChatMessagesTransmitted int
 
 	WttrCity           string
 	HolidayCountryCode string
@@ -84,6 +86,14 @@ func (c *Config) Merge(def *Config) bool {
 	if c.MaxUploadKBytes == nil {
 		resave = true
 		c.MaxUploadKBytes = def.MaxUploadKBytes
+	}
+	if c.MaxChatMessagesTransmitted <= 0 {
+		resave = true
+		c.MaxChatMessagesTransmitted = def.MaxChatMessagesTransmitted
+	}
+	if c.MaxChatMessagesOnDisk <= 0 {
+		resave = true
+		c.MaxChatMessagesOnDisk = def.MaxChatMessagesOnDisk
 	}
 	return resave
 }
