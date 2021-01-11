@@ -144,11 +144,9 @@ func (s *Server) Init() error {
 	go func() {
 		for {
 			time.Sleep(saveInterval)
-			s.saveMutex.Lock()
-			if err := s.save(); err != nil {
+			if err := s.Save(); err != nil {
 				s.c.Log.Println("ERR saving ", err)
 			}
-			s.saveMutex.Unlock()
 		}
 	}()
 
@@ -307,6 +305,13 @@ func (s *Server) GetUsers(ch string) []channel.User {
 		n = append(n, channel.User{Name: name, Clients: len(cs)})
 	}
 	return n
+}
+
+func (s *Server) Save() error {
+	s.saveMutex.Lock()
+	err := s.save()
+	s.saveMutex.Unlock()
+	return err
 }
 
 func (s *Server) save() error {

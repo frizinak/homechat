@@ -10,10 +10,12 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/frizinak/gotls/simplehttp"
@@ -33,7 +35,6 @@ import (
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-
 	_confDir, err := os.UserConfigDir()
 	var confFile string
 	if err == nil {
@@ -266,6 +267,26 @@ func main() {
 	chat.AddBot("wttr", weatherBot)
 	chat.AddBot("weather", weatherBot)
 	chat.AddBot("trivia", bot.NewTriviaBot())
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	go func() {
+		<-sig
+		fmt.Println("Saving")
+		serverErr := s.Save()
+		ymErr := music.SaveCollection()
+		if serverErr != nil || ymErr != nil {
+			panic(
+				fmt.Sprintf(
+					"Error occurred when trying to save: server: %s, libym: %s",
+					serverErr,
+					ymErr,
+				),
+			)
+		}
+		fmt.Println("Saved, bye...")
+		os.Exit(0)
+	}()
 
 	fmt.Printf("Starting server on http://%s tcp://%s\n", c.HTTPAddress, c.TCPAddress)
 	if err := s.Init(); err != nil {
