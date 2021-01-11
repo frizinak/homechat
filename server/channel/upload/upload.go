@@ -22,6 +22,7 @@ type UploadChannel struct {
 
 	channel.NoSave
 	channel.Limit
+	channel.NoRunClose
 }
 
 func New(max int64, broadcastChannel *chat.ChatChannel, uploader channel.Uploader) *UploadChannel {

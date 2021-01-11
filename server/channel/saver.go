@@ -1,8 +1,8 @@
 package channel
 
 import (
-	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 
@@ -17,13 +17,7 @@ type Saver interface {
 
 type Decoder = func(r *binary.Reader) (Msg, error)
 
-type NoSave struct{}
-
 type DecoderVersion string
-
-func (ns NoSave) NeedsSave() bool        { return false }
-func (ns NoSave) Save(file string) error { return errors.New("not implemented") }
-func (ns NoSave) Load(file string) error { return nil }
 
 type BinaryHistory struct {
 	sem     sync.RWMutex
@@ -32,11 +26,73 @@ type BinaryHistory struct {
 	max     int
 	haveNew bool
 
+	appendOnlyFile   io.Closer
+	appendOnlyWriter *binary.Writer
+	app              chan Msg
+	appending        bool
+	done             chan struct{}
+
 	current DecoderVersion
 }
 
-func NewBinaryHistory(max int, current DecoderVersion, dec map[DecoderVersion]Decoder) *BinaryHistory {
-	return &BinaryHistory{data: make([]Msg, 0), max: max, dec: dec, current: current}
+func NewBinaryHistory(
+	max int,
+	appendOnlyFile string,
+	current DecoderVersion,
+	dec map[DecoderVersion]Decoder,
+) (*BinaryHistory, error) {
+	b := &BinaryHistory{
+		data:    make([]Msg, 0),
+		max:     max,
+		dec:     dec,
+		current: current,
+	}
+
+	if appendOnlyFile != "" {
+		f, err := os.OpenFile(appendOnlyFile, os.O_APPEND|os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			return b, fmt.Errorf("Could not open append only file %s: %w", appendOnlyFile, err)
+		}
+		b.appendOnlyFile = f
+		b.appendOnlyWriter = binary.NewWriter(f)
+		b.app = make(chan Msg, max)
+	}
+
+	return b, nil
+}
+
+func (g *BinaryHistory) StartAppend() error {
+	if g.app == nil {
+		return nil
+	}
+	g.done = make(chan struct{}, 1)
+	g.appending = true
+	g.appendOnlyWriter.WriteString(string(g.current), 16)
+	defer func() {
+		g.appendOnlyFile.Close()
+		g.done <- struct{}{}
+	}()
+
+	for m := range g.app {
+		if err := m.Binary(g.appendOnlyWriter); err != nil {
+			return err
+		}
+		g.appendOnlyWriter.WriteUint8(0)
+		if err := g.appendOnlyWriter.Err(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (g *BinaryHistory) StopAppend() {
+	if !g.appending {
+		return
+	}
+	g.appending = false
+	close(g.app)
+	<-g.done
 }
 
 func (g *BinaryHistory) NeedsSave() bool { return g.haveNew }
@@ -115,6 +171,9 @@ func (g *BinaryHistory) Add(d Msg) {
 	g.data = append(g.data, d)
 	if len(g.data) > g.max {
 		g.data = g.data[len(g.data)-g.max:]
+	}
+	if g.appending {
+		g.app <- d
 	}
 }
 

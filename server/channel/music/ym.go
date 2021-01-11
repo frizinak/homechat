@@ -50,6 +50,7 @@ type YMChannel struct {
 
 	channel.NoSave
 	channel.Limit
+	channel.NoRunClose
 }
 
 func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChannel {

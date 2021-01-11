@@ -3,8 +3,12 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	crand "crypto/rand"
+	"encoding/base64"
 	"flag"
 	"fmt"
+	"hash/fnv"
+	"io"
 	"log"
 	"math/rand"
 	"mime"
@@ -23,7 +27,7 @@ import (
 	"github.com/frizinak/homechat/bound"
 	"github.com/frizinak/homechat/server"
 	"github.com/frizinak/homechat/server/channel"
-	"github.com/frizinak/homechat/server/channel/chat"
+	chatpkg "github.com/frizinak/homechat/server/channel/chat"
 	"github.com/frizinak/homechat/server/channel/history"
 	"github.com/frizinak/homechat/server/channel/music"
 	"github.com/frizinak/homechat/server/channel/ping"
@@ -63,7 +67,12 @@ func main() {
 		}
 	}
 
+	if appConf.Directory != "" {
+		cache = appConf.Directory
+	}
+
 	bandwidthIntervalSeconds := 0
+	appendChatDir := filepath.Join(cache, "chatlogs")
 	var maxUploadKBytes int64 = 1024 * 10
 	resave := appConf.Merge(&Config{
 		Directory: cache,
@@ -73,14 +82,15 @@ func main() {
 		BandwidthIntervalSeconds: &bandwidthIntervalSeconds,
 		MaxUploadKBytes:          &maxUploadKBytes,
 
-		MaxChatMessagesOnDisk:      1000000,
-		MaxChatMessagesTransmitted: 500,
+		ChatMessagesAppendOnlyDir: &appendChatDir,
+		MaxChatMessages:           500,
 
 		WttrCity:           "tashkent",
 		HolidayCountryCode: "UZ",
 	})
 
 	bandwidthIntervalSeconds = *appConf.BandwidthIntervalSeconds
+	appendChatDir = *appConf.ChatMessagesAppendOnlyDir
 	maxUploadKBytes = *appConf.MaxUploadKBytes
 
 	if resave {
@@ -92,6 +102,9 @@ func main() {
 	store := filepath.Join(appConf.Directory, "chat.log")
 	uploads := filepath.Join(appConf.Directory, "uploads")
 	os.MkdirAll(uploads, 0o700)
+	if appendChatDir != "" {
+		os.MkdirAll(appendChatDir, 0o700)
+	}
 
 	addr := strings.Split(appConf.HTTPAddr, ":")
 	if len(addr) != 2 {
@@ -220,11 +233,31 @@ func main() {
 		panic(err)
 	}
 
-	history := history.New(appConf.MaxChatMessagesOnDisk, appConf.MaxChatMessagesTransmitted)
+	now := time.Now().Format("2006-01-02--15-04-05.999999999")
+	rnd := make([]byte, 128)
+	if _, err := io.ReadFull(crand.Reader, rnd); err != nil {
+		panic(err)
+	}
+	hsh := fnv.New64()
+	hsh.Write(rnd)
+
+	appendChatFile := filepath.Join(
+		appendChatDir,
+		fmt.Sprintf(
+			"chat-%s-%s.log",
+			now,
+			base64.RawURLEncoding.EncodeToString(hsh.Sum(nil)),
+		),
+	)
+
+	chat := &chatpkg.ChatChannel{}
+	history, err := history.New(c.Log, appConf.MaxChatMessages, appendChatFile, chat)
+	if err != nil {
+		panic(err)
+	}
 	musicErr := status.New()
 	music := music.NewYM(c.Log, musicErr, appConf.YMDir)
-	chat := chat.New(c.Log, history)
-	history.SetOutput(chat)
+	*chat = *chatpkg.New(c.Log, history)
 	upload := upload.New(c.MaxUploadSize, chat, s)
 	users := users.New(
 		[]string{vars.ChatChannel, vars.MusicChannel},
@@ -273,22 +306,29 @@ func main() {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	var saveErr error
 	go func() {
 		<-sig
-		fmt.Println("Saving")
+		fmt.Println("saving")
 		serverErr := s.Save()
 		ymErr := music.SaveCollection()
-		if serverErr != nil || ymErr != nil {
-			panic(
-				fmt.Sprintf(
-					"Error occurred when trying to save: server: %s, libym: %s",
-					serverErr,
-					ymErr,
-				),
+		if serverErr != nil {
+			saveErr = fmt.Errorf(
+				"error occurred when trying to run server.Save: %w",
+				serverErr,
 			)
 		}
-		fmt.Println("Saved, bye...")
-		os.Exit(0)
+		if ymErr != nil {
+			saveErr = fmt.Errorf(
+				"error occurred when trying to run libym.Collection.Save %w, additionally: %s",
+				serverErr,
+				err.Error(),
+			)
+		}
+		if saveErr != nil {
+			fmt.Fprintln(os.Stderr, saveErr)
+		}
+		s.Close()
 	}()
 
 	fmt.Printf("Starting server on http://%s tcp://%s\n", c.HTTPAddress, c.TCPAddress)
@@ -296,5 +336,9 @@ func main() {
 		panic(err)
 	}
 
-	panic(s.Run())
+	if err := s.Run(); err != nil {
+		panic(err)
+	}
+
+	fmt.Println("bye...")
 }

@@ -17,7 +17,8 @@ type PlaylistChannel struct {
 	sender  channel.Sender
 
 	channel.NoSave
-	channel.SendOnlyChannel
+	channel.SendOnly
+	channel.NoRunClose
 }
 
 func NewPlaylist(l *log.Logger, col *collection.Collection) *PlaylistChannel {

@@ -76,11 +76,12 @@ type Config struct {
 }
 
 type Server struct {
-	c   Config
-	tls bool
-	s   *simplehttp.Server
-	ws  websocket.Server
-	tcp net.Listener
+	c    Config
+	tls  bool
+	http *http.Server
+	s    *simplehttp.Server
+	ws   websocket.Server
+	tcp  net.Listener
 
 	saveMutex sync.Mutex
 
@@ -96,6 +97,8 @@ type Server struct {
 	onUserUpdate channel.UserUpdateHandler
 
 	bw Bandwidth
+
+	closing bool
 }
 
 func New(c Config) (*Server, error) {
@@ -130,8 +133,8 @@ func New(c Config) (*Server, error) {
 	}
 
 	nilLogger := log.New(ioutil.Discard, "", 0)
-	hs := &http.Server{TLSConfig: tlsConf, ErrorLog: nilLogger}
-	s.s = simplehttp.FromHTTPServer(hs, s.route, s.c.Log)
+	s.http = &http.Server{TLSConfig: tlsConf, ErrorLog: nilLogger}
+	s.s = simplehttp.FromHTTPServer(s.http, s.route, s.c.Log)
 
 	return s, nil
 }
@@ -633,6 +636,10 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 
 	var chnl channel.ChannelMsg
 	for {
+		if s.closing {
+			return nil
+		}
+
 		if err := conn.SetDeadline(time.Now().Add(time.Second * 120)); err != nil {
 			return err
 		}
@@ -706,8 +713,30 @@ func (s *Server) Run() error {
 	if err != nil {
 		return fmt.Errorf("could not open tcp connection %s: %w", s.c.TCPAddress, err)
 	}
+
+	errs := make(chan error, 1)
+	for chName, ch := range s.channels {
+		go func(chName string, ch channel.Channel) {
+			if err := ch.Run(); err != nil {
+				errs <- fmt.Errorf("channel runtime error '%s': %w", chName, err)
+			}
+		}(chName, ch)
+	}
+
+	go func() {
+		for err := range errs {
+			s.c.Log.Println(err)
+			s.closing = true
+			s.Close()
+		}
+	}()
+
 	go func() {
 		for {
+			if s.closing {
+				s.tcp.Close()
+				break
+			}
 			conn, err := s.tcp.Accept()
 			if err != nil {
 				s.c.Log.Println("tcp err:", err)
@@ -719,6 +748,28 @@ func (s *Server) Run() error {
 	}()
 
 	err = s.s.Start(s.c.HTTPAddress, s.tls)
-	s.tcp.Close()
-	return err
+	if s.closing {
+		err = nil
+	}
+	s.closing = true
+	strs := make([]string, 0)
+	if err != nil {
+		strs = append(strs, err.Error())
+	}
+	for _, ch := range s.channels {
+		if err := ch.Close(); err != nil {
+			strs = append(strs, err.Error())
+		}
+	}
+
+	if len(strs) == 0 {
+		return nil
+	}
+
+	return errors.New(strings.Join(strs, ", "))
+}
+
+func (s *Server) Close() {
+	s.closing = true
+	s.http.Close()
 }

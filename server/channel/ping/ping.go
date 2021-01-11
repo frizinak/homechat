@@ -14,6 +14,7 @@ type PingChannel struct {
 
 	channel.NoSave
 	channel.Limit
+	channel.NoRunClose
 }
 
 func New() *PingChannel {

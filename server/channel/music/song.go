@@ -16,7 +16,8 @@ type SongChannel struct {
 	sender  channel.Sender
 
 	channel.NoSave
-	channel.SendOnlyChannel
+	channel.SendOnly
+	channel.NoRunClose
 }
 
 func NewSong(l *log.Logger, q *collection.Queue) *SongChannel {

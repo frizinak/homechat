@@ -16,7 +16,8 @@ type StateChannel struct {
 	sender  channel.Sender
 
 	channel.NoSave
-	channel.SendOnlyChannel
+	channel.SendOnly
+	channel.NoRunClose
 }
 
 func NewState(l *log.Logger, p *player.Player) *StateChannel {

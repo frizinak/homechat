@@ -33,6 +33,7 @@ type ChatChannel struct {
 
 	channel.NoSave
 	channel.Limit
+	channel.NoRunClose
 }
 
 func New(log *log.Logger, hist *history.HistoryChannel) *ChatChannel {

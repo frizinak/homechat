@@ -9,11 +9,6 @@ import (
 	"github.com/frizinak/homechat/server/channel/users/data"
 )
 
-// var (
-// // reMention    = regexp.MustCompile(` @([^\s]+)`)
-// // multiSpaceRE = regexp.MustCompile(`\s+`)
-// )
-
 type UsersChannel struct {
 	usersChannels []string
 	col           channel.UserCollection
@@ -27,6 +22,7 @@ type UsersChannel struct {
 	err    error
 
 	channel.Limit
+	channel.NoRunClose
 }
 
 func New(channels []string, col channel.UserCollection) *UsersChannel {
