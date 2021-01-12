@@ -12,6 +12,7 @@ import (
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/tcp"
+	"github.com/frizinak/homechat/client/ws"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
 	"github.com/google/shlex"
@@ -57,6 +58,7 @@ type Flags struct {
 	AppConf    *Config
 	ClientConf client.Config
 	TCPConf    tcp.Config
+	WSConf     ws.Config
 
 	Keymap Keymap
 }
@@ -158,6 +160,11 @@ func (f *Flags) Parse() error {
 	}
 
 	f.TCPConf = tcp.Config{TCPAddr: f.AppConf.ServerTCPAddress}
+	f.WSConf = ws.Config{
+		TLS:    false,
+		Domain: f.AppConf.ServerAddress,
+		Path:   "ws",
+	}
 	f.ClientConf.Name = strings.TrimSpace(f.AppConf.Username)
 	f.ClientConf.Framed = false
 	f.ClientConf.Proto = channel.ProtoBinary

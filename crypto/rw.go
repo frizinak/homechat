@@ -47,12 +47,13 @@ type Decrypter struct {
 	sizeb byte
 
 	headerRead bool
+	eof        bool
 
 	mode cipher.BlockMode
 }
 
 func NewDecrypter(r io.Reader, pass []byte) io.Reader {
-	d := &Decrypter{r: r, pass: pass, buf: bytes.NewBuffer(make([]byte, aes.BlockSize))}
+	d := &Decrypter{r: r, pass: pass, buf: bytes.NewBuffer(make([]byte, 0, aes.BlockSize))}
 	return d
 }
 
@@ -106,41 +107,36 @@ func (d *Decrypter) Read(p []byte) (int, error) {
 		return 0, err
 	}
 
-	var gerr error
+	if d.buf.Len() != 0 {
+		n, err := d.buf.Read(p)
+		if err == io.EOF {
+			err = nil
+		}
+		return n, err
+	}
+
 	buf := make([]byte, d.size)
 	out := make([]byte, d.size)
-	d.buf.Reset()
-	for d.buf.Len() < len(p) {
-		padded := d.sizeb
-		read, err := io.ReadFull(d.r, buf)
-		gerr = err
-		if err != nil {
-			if read == 0 && err == io.EOF {
+	padded := d.sizeb
+	read, err := io.ReadFull(d.r, buf)
+	if read == 0 {
+		return 0, err
+	}
+
+	d.mode.CryptBlocks(out, buf)
+	l := out[d.size-1]
+	if l < d.sizeb {
+		padded = d.sizeb - l
+		for i := d.sizeb - l; i < d.sizeb; i++ {
+			if out[i] != l {
+				padded = d.sizeb
 				break
 			}
-			return 0, err
 		}
-
-		d.mode.CryptBlocks(out, buf)
-		l := out[d.size-1]
-		if l < d.sizeb {
-			padded = d.sizeb - l
-			for i := d.sizeb - l; i < d.sizeb; i++ {
-				if out[i] != l {
-					padded = d.sizeb
-					break
-				}
-			}
-		}
-
-		d.buf.Write(out[:padded])
 	}
 
-	b := d.buf.Bytes()
-	if len(b) < len(p) {
-		return copy(p, b), gerr
-	}
-	return copy(p, b[:len(p)]), gerr
+	d.buf.Write(out[:padded])
+	return d.buf.Read(p)
 }
 
 type Encrypter struct {

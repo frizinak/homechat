@@ -629,8 +629,8 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		w,
 		rpass,
 		wpass,
-		64,
-		12,
+		32,
+		8,
 	)
 
 	enc := channel.NewWriterFlusher(rw, w)

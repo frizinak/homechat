@@ -14,6 +14,8 @@ import (
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/tcp"
 	"github.com/frizinak/homechat/client/terminal"
+	"github.com/frizinak/homechat/client/ws"
+	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/ui"
 	"github.com/frizinak/homechat/vars"
 
@@ -44,11 +46,17 @@ func main() {
 	f.Flags()
 	exit(f.Parse())
 
-	tcp := tcp.New(f.TCPConf)
+	var backend client.Backend = tcp.New(f.TCPConf)
+	if f.ClientConf.Proto == channel.ProtoJSON {
+		var err error
+		backend, err = ws.New(f.WSConf)
+		exit(err)
+	}
+
 	if f.All.Mode == ModeUpload {
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
-		client := client.New(tcp, handler, log, f.ClientConf)
+		client := client.New(backend, handler, log, f.ClientConf)
 		var r io.ReadCloser = os.Stdin
 		if f.Upload.File != "" {
 			var err error
@@ -64,7 +72,7 @@ func main() {
 	if f.All.OneOff != "" || !f.All.Interactive {
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
-		client := client.New(tcp, handler, log, f.ClientConf)
+		client := client.New(backend, handler, log, f.ClientConf)
 		if f.All.OneOff == "" {
 			r := io.LimitReader(os.Stdin, 1024*1024)
 			if f.All.Linemode {
@@ -106,7 +114,7 @@ func main() {
 		f.All.Mode == ModeMusic,
 	)
 	handler := terminal.New(tui)
-	client := client.New(tcp, handler, tui, f.ClientConf)
+	client := client.New(backend, handler, tui, f.ClientConf)
 	send := client.Chat
 	if f.All.Mode == ModeMusic {
 		send = client.Music
