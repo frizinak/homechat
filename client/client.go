@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/frizinak/binary"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	historydata "github.com/frizinak/homechat/server/channel/history/data"
@@ -83,6 +84,7 @@ type Client struct {
 	playlists []string
 
 	conn        Conn
+	rw          io.ReadWriter
 	lastConnect time.Time
 	fatal       error
 
@@ -165,18 +167,19 @@ func (c *Client) disconnect() {
 		c.conn.Close()
 	}
 	c.conn = nil
+	c.rw = nil
 }
 
-func (c *Client) connect() (Conn, error) {
+func (c *Client) connect() (io.ReadWriter, error) {
 	if err := c.Err(); err != nil {
 		return nil, err
 	}
 
 	c.sem.Lock()
-	if c.conn != nil {
-		conn := c.conn
+	if c.rw != nil {
+		rw := c.rw
 		c.sem.Unlock()
-		return conn, nil
+		return rw, nil
 	}
 
 	for time.Since(c.lastConnect) < time.Second*2 {
@@ -193,19 +196,29 @@ func (c *Client) connect() (Conn, error) {
 
 	c.log.Log("connected")
 	c.conn = conn
+	wpass := []byte("test")
+	rpass := []byte("test2")
+	c.rw = crypto.NewEncDec(
+		conn,
+		conn,
+		rpass,
+		wpass,
+		32,
+		8,
+	)
 
 	if err := c.c.Proto.Write(conn); err != nil {
 		c.sem.Unlock()
-		return conn, err
+		return c.rw, err
 	}
 
 	msg := channel.IdentifyMsg{Data: c.c.Name, Channels: c.c.Channels, Version: vars.ProtocolVersion}
-	if err := c.write(conn, msg); err != nil {
+	if err := c.write(c.rw, msg); err != nil {
 		c.sem.Unlock()
-		return conn, err
+		return c.rw, err
 	}
 
-	_status, _, err := c.read(conn, channel.StatusMsg{})
+	_status, _, err := c.read(c.rw, channel.StatusMsg{})
 	status := _status.(channel.StatusMsg)
 	if err != nil || !status.OK() {
 		c.fatal = err
@@ -226,13 +239,13 @@ func (c *Client) connect() (Conn, error) {
 			}
 		}
 		c.sem.Unlock()
-		return conn, c.fatal
+		return c.rw, c.fatal
 	}
-	_identity, _, err := c.read(conn, channel.IdentifyMsg{})
+	_identity, _, err := c.read(c.rw, channel.IdentifyMsg{})
 	identity := _identity.(channel.IdentifyMsg)
 	if err != nil {
 		c.sem.Unlock()
-		return conn, err
+		return c.rw, err
 	}
 	c.c.Name = identity.Data
 	c.handler.HandleName(c.c.Name)
@@ -240,15 +253,15 @@ func (c *Client) connect() (Conn, error) {
 
 	if c.c.History > 0 {
 		if err = c.Send(vars.HistoryChannel, historydata.New(c.c.History)); err != nil {
-			return conn, err
+			return c.rw, err
 		}
 	}
 
 	if err = c.Send(vars.UserChannel, usersdata.Message{}); err != nil {
-		return conn, err
+		return c.rw, err
 	}
 
-	return conn, nil
+	return c.rw, nil
 }
 
 func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {

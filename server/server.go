@@ -25,6 +25,7 @@ import (
 	"github.com/frizinak/binary"
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bandwidth"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/client"
 	"golang.org/x/net/websocket"
@@ -607,7 +608,22 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 
 	const jsonMax = 1024 * 1024 * 20
 	limited := &io.LimitedReader{R: reader, N: 1024}
-	id, r, err := identify(limited)
+	reader = limited
+
+	rpass := []byte("test")
+	wpass := []byte("test2")
+	encdec := crypto.NewEncDec(
+		reader,
+		writer,
+		rpass,
+		wpass,
+		32,
+		8,
+	)
+
+	reader, writer = encdec, encdec
+
+	id, r, err := identify(reader)
 	if err != nil {
 		return fmt.Errorf("identify: %w", err)
 	}
