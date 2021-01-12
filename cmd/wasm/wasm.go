@@ -141,10 +141,12 @@ func main() {
 	public := window.Get("Object").New()
 	window.Set("homechat", public)
 
+	const binary = true
 	backendConf := wswasm.Config{
 		TLS:    httpProto == "https:",
 		Domain: host,
 		Path:   "ws",
+		Binary: binary,
 	}
 
 	backend, err := wswasm.New(backendConf, window)
@@ -166,6 +168,11 @@ func main() {
 		})
 	}
 
+	proto := channel.ProtoJSON
+	if binary {
+		proto = channel.ProtoBinary
+	}
+
 	public.Set("init", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		if len(args) != 1 {
 			console.Call("error", "init requires 1 arg")
@@ -185,7 +192,7 @@ func main() {
 				vars.MusicSongChannel,
 				vars.MusicErrorChannel,
 			},
-			Proto:   channel.ProtoJSON,
+			Proto:   proto,
 			Framed:  true,
 			History: 100,
 		}

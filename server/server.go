@@ -676,6 +676,10 @@ func (s *Server) onWS(conn *websocket.Conn) {
 	}
 
 	proto := channel.ReadProto(conn)
+	conn.PayloadType = websocket.TextFrame
+	if proto == channel.ProtoBinary {
+		conn.PayloadType = websocket.BinaryFrame
+	}
 
 	switch proto {
 	case channel.ProtoJSON, channel.ProtoBinary:
