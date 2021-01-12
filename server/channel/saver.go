@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -93,6 +94,34 @@ func (g *BinaryHistory) StopAppend() {
 	g.appending = false
 	close(g.app)
 	<-g.done
+}
+
+func (g *BinaryHistory) DecodeAppendFile(r io.Reader, cb func(Msg)) error {
+	peeker := bufio.NewReader(r)
+	bin := binary.NewReader(peeker)
+	v := DecoderVersion(bin.ReadString(16))
+	if err := bin.Err(); err != nil {
+		return err
+	}
+
+	dec, ok := g.dec[v]
+	if !ok {
+		return fmt.Errorf("no decoder for version '%s'", v)
+	}
+
+	for {
+		_, err := peeker.Peek(1)
+		if err == io.EOF {
+			return bin.Err()
+		}
+		m, err := dec(bin)
+		if err != nil {
+			return err
+		}
+		cb(m)
+	}
+
+	return nil
 }
 
 func (g *BinaryHistory) NeedsSave() bool { return g.haveNew }

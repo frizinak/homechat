@@ -20,6 +20,7 @@ type Mode byte
 
 const (
 	ModeDefault Mode = iota
+	ModeLogs
 )
 
 type Flags struct {
@@ -27,6 +28,7 @@ type Flags struct {
 
 	flags struct {
 		serve  *flag.FlagSet
+		logs   *flag.FlagSet
 		config *flag.FlagSet
 	}
 
@@ -41,6 +43,10 @@ type Flags struct {
 
 	Serve struct {
 		HTTPDir string
+	}
+
+	Logs struct {
+		Dir string
 	}
 
 	AppConf    *Config
@@ -68,6 +74,18 @@ func (f *Flags) Flags() {
 		"Directory the http server will directly serve from [for debugging]",
 	)
 
+	f.flags.logs = flag.NewFlagSet("logs", flag.ExitOnError)
+	f.flags.logs.SetOutput(f.out)
+	f.flags.logs.StringVar(
+		&f.Logs.Dir,
+		"d",
+		"",
+		"The directory that contains your logs, defaults to server.json setting",
+	)
+	f.flags.logs.Usage = func() {
+		f.flags.logs.PrintDefaults()
+	}
+
 	f.flags.config = flag.NewFlagSet("config", flag.ExitOnError)
 	f.flags.config.SetOutput(f.out)
 
@@ -78,6 +96,7 @@ func (f *Flags) Flags() {
 		flag.PrintDefaults()
 		fmt.Fprint(f.out, "\nCommands:\n")
 		fmt.Fprintln(f.out, "  - serve | <empty>: Server")
+		fmt.Fprintln(f.out, "  - logs:            Append-only logfile operations")
 		fmt.Fprintln(f.out, "  - config:          Config options explained")
 		fmt.Fprintln(f.out, "  - version:         Print version and exit")
 	}
@@ -193,11 +212,21 @@ func (f *Flags) parseCommand() error {
 	args := flag.Args()
 	switch flag.Arg(0) {
 	case "", "serve":
+		f.All.Mode = ModeDefault
 		if len(args) == 0 {
 			break
 		}
 		if err := f.flags.serve.Parse(args[1:]); err != nil {
 			return err
+		}
+
+	case "logs":
+		f.All.Mode = ModeLogs
+		if err := f.flags.logs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if f.Logs.Dir == "" {
+			f.Logs.Dir = *f.AppConf.ChatMessagesAppendOnlyDir
 		}
 	case "version":
 		fmt.Fprintf(f.out, "%s (protocol: %s)\n", vars.Version, vars.ProtocolVersion)

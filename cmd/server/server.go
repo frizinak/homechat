@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	crand "crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +28,7 @@ import (
 	"github.com/frizinak/homechat/server"
 	"github.com/frizinak/homechat/server/channel"
 	chatpkg "github.com/frizinak/homechat/server/channel/chat"
+	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	"github.com/frizinak/homechat/server/channel/history"
 	"github.com/frizinak/homechat/server/channel/music"
 	"github.com/frizinak/homechat/server/channel/ping"
@@ -36,7 +39,71 @@ import (
 	"github.com/nightlyone/lockfile"
 )
 
-func run(f *Flags) error {
+type flock struct {
+	path  string
+	mutex lockfile.Lockfile
+}
+
+func logs(f *Flags) error {
+	if f.Logs.Dir == "" {
+		return errors.New("no directory specified")
+	}
+	log := f.ServerConf.Log
+	chat := &chatpkg.ChatChannel{}
+	hist, err := history.New(log, f.AppConf.MaxChatMessages, "", chat)
+	if err != nil {
+		return err
+	}
+	*chat = *chatpkg.New(log, hist)
+
+	glob, err := filepath.Glob(filepath.Join(f.Logs.Dir, "*"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(glob)
+
+	cb := func(msg channel.Msg) {
+		l := msg.(history.Log)
+		m := l.Msg.(chatdata.Message)
+		fmt.Printf("%s %-10s | %s\n", l.Stamp.Format("2006-01-02 15:04:05"), l.From.Name(), m.Data)
+	}
+
+	do := func(path string) error {
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		err = hist.DecodeAppendFile(f, cb)
+		if err != nil {
+			return fmt.Errorf("an error occurred in '%s': %w", path, err)
+		}
+		return nil
+	}
+
+	for _, p := range glob {
+		if err := do(p); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func serve(flock flock, f *Flags) error {
+	for {
+		if err := flock.mutex.TryLock(); err != nil {
+			if err != lockfile.ErrNotExist {
+				panic(fmt.Errorf("Failed to get lock: '%s': %w", flock.path, err))
+			}
+			fmt.Printf("could not claim lock at %s, retrying...\n", flock.path)
+			time.Sleep(time.Second)
+			continue
+		}
+		break
+	}
+	defer flock.mutex.Unlock()
+
 	appendChatDir := *f.AppConf.ChatMessagesAppendOnlyDir
 	if err := os.MkdirAll(f.All.Uploads, 0o700); err != nil {
 		return err
@@ -264,6 +331,7 @@ func run(f *Flags) error {
 		return err
 	}
 
+	fmt.Println("bye...")
 	return nil
 }
 
@@ -286,32 +354,25 @@ func main() {
 		panic(err)
 	}
 
-	semPath, err := filepath.Abs(filepath.Join(f.AppConf.Directory, "~lock"))
+	mutexPath, err := filepath.Abs(filepath.Join(f.AppConf.Directory, "~lock"))
 	if err != nil {
 		panic(err)
 	}
 
-	sem, err := lockfile.New(semPath)
+	mutex, err := lockfile.New(mutexPath)
 	if err != nil {
 		panic(err)
 	}
 
-	for {
-		if err := sem.TryLock(); err != nil {
-			if err != lockfile.ErrNotExist {
-				panic(fmt.Errorf("Failed to get lock: '%s': %w", semPath, err))
-			}
-			fmt.Printf("could not claim lock at %s, retrying...\n", semPath)
-			time.Sleep(time.Second)
-			continue
-		}
-		break
+	flock := flock{mutexPath, mutex}
+	switch f.All.Mode {
+	case ModeDefault:
+		err = serve(flock, f)
+	case ModeLogs:
+		err = logs(f)
 	}
-	defer sem.Unlock()
 
-	if err := run(f); err != nil {
+	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println("bye...")
 }
