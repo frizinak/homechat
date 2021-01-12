@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -83,8 +82,10 @@ type Client struct {
 
 	playlists []string
 
-	conn        Conn
-	rw          io.ReadWriter
+	conn Conn
+	r    io.Reader
+	w    channel.WriteFlusher
+
 	lastConnect time.Time
 	fatal       error
 
@@ -126,14 +127,14 @@ func (c *Client) Music(msg string) error {
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {
-	conn, err := c.connect()
+	_, err := c.connect()
 	if err != nil {
 		c.disconnect()
 		return err
 	}
 
 	c.sem.Lock()
-	if err := c.writeMulti(conn, channel.ChannelMsg{Data: chnl}, msg); err != nil {
+	if err := c.writeMulti(channel.ChannelMsg{Data: chnl}, msg); err != nil {
 		c.sem.Unlock()
 		c.disconnect()
 		return err
@@ -166,20 +167,19 @@ func (c *Client) disconnect() {
 	if c.conn != nil {
 		c.conn.Close()
 	}
-	c.conn = nil
-	c.rw = nil
+	c.conn, c.r, c.w = nil, nil, nil
 }
 
-func (c *Client) connect() (io.ReadWriter, error) {
+func (c *Client) connect() (io.Reader, error) {
 	if err := c.Err(); err != nil {
 		return nil, err
 	}
 
 	c.sem.Lock()
-	if c.rw != nil {
-		rw := c.rw
+	if c.r != nil {
+		r := c.r
 		c.sem.Unlock()
-		return rw, nil
+		return r, nil
 	}
 
 	for time.Since(c.lastConnect) < time.Second*2 {
@@ -198,27 +198,35 @@ func (c *Client) connect() (io.ReadWriter, error) {
 	c.conn = conn
 	wpass := []byte("test")
 	rpass := []byte("test2")
-	c.rw = crypto.NewEncDec(
+
+	var w channel.WriteFlusher = channel.NewPassthrough(conn)
+	if c.c.Framed {
+		w = channel.NewBuffered(conn)
+	}
+
+	rw := crypto.NewEncDec(
 		conn,
-		conn,
+		w,
 		rpass,
 		wpass,
 		32,
 		8,
 	)
 
+	c.r, c.w = rw, channel.NewWriterFlusher(rw, w)
+
 	if err := c.c.Proto.Write(conn); err != nil {
 		c.sem.Unlock()
-		return c.rw, err
+		return c.r, err
 	}
 
 	msg := channel.IdentifyMsg{Data: c.c.Name, Channels: c.c.Channels, Version: vars.ProtocolVersion}
-	if err := c.write(c.rw, msg); err != nil {
+	if err := c.write(msg); err != nil {
 		c.sem.Unlock()
-		return c.rw, err
+		return c.r, err
 	}
 
-	_status, _, err := c.read(c.rw, channel.StatusMsg{})
+	_status, _, err := c.read(c.r, channel.StatusMsg{})
 	status := _status.(channel.StatusMsg)
 	if err != nil || !status.OK() {
 		c.fatal = err
@@ -239,13 +247,13 @@ func (c *Client) connect() (io.ReadWriter, error) {
 			}
 		}
 		c.sem.Unlock()
-		return c.rw, c.fatal
+		return c.r, c.fatal
 	}
-	_identity, _, err := c.read(c.rw, channel.IdentifyMsg{})
+	_identity, _, err := c.read(c.r, channel.IdentifyMsg{})
 	identity := _identity.(channel.IdentifyMsg)
 	if err != nil {
 		c.sem.Unlock()
-		return c.rw, err
+		return c.r, err
 	}
 	c.c.Name = identity.Data
 	c.handler.HandleName(c.c.Name)
@@ -253,15 +261,15 @@ func (c *Client) connect() (io.ReadWriter, error) {
 
 	if c.c.History > 0 {
 		if err = c.Send(vars.HistoryChannel, historydata.New(c.c.History)); err != nil {
-			return c.rw, err
+			return c.r, err
 		}
 	}
 
 	if err = c.Send(vars.UserChannel, usersdata.Message{}); err != nil {
-		return c.rw, err
+		return c.r, err
 	}
 
-	return c.rw, nil
+	return c.r, nil
 }
 
 func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {
@@ -275,29 +283,17 @@ func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {
 	}
 }
 
-func (c *Client) writeMulti(w io.Writer, ms ...channel.Msg) error {
-	rw := w
-	var byw *bytes.Buffer
-	if c.c.Framed {
-		byw = bytes.NewBuffer(nil)
-		rw = byw
-	}
-
+func (c *Client) writeMulti(ms ...channel.Msg) error {
 	for _, m := range ms {
-		if err := c.writeRaw(rw, m); err != nil {
+		if err := c.writeRaw(c.w, m); err != nil {
 			return err
 		}
 	}
-
-	if c.c.Framed {
-		_, err := byw.WriteTo(w)
-		return err
-	}
-	return nil
+	return c.w.Flush()
 }
 
-func (c *Client) write(w io.Writer, m channel.Msg) error {
-	return c.writeMulti(w, m)
+func (c *Client) write(m channel.Msg) error {
+	return c.writeMulti(m)
 }
 
 func (c *Client) read(r io.Reader, msg channel.Msg) (channel.Msg, io.Reader, error) {

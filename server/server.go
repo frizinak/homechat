@@ -539,7 +539,12 @@ func (s *Server) setClient(conf client.Config, c *client.Client) {
 	}()
 }
 
-func (s *Server) newClient(proto channel.Proto, frameWriter bool, id channel.IdentifyMsg, conn io.Writer) (client.Config, *client.Client, error) {
+func (s *Server) newClient(
+	proto channel.Proto,
+	frameWriter bool,
+	id channel.IdentifyMsg,
+	conn channel.WriteFlusher,
+) (client.Config, *client.Client, error) {
 	var conf client.Config
 	for _, h := range id.Channels {
 		if _, ok := s.channels[h]; !ok {
@@ -583,8 +588,11 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	do := func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 		return r, h.HandleBIN(cl, binary.NewReader(r))
 	}
-	write := func(w io.Writer, m channel.Msg) error {
-		return m.Binary(binary.NewWriter(w))
+	write := func(w channel.WriteFlusher, m channel.Msg) error {
+		if err := m.Binary(binary.NewWriter(w)); err != nil {
+			return err
+		}
+		return w.Flush()
 	}
 
 	if proto == channel.ProtoJSON {
@@ -593,13 +601,11 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		do = func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 			return h.HandleJSON(cl, r)
 		}
-		write = func(w io.Writer, m channel.Msg) error {
-			b := bytes.NewBuffer(nil)
-			if err := m.JSON(b); err != nil {
+		write = func(w channel.WriteFlusher, m channel.Msg) error {
+			if err := m.JSON(w); err != nil {
 				return err
 			}
-			_, err := w.Write(b.Bytes())
-			return err
+			return w.Flush()
 		}
 	}
 
@@ -612,23 +618,30 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 
 	rpass := []byte("test")
 	wpass := []byte("test2")
-	encdec := crypto.NewEncDec(
+
+	var w channel.WriteFlusher = channel.NewPassthrough(writer)
+	if frameWriter {
+		w = channel.NewBuffered(writer)
+	}
+
+	rw := crypto.NewEncDec(
 		reader,
-		writer,
+		w,
 		rpass,
 		wpass,
-		32,
-		8,
+		64,
+		12,
 	)
 
-	reader, writer = encdec, encdec
+	enc := channel.NewWriterFlusher(rw, w)
+	reader = rw
 
 	id, r, err := identify(reader)
 	if err != nil {
 		return fmt.Errorf("identify: %w", err)
 	}
 
-	conf, c, err := s.newClient(proto, frameWriter, id, writer)
+	conf, c, err := s.newClient(proto, frameWriter, id, enc)
 	status := channel.StatusMsg{Code: channel.StatusOK, Err: ""}
 	if err != nil {
 		status.Code = channel.StatusNOK
@@ -638,13 +651,13 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		}
 	}
 
-	if err := write(writer, status); err != nil {
+	if err := write(enc, status); err != nil {
 		return err
 	}
 	if err != nil {
 		return err
 	}
-	if err := write(writer, channel.IdentifyMsg{Data: conf.Name}); err != nil {
+	if err := write(enc, channel.IdentifyMsg{Data: conf.Name}); err != nil {
 		return err
 	}
 	s.setClient(conf, c)
