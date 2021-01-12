@@ -78,7 +78,6 @@ func (g *BinaryHistory) StartAppend() error {
 		if err := m.Binary(g.appendOnlyWriter); err != nil {
 			return err
 		}
-		g.appendOnlyWriter.WriteUint8(0)
 		if err := g.appendOnlyWriter.Err(); err != nil {
 			return err
 		}
