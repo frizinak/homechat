@@ -12,7 +12,7 @@ import (
 type Message struct {
 	Data string `json:"d"`
 
-	*channel.NeverEqual
+	channel.NeverEqual
 }
 
 func (m Message) Binary(w *binary.Writer) error {
@@ -61,7 +61,7 @@ type ServerMessage struct {
 	Bot    bool      `json:"bot"`
 	Shout  bool      `json:"shout"`
 
-	*channel.NeverEqual
+	channel.NeverEqual
 }
 
 func (m ServerMessage) Binary(w *binary.Writer) error {

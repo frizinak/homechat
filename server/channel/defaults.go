@@ -42,3 +42,16 @@ type NoSave struct{}
 func (ns NoSave) NeedsSave() bool        { return false }
 func (ns NoSave) Save(file string) error { return errors.New("not implemented") }
 func (ns NoSave) Load(file string) error { return nil }
+
+type NeverEqual struct{}
+
+func (n NeverEqual) Equal(Msg) bool { return false }
+
+type NilMsg struct{ NeverEqual }
+
+func (m NilMsg) Binary(w *binary.Writer) error                { return w.Err() }
+func (m NilMsg) JSON(w io.Writer) error                       { return nil }
+func (m NilMsg) FromBinary(r *binary.Reader) (Msg, error)     { return BinaryNilMessage(r) }
+func (m NilMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONNilMessage(r) }
+func BinaryNilMessage(r *binary.Reader) (m NilMsg, err error) { return }
+func JSONNilMessage(r io.Reader) (NilMsg, io.Reader, error)   { return NilMsg{}, r, nil }

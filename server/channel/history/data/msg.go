@@ -11,7 +11,7 @@ import (
 type Message struct {
 	Amount uint16 `json:"n"`
 
-	*channel.NeverEqual
+	channel.NeverEqual
 }
 
 func New(amount uint16) Message { return Message{Amount: amount} }
@@ -41,7 +41,7 @@ func JSONMessage(r io.Reader) (Message, io.Reader, error) {
 }
 
 type ServerMessage struct {
-	*channel.NilMsg
+	channel.NilMsg
 }
 
 func (m ServerMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {

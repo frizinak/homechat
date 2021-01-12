@@ -12,11 +12,12 @@ type Message struct {
 	Filename string
 	Message  string
 	r        io.Reader
-	*channel.NeverEqual
+
+	channel.NeverEqual
 }
 
 func NewMessage(filename, msg string, r io.Reader) Message {
-	return Message{filename, msg, r, nil}
+	return Message{Filename: filename, Message: msg, r: r}
 }
 
 func (m Message) Reader() io.Reader {

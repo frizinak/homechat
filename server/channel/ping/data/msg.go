@@ -8,7 +8,7 @@ import (
 )
 
 type Message struct {
-	*channel.NilMsg
+	channel.NilMsg
 }
 
 func BinaryMessage(r *binary.Reader) (Message, error) {

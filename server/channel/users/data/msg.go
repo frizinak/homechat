@@ -9,7 +9,7 @@ import (
 )
 
 type Message struct {
-	*channel.NilMsg
+	channel.NilMsg
 }
 
 func (m Message) FromBinary(r *binary.Reader) (channel.Msg, error)     { return BinaryMessage(r) }

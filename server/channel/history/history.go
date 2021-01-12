@@ -15,7 +15,7 @@ type Log struct {
 	From  channel.Client
 	Stamp time.Time
 	Msg   channel.Msg
-	*channel.NeverEqual
+	channel.NeverEqual
 }
 
 func (l Log) Binary(w *binary.Writer) error {

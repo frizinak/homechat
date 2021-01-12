@@ -11,7 +11,7 @@ import (
 type Message struct {
 	Command string `json:"cmd"`
 
-	*channel.NeverEqual
+	channel.NeverEqual
 }
 
 func (m Message) Binary(w *binary.Writer) error {
