@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server"
+	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
 )
 
@@ -22,21 +24,24 @@ const (
 	ModeDefault Mode = iota
 	ModeLogs
 	ModeHue
+	ModeFingerprint
 )
 
 type Flags struct {
 	out io.Writer
 
 	flags struct {
-		serve  *flag.FlagSet
-		logs   *flag.FlagSet
-		hue    *flag.FlagSet
-		config *flag.FlagSet
+		serve       *flag.FlagSet
+		logs        *flag.FlagSet
+		hue         *flag.FlagSet
+		fingerprint *flag.FlagSet
+		config      *flag.FlagSet
 	}
 
 	All struct {
 		Mode Mode
 
+		Key        *crypto.Key
 		ConfigFile string
 		CacheDir   string
 		Store      string
@@ -87,6 +92,9 @@ func (f *Flags) Flags() {
 	f.flags.hue = flag.NewFlagSet("hue", flag.ExitOnError)
 	f.flags.hue.SetOutput(f.out)
 
+	f.flags.fingerprint = flag.NewFlagSet("fingerprint", flag.ExitOnError)
+	f.flags.fingerprint.SetOutput(f.out)
+
 	f.flags.config = flag.NewFlagSet("config", flag.ExitOnError)
 	f.flags.config.SetOutput(f.out)
 
@@ -100,6 +108,7 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "  - serve | <empty>: Server")
 		fmt.Fprintln(f.out, "  - logs:            Append-only logfile operations")
 		fmt.Fprintln(f.out, "  - hue:             Configure Philips Hue bridge credentials")
+		fmt.Fprintln(f.out, "  - fingerprint:     Show server publickey fingerprint")
 		fmt.Fprintln(f.out, "  - config:          Config options explained")
 		fmt.Fprintln(f.out, "  - version:         Print version and exit")
 	}
@@ -107,14 +116,18 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "Start the server")
 		f.flags.serve.PrintDefaults()
 	}
+	f.flags.logs.Usage = func() {
+		fmt.Fprintln(f.out, "Print contents of the Append-only logs for now")
+		f.flags.logs.PrintDefaults()
+	}
 	f.flags.hue.Usage = func() {
 		fmt.Fprintln(f.out, "Discover hue bridge and create credentials")
 		fmt.Fprintln(f.out, "Automatically stores them in the active server.json")
 		f.flags.hue.PrintDefaults()
 	}
-	f.flags.logs.Usage = func() {
-		fmt.Fprintln(f.out, "Print contents of the Append-only logs for now")
-		f.flags.logs.PrintDefaults()
+	f.flags.fingerprint.Usage = func() {
+		fmt.Fprintln(f.out, "Show server publickey fingerprint")
+		f.flags.fingerprint.PrintDefaults()
 	}
 	f.flags.config.Usage = func() {
 		fmt.Fprintf(f.out, "Config file used: '%s'\n\n", f.All.ConfigFile)
@@ -139,11 +152,52 @@ func (f *Flags) Parse() error {
 		return err
 	}
 
+	if err := f.parseCommand(); err != nil {
+		return err
+	}
+
 	f.All.CacheDir = f.AppConf.Directory
 	f.All.Store = filepath.Join(f.AppConf.Directory, "chat.log")
 	f.All.Uploads = filepath.Join(f.AppConf.Directory, "uploads")
+	if f.Logs.Dir == "" {
+		f.Logs.Dir = *f.AppConf.ChatMessagesAppendOnlyDir
+	}
+
+	mkdir := func(name, path string) error {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return fmt.Errorf("failed to create %s directory '%s': %w", name, path, err)
+		}
+		return nil
+	}
+
+	dirs := map[string]string{
+		"cache":   f.All.CacheDir,
+		"uploads": f.All.Uploads,
+		"logs":    f.Logs.Dir,
+	}
+
+	if f.All.Mode != ModeDefault {
+		dirs["logs"] = ""
+	}
+
+	for n, p := range dirs {
+		if p == "" {
+			continue
+		}
+		if err := mkdir(n, p); err != nil {
+			return err
+		}
+	}
+
+	keyfile := filepath.Join(f.AppConf.Directory, ".rsa_private_server_key")
+	key, err := crypto.EnsureKey(keyfile, channel.ServerMinKeySize, channel.ServerKeySize)
+	if err != nil {
+		return err
+	}
+	f.All.Key = key
 
 	f.ServerConf = server.Config{
+		Key:             key,
 		ProtocolVersion: vars.ProtocolVersion,
 		Log:             log.New(f.out, "", 0),
 		HTTPAddress:     f.AppConf.HTTPAddr,
@@ -152,10 +206,6 @@ func (f *Flags) Parse() error {
 		UploadsPath:     f.All.Uploads,
 		MaxUploadSize:   *f.AppConf.MaxUploadKBytes * 1024,
 		LogBandwidth:    time.Duration(*f.AppConf.BandwidthIntervalSeconds) * time.Second,
-	}
-
-	if err := f.parseCommand(); err != nil {
-		return err
 	}
 
 	return nil
@@ -232,18 +282,19 @@ func (f *Flags) parseCommand() error {
 		if err := f.flags.serve.Parse(args[1:]); err != nil {
 			return err
 		}
-
 	case "logs":
 		f.All.Mode = ModeLogs
 		if err := f.flags.logs.Parse(args[1:]); err != nil {
 			return err
 		}
-		if f.Logs.Dir == "" {
-			f.Logs.Dir = *f.AppConf.ChatMessagesAppendOnlyDir
-		}
 	case "hue":
 		f.All.Mode = ModeHue
 		if err := f.flags.hue.Parse(args[1:]); err != nil {
+			return err
+		}
+	case "fingerprint":
+		f.All.Mode = ModeFingerprint
+		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
 			return err
 		}
 	case "version":

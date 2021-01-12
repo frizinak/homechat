@@ -16,12 +16,13 @@ const (
 )
 
 type Config struct {
-	NotifyCommand    *string
-	NotifyWhen       NotifyWhen
-	ServerAddress    string
-	ServerTCPAddress string
-	Username         string
-	MaxMessages      int
+	NotifyCommand     *string
+	NotifyWhen        NotifyWhen
+	ServerAddress     string
+	ServerTCPAddress  string
+	ServerFingerprint string
+	Username          string
+	MaxMessages       int
 }
 
 func (c *Config) Help(w io.Writer) error {

@@ -119,8 +119,6 @@ func (g *BinaryHistory) DecodeAppendFile(r io.Reader, cb func(Msg)) error {
 		}
 		cb(m)
 	}
-
-	return nil
 }
 
 func (g *BinaryHistory) NeedsSave() bool { return g.haveNew }

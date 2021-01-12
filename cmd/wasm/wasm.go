@@ -10,6 +10,7 @@ import (
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/wswasm"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
@@ -137,16 +138,46 @@ func main() {
 	location := document.Get("location")
 	host := location.Get("host").String()
 	httpProto := location.Get("protocol").String()
+	localStorage := window.Get("localStorage")
 
 	public := window.Get("Object").New()
 	window.Set("homechat", public)
 
+	pem := localStorage.Call("getItem", "key")
+	_fp := localStorage.Call("getItem", "fp")
+
+	// TODO when server can handle tls and internal encryption is off
+	// binary should depend on proto
 	const binary = true
 	backendConf := wswasm.Config{
 		TLS:    httpProto == "https:",
 		Domain: host,
 		Path:   "ws",
 		Binary: binary,
+	}
+
+	fp := ""
+	if !_fp.IsNull() && !_fp.IsUndefined() {
+		fp = _fp.String()
+	}
+
+	key := crypto.NewKey(channel.ClientMinKeySize, channel.ClientMinKeySize) // browsers
+	if !pem.IsNull() && !pem.IsUndefined() {
+		if err := key.UnmarshalPEM([]byte(pem.String())); err != nil {
+			panic(err)
+		}
+	}
+
+	err := key.Generate()
+	if err == nil {
+		d, err := key.MarshalPEM()
+		if err != nil {
+			panic(err)
+		}
+
+		localStorage.Call("setItem", "key", string(d))
+	} else if err != crypto.ErrKeyExists {
+		panic(err)
 	}
 
 	backend, err := wswasm.New(backendConf, window)
@@ -180,8 +211,10 @@ func main() {
 		}
 		handler = newJSHandler(args[0])
 		conf := client.Config{
-			ServerURL: httpProto + "//" + host,
-			Name:      args[0].Get("name").String(),
+			Key:               key,
+			ServerFingerprint: fp,
+			ServerURL:         httpProto + "//" + host,
+			Name:              args[0].Get("name").String(),
 			Channels: []string{
 				vars.PingChannel,
 				vars.UserChannel,
@@ -202,6 +235,18 @@ func main() {
 		public.Set("music", createSender(c.Music))
 
 		go func() {
+			err := c.Connect()
+			if err == client.ErrFingerPrint {
+				// TODO!!!
+				newFP := c.ServerFingerprint()
+				localStorage.Call("setItem", "fp", newFP)
+				c.SetTrustedFingerprint(newFP)
+				if err := c.Connect(); err != nil {
+					panic(err)
+				}
+			} else if err != nil {
+				panic(err)
+			}
 			if err := c.Run(); err != nil {
 				panic(err)
 			}

@@ -25,14 +25,16 @@ import (
 	"github.com/frizinak/binary"
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bandwidth"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/client"
 	"golang.org/x/net/websocket"
 )
 
 var (
-	fileRE   = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
-	errProto = errors.New("unsupported protocol version")
+	fileRE         = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
+	errProto       = errors.New("unsupported protocol version")
+	errKeyExchange = errors.New("client/server keys mismatch")
 )
 
 const (
@@ -50,6 +52,8 @@ type writeJob struct {
 type Config struct {
 	// Arbitrary string clients will need to be able to connect
 	ProtocolVersion string
+
+	Key *crypto.Key
 
 	Log *log.Logger
 
@@ -400,7 +404,7 @@ func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
 		return nil, fmt.Errorf("ERR upload create: %w", err)
 	}
 
-	if _, err := f.ReadFrom(r); err != nil {
+	if _, err = f.ReadFrom(r); err != nil {
 		f.Close()
 		return nil, fmt.Errorf("ERR upload write: %w", err)
 	}
@@ -538,7 +542,12 @@ func (s *Server) setClient(conf client.Config, c *client.Client) {
 	}()
 }
 
-func (s *Server) newClient(proto channel.Proto, frameWriter bool, id channel.IdentifyMsg, conn io.Writer) (client.Config, *client.Client, error) {
+func (s *Server) newClient(
+	proto channel.Proto,
+	frameWriter bool,
+	id channel.IdentifyMsg,
+	conn channel.WriteFlusher,
+) (client.Config, *client.Client, error) {
 	var conf client.Config
 	for _, h := range id.Channels {
 		if _, ok := s.channels[h]; !ok {
@@ -571,34 +580,32 @@ func (s *Server) newClient(proto channel.Proto, frameWriter bool, id channel.Ide
 }
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool) error {
-	identify := func(r io.Reader) (channel.IdentifyMsg, io.Reader, error) {
-		m, err := channel.BinaryIdentifyMsg(binary.NewReader(r))
-		return m, r, err
-	}
-	getChannel := func(r io.Reader) (channel.ChannelMsg, io.Reader, error) {
-		m, err := channel.BinaryChannelMsg(binary.NewReader(r))
+	read := func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
+		m, err := typ.FromBinary(binary.NewReader(r))
 		return m, r, err
 	}
 	do := func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 		return r, h.HandleBIN(cl, binary.NewReader(r))
 	}
-	write := func(w io.Writer, m channel.Msg) error {
-		return m.Binary(binary.NewWriter(w))
+	write := func(w channel.WriteFlusher, m channel.Msg) error {
+		if err := m.Binary(binary.NewWriter(w)); err != nil {
+			return err
+		}
+		return w.Flush()
 	}
 
 	if proto == channel.ProtoJSON {
-		identify = channel.JSONIdentifyMsg
-		getChannel = channel.JSONChannelMsg
+		read = func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
+			return typ.FromJSON(r)
+		}
 		do = func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 			return h.HandleJSON(cl, r)
 		}
-		write = func(w io.Writer, m channel.Msg) error {
-			b := bytes.NewBuffer(nil)
-			if err := m.JSON(b); err != nil {
+		write = func(w channel.WriteFlusher, m channel.Msg) error {
+			if err := m.JSON(w); err != nil {
 				return err
 			}
-			_, err := w.Write(b.Bytes())
-			return err
+			return w.Flush()
 		}
 	}
 
@@ -606,14 +613,75 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	writer := s.bw.NewWriter(conn)
 
 	const jsonMax = 1024 * 1024 * 20
-	limited := &io.LimitedReader{R: reader, N: 1024}
-	id, r, err := identify(limited)
+	limited := &io.LimitedReader{R: reader, N: 9216}
+	reader = limited
+
+	var w channel.WriteFlusher = channel.NewPassthrough(writer)
+	if frameWriter {
+		w = channel.NewBuffered(writer)
+	}
+
+	var msg channel.Msg
+
+	key := s.c.Key
+	server, err := channel.NewPubKeyServerMessage(key)
+	if err != nil {
+		return err
+	}
+
+	if err := write(w, server); err != nil {
+		return err
+	}
+
+	msg, _, err = read(conn, channel.PubKeyMessage{})
+	if err != nil {
+		return err
+	}
+	client := msg.(channel.PubKeyMessage)
+
+	derive, err := channel.CommonSecret(client, server, key)
+	if err != nil {
+		return err
+	}
+
+	rw := crypto.NewEncDec(
+		reader,
+		w,
+		derive(channel.CryptoServerRead),
+		derive(channel.CryptoServerWrite),
+		crypto.EncrypterConfig{SaltSize: 32, Cost: 16},
+		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
+	)
+
+	enc := channel.NewWriterFlusher(rw, w)
+	reader = rw
+
+	test, err := channel.NewSymmetricTestMessage()
+	if err != nil {
+		return err
+	}
+
+	if err := write(enc, test); err != nil {
+		return err
+	}
+
+	msg, reader, err = read(reader, channel.SymmetricTestMessage{})
+	if err != nil {
+		return err
+	}
+
+	if !test.Equal(msg) {
+		return errKeyExchange
+	}
+
+	msg, reader, err = read(reader, channel.IdentifyMsg{})
 	if err != nil {
 		return fmt.Errorf("identify: %w", err)
 	}
+	id := msg.(channel.IdentifyMsg)
 
-	conf, c, err := s.newClient(proto, frameWriter, id, writer)
-	status := channel.StatusMsg{Code: channel.StatusOK, Err: ""}
+	conf, c, err := s.newClient(proto, frameWriter, id, enc)
+	status := channel.StatusMsg{Code: channel.StatusOK}
 	if err != nil {
 		status.Code = channel.StatusNOK
 		status.Err = err.Error()
@@ -622,13 +690,13 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		}
 	}
 
-	if err := write(writer, status); err != nil {
+	if err := write(enc, status); err != nil {
 		return err
 	}
 	if err != nil {
 		return err
 	}
-	if err := write(writer, channel.IdentifyMsg{Data: conf.Name}); err != nil {
+	if err := write(enc, channel.IdentifyMsg{Data: conf.Name}); err != nil {
 		return err
 	}
 	s.setClient(conf, c)
@@ -645,13 +713,14 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		}
 
 		limited.N = 255
-		chnl, r, err = getChannel(r)
+		msg, reader, err = read(reader, channel.ChannelMsg{})
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("channel specify: %w", err)
 		}
+		chnl = msg.(channel.ChannelMsg)
 
 		h, ok := s.channels[chnl.Data]
 		if !ok {
@@ -662,7 +731,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		if proto != channel.ProtoBinary && limited.N > jsonMax {
 			limited.N = jsonMax
 		}
-		r, err = do(r, c, h)
+		reader, err = do(reader, c, h)
 		if err != nil {
 			return fmt.Errorf("channel %s: %w", chnl.Data, err)
 		}
@@ -671,15 +740,16 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 
 func (s *Server) onWS(conn *websocket.Conn) {
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(time.Second * 5)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(time.Second * 10)); err != nil {
 		return
 	}
 
 	proto := channel.ReadProto(conn)
-	conn.PayloadType = websocket.TextFrame
-	if proto == channel.ProtoBinary {
-		conn.PayloadType = websocket.BinaryFrame
-	}
+	// TODO uncomment when tls lands and when/if internal encryption is disabled
+	// conn.PayloadType = websocket.TextFrame
+	// if proto == channel.ProtoBinary {
+	conn.PayloadType = websocket.BinaryFrame
+	//}
 
 	switch proto {
 	case channel.ProtoJSON, channel.ProtoBinary:
@@ -694,7 +764,7 @@ func (s *Server) onWS(conn *websocket.Conn) {
 
 func (s *Server) onTCP(conn net.Conn) {
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(time.Second * 5)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(time.Second * 10)); err != nil {
 		return
 	}
 

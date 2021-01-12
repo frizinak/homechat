@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/frizinak/binary"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	historydata "github.com/frizinak/homechat/server/channel/history/data"
@@ -20,6 +20,8 @@ import (
 	usersdata "github.com/frizinak/homechat/server/channel/users/data"
 	"github.com/frizinak/homechat/vars"
 )
+
+var ErrFingerPrint = errors.New("fingerprint mismatch")
 
 type Backend interface {
 	Connect() (Conn, error)
@@ -82,20 +84,29 @@ type Client struct {
 
 	playlists []string
 
-	conn        Conn
+	conn Conn
+	r    io.Reader
+	w    channel.WriteFlusher
+
 	lastConnect time.Time
 	fatal       error
+
+	serverFingerprint string
 
 	c Config
 }
 
 type Config struct {
-	ServerURL string
-	Name      string
-	Channels  []string
-	Proto     channel.Proto
-	Framed    bool
-	History   uint16
+	Key *crypto.Key
+
+	ServerURL         string
+	ServerFingerprint string
+
+	Name     string
+	Channels []string
+	Proto    channel.Proto
+	Framed   bool
+	History  uint16
 }
 
 func New(b Backend, h Handler, log Logger, c Config) *Client {
@@ -109,11 +120,13 @@ func New(b Backend, h Handler, log Logger, c Config) *Client {
 	}
 }
 
-func (c *Client) Users() Users           { return c.users }
-func (c *Client) Playlists() []string    { return c.playlists }
-func (c *Client) Latency() time.Duration { return c.latency }
-func (c *Client) Name() string           { return c.c.Name }
-func (c *Client) Err() error             { return c.fatal }
+func (c *Client) Users() Users                   { return c.users }
+func (c *Client) Playlists() []string            { return c.playlists }
+func (c *Client) Latency() time.Duration         { return c.latency }
+func (c *Client) Name() string                   { return c.c.Name }
+func (c *Client) Err() error                     { return c.fatal }
+func (c *Client) ServerFingerprint() string      { return c.serverFingerprint }
+func (c *Client) SetTrustedFingerprint(n string) { c.c.ServerFingerprint = n }
 
 func (c *Client) Chat(msg string) error {
 	return c.Send(vars.ChatChannel, chatdata.Message{Data: msg})
@@ -124,14 +137,14 @@ func (c *Client) Music(msg string) error {
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {
-	conn, err := c.connect()
+	_, err := c.tryConnect()
 	if err != nil {
 		c.disconnect()
 		return err
 	}
 
 	c.sem.Lock()
-	if err := c.writeMulti(conn, channel.ChannelMsg{Data: chnl}, msg); err != nil {
+	if err := c.writeMulti(c.w, channel.ChannelMsg{Data: chnl}, msg); err != nil {
 		c.sem.Unlock()
 		c.disconnect()
 		return err
@@ -142,7 +155,11 @@ func (c *Client) Send(chnl string, msg channel.Msg) error {
 }
 
 func (c *Client) Connect() error {
+	c.fatal = nil
 	_, err := c.connect()
+	if err != nil {
+		c.disconnect()
+	}
 	return err
 }
 
@@ -164,19 +181,15 @@ func (c *Client) disconnect() {
 	if c.conn != nil {
 		c.conn.Close()
 	}
-	c.conn = nil
+	c.conn, c.r, c.w = nil, nil, nil
 }
 
-func (c *Client) connect() (Conn, error) {
-	if err := c.Err(); err != nil {
-		return nil, err
-	}
-
+func (c *Client) tryConnect() (io.Reader, error) {
 	c.sem.Lock()
-	if c.conn != nil {
-		conn := c.conn
-		c.sem.Unlock()
-		return conn, nil
+	defer c.sem.Unlock()
+	if c.r != nil {
+		r := c.r
+		return r, nil
 	}
 
 	for time.Since(c.lastConnect) < time.Second*2 {
@@ -187,68 +200,151 @@ func (c *Client) connect() (Conn, error) {
 	c.lastConnect = time.Now()
 	conn, err := c.backend.Connect()
 	if err != nil {
-		c.sem.Unlock()
 		return nil, err
 	}
 
-	c.log.Log("connected")
+	c.log.Log("connecting...")
 	c.conn = conn
-
-	if err := c.c.Proto.Write(conn); err != nil {
-		c.sem.Unlock()
+	if err := c.negotiateProto(conn); err != nil {
 		return conn, err
 	}
 
-	msg := channel.IdentifyMsg{Data: c.c.Name, Channels: c.c.Channels, Version: vars.ProtocolVersion}
-	if err := c.write(conn, msg); err != nil {
-		c.sem.Unlock()
-		return conn, err
-	}
-
-	_status, _, err := c.read(conn, channel.StatusMsg{})
-	status := _status.(channel.StatusMsg)
-	if err != nil || !status.OK() {
-		c.fatal = err
-		if err == nil {
-			c.fatal = errors.New(status.Err)
-			if status.Is(channel.StatusUpdateClient) {
-				suffix := ""
-				if runtime.GOOS == "windows" {
-					suffix = ".exe"
-				}
-				c.fatal = fmt.Errorf(
-					"Client protocol does not match\nDownload new client: %s/clients/homechat-%s-%s%s",
-					c.c.ServerURL,
-					runtime.GOOS,
-					runtime.GOARCH,
-					suffix,
-				)
-			}
-		}
-		c.sem.Unlock()
-		return conn, c.fatal
-	}
-	_identity, _, err := c.read(conn, channel.IdentifyMsg{})
-	identity := _identity.(channel.IdentifyMsg)
+	c.log.Log("encrypting...")
+	fp, r, w, err := c.negotiateCrypto(conn)
 	if err != nil {
-		c.sem.Unlock()
 		return conn, err
 	}
+
+	c.serverFingerprint = fp
+	if c.c.ServerFingerprint == "" || c.c.ServerFingerprint != fp {
+		c.fatal = ErrFingerPrint
+		return conn, ErrFingerPrint
+	}
+
+	c.r, c.w = r, w
+
+	if err := c.negotiateSymmetric(r, w); err != nil {
+		return c.r, err
+	}
+
+	if err := c.negotiateUser(r, w); err != nil {
+		return c.r, err
+	}
+	c.log.Log("connected")
+
+	return c.r, nil
+}
+
+func (c *Client) negotiateProto(conn Conn) error {
+	return c.c.Proto.Write(conn)
+}
+
+func (c *Client) negotiateCrypto(conn Conn) (string, io.Reader, channel.WriteFlusher, error) {
+	var w channel.WriteFlusher = channel.NewPassthrough(conn)
+	if c.c.Framed {
+		w = channel.NewBuffered(conn)
+	}
+
+	_server, _, err := c.read(conn, channel.PubKeyServerMessage{})
+	if err != nil {
+		return "", nil, nil, err
+	}
+	server := _server.(channel.PubKeyServerMessage)
+
+	client, err := channel.NewPubKeyMessage(c.c.Key, server)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	if err := c.write(w, client); err != nil {
+		return "", nil, nil, err
+	}
+
+	derive, err := channel.CommonSecret(client, server, nil)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	fp := server.Fingerprint()
+
+	rw := crypto.NewEncDec(
+		conn,
+		w,
+		derive(channel.CryptoClientRead),
+		derive(channel.CryptoClientWrite),
+		crypto.EncrypterConfig{SaltSize: 32, Cost: 12},
+		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
+	)
+
+	return fp, rw, channel.NewWriterFlusher(rw, w), nil
+}
+
+func (c *Client) negotiateSymmetric(r io.Reader, w channel.WriteFlusher) error {
+	test, _, err := c.read(r, channel.SymmetricTestMessage{})
+	if err != nil {
+		return err
+	}
+	return c.write(w, test)
+}
+
+func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) error {
+	msg := channel.IdentifyMsg{Data: c.c.Name, Channels: c.c.Channels, Version: vars.ProtocolVersion}
+	if err := c.write(w, msg); err != nil {
+		return err
+	}
+
+	_status, _, err := c.read(r, channel.StatusMsg{})
+	if err != nil {
+		return err
+	}
+
+	s := _status.(channel.StatusMsg)
+	if !s.OK() {
+		err = errors.New(s.Err)
+		if s.Is(channel.StatusUpdateClient) {
+			suffix := ""
+			if runtime.GOOS == "windows" {
+				suffix = ".exe"
+			}
+			err = fmt.Errorf(
+				"Client protocol does not match\nDownload new client: %s/clients/homechat-%s-%s%s",
+				c.c.ServerURL,
+				runtime.GOOS,
+				runtime.GOARCH,
+				suffix,
+			)
+		}
+		c.fatal = err
+		return err
+	}
+
+	_identity, _, err := c.read(r, channel.IdentifyMsg{})
+	if err != nil {
+		return err
+	}
+
+	identity := _identity.(channel.IdentifyMsg)
 	c.c.Name = identity.Data
 	c.handler.HandleName(c.c.Name)
-	c.sem.Unlock()
+	return nil
+}
 
+func (c *Client) connect() (io.Reader, error) {
+	if err := c.Err(); err != nil {
+		return nil, err
+	}
+
+	r, err := c.tryConnect()
+	if err != nil {
+		return r, err
+	}
 	if c.c.History > 0 {
 		if err = c.Send(vars.HistoryChannel, historydata.New(c.c.History)); err != nil {
-			return conn, err
+			return r, err
 		}
 	}
 
-	if err = c.Send(vars.UserChannel, usersdata.Message{}); err != nil {
-		return conn, err
-	}
-
-	return conn, nil
+	return r, c.Send(vars.UserChannel, usersdata.Message{})
 }
 
 func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {
@@ -262,28 +358,16 @@ func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {
 	}
 }
 
-func (c *Client) writeMulti(w io.Writer, ms ...channel.Msg) error {
-	rw := w
-	var byw *bytes.Buffer
-	if c.c.Framed {
-		byw = bytes.NewBuffer(nil)
-		rw = byw
-	}
-
+func (c *Client) writeMulti(w channel.WriteFlusher, ms ...channel.Msg) error {
 	for _, m := range ms {
-		if err := c.writeRaw(rw, m); err != nil {
+		if err := c.writeRaw(w, m); err != nil {
 			return err
 		}
 	}
-
-	if c.c.Framed {
-		_, err := byw.WriteTo(w)
-		return err
-	}
-	return nil
+	return w.Flush()
 }
 
-func (c *Client) write(w io.Writer, m channel.Msg) error {
+func (c *Client) write(w channel.WriteFlusher, m channel.Msg) error {
 	return c.writeMulti(w, m)
 }
 
@@ -310,7 +394,7 @@ func (c *Client) Run() error {
 	}
 
 	pings := make(chan time.Time, 1)
-	done := make(chan struct{})
+	done := make(chan struct{}, 1)
 	go func() {
 		for {
 			if hasPing {

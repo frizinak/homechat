@@ -80,6 +80,16 @@ func hue(f *Flags) error {
 	return nil
 }
 
+func fingerprint(f *Flags) error {
+	pk, err := f.All.Key.Public()
+	if err != nil {
+		return fmt.Errorf("failed to parse publickey: %w", err)
+	}
+
+	fmt.Println(pk.FingerprintString())
+	return nil
+}
+
 func logs(f *Flags) error {
 	if f.Logs.Dir == "" {
 		return errors.New("no directory specified")
@@ -139,16 +149,6 @@ func serve(flock flock, f *Flags) error {
 		break
 	}
 	defer flock.mutex.Unlock()
-
-	appendChatDir := *f.AppConf.ChatMessagesAppendOnlyDir
-	if err := os.MkdirAll(f.All.Uploads, 0o700); err != nil {
-		return err
-	}
-	if appendChatDir != "" {
-		if err := os.MkdirAll(appendChatDir, 0o700); err != nil {
-			return err
-		}
-	}
 
 	static := make(map[string][]byte)
 	err := func() error {
@@ -269,7 +269,7 @@ func serve(flock flock, f *Flags) error {
 	hsh.Write(rnd)
 
 	appendChatFile := filepath.Join(
-		appendChatDir,
+		f.Logs.Dir,
 		fmt.Sprintf(
 			"chat-%s-%s.log",
 			now,
@@ -390,7 +390,7 @@ func main() {
 		panic(err)
 	}
 
-	mutexPath, err := filepath.Abs(filepath.Join(f.AppConf.Directory, "~lock"))
+	mutexPath, err := filepath.Abs(filepath.Join(f.All.CacheDir, "~lock"))
 	if err != nil {
 		panic(err)
 	}
@@ -408,6 +408,10 @@ func main() {
 		err = logs(f)
 	case ModeHue:
 		err = hue(f)
+	case ModeFingerprint:
+		err = fingerprint(f)
+	default:
+		err = errors.New("no such mode")
 	}
 
 	if err != nil {
