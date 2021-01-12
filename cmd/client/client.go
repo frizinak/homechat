@@ -94,9 +94,14 @@ func main() {
 	if f.All.Mode == ModeMusic {
 		indent = 2
 	}
+	max := f.AppConf.MaxMessages
+	if f.All.Mode == ModeMusic {
+		max = 1e9
+	}
+
 	tui := ui.Term(
 		f.All.Mode == ModeDefault,
-		f.AppConf.MaxMessages,
+		max,
 		indent,
 		f.All.Mode == ModeMusic,
 	)
