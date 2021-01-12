@@ -188,6 +188,7 @@ func (f *Flags) Parse() error {
 	}
 
 	f.ClientConf.Channels = []string{
+		vars.PingChannel,
 		vars.UserChannel,
 		vars.HistoryChannel,
 		vars.ChatChannel,
@@ -202,6 +203,7 @@ func (f *Flags) Parse() error {
 
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{
+			vars.PingChannel,
 			vars.UserChannel,
 			vars.MusicChannel,
 			vars.MusicStateChannel,

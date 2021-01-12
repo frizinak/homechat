@@ -28,6 +28,7 @@ type Backend interface {
 type Handler interface {
 	HandleName(name string)
 	HandleHistory()
+	HandleLatency(time.Duration)
 	HandleChatMessage(chatdata.ServerMessage) error
 	HandleMusicMessage(musicdata.ServerMessage) error
 	HandleMusicStateMessage(MusicState) error
@@ -77,6 +78,8 @@ type Client struct {
 	users    Users
 	allUsers map[string]map[string]User
 
+	latency time.Duration
+
 	playlists []string
 
 	conn        Conn
@@ -106,10 +109,11 @@ func New(b Backend, h Handler, log Logger, c Config) *Client {
 	}
 }
 
-func (c *Client) Users() Users        { return c.users }
-func (c *Client) Playlists() []string { return c.playlists }
-func (c *Client) Name() string        { return c.c.Name }
-func (c *Client) Err() error          { return c.fatal }
+func (c *Client) Users() Users           { return c.users }
+func (c *Client) Playlists() []string    { return c.playlists }
+func (c *Client) Latency() time.Duration { return c.latency }
+func (c *Client) Name() string           { return c.c.Name }
+func (c *Client) Err() error             { return c.fatal }
 
 func (c *Client) Chat(msg string) error {
 	return c.Send(vars.ChatChannel, chatdata.Message{Data: msg})
@@ -297,16 +301,28 @@ func (c *Client) read(r io.Reader, msg channel.Msg) (channel.Msg, io.Reader, err
 }
 
 func (c *Client) Run() error {
+	hasPing := false
+	for _, c := range c.c.Channels {
+		if c == vars.PingChannel {
+			hasPing = true
+			break
+		}
+	}
+
+	pings := make(chan time.Time, 1)
 	done := make(chan struct{})
 	go func() {
 		for {
+			if hasPing {
+				pings <- time.Now()
+			}
 			if err := c.Send(vars.PingChannel, pingdata.Message{}); err != nil {
 				c.log.Err(err.Error())
 			}
 			select {
 			case <-done:
 				return
-			case <-time.After(time.Millisecond * 10000):
+			case <-time.After(time.Millisecond * 2000):
 			}
 		}
 	}()
@@ -322,6 +338,9 @@ func (c *Client) Run() error {
 		r = nr
 
 		switch chnl.Data {
+		case vars.PingChannel:
+			c.latency = time.Since(<-pings)
+			c.handler.HandleLatency(c.latency)
 		case vars.HistoryChannel:
 			_, _, err := c.read(r, historydata.ServerMessage{})
 			if err != nil {

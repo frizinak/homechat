@@ -8,7 +8,7 @@ const (
 	HistoryChannel = "h"  // rw
 	UploadChannel  = "up" // w
 
-	PingChannel = "p" // w
+	PingChannel = "p" // rw
 
 	MusicChannel         = "m"  // rw
 	MusicStateChannel    = ">"  // r

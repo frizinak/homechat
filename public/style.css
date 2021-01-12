@@ -218,6 +218,19 @@ a {
   text-transform: uppercase;
 }
 
+.latency {
+  display: inline-block;
+  float: right;
+  text-align: right;
+
+  min-width: 120px;
+  padding: var(--spacer-xsmall);
+
+  color: var(--meta-color);
+  font-size: 10px;
+  font-weight: 600;
+}
+
 .status.is-success {
   background: var(--success-color);
 }

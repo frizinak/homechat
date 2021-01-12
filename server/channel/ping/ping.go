@@ -29,10 +29,23 @@ func (c *PingChannel) Register(chnl string, s channel.Sender) error {
 
 func (c *PingChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
 	_, err := data.BinaryMessage(r)
-	return err
+	if err != nil {
+		return err
+	}
+	return c.handle(cl)
 }
 
 func (c *PingChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader, error) {
 	_, nr, err := data.JSONMessage(r)
-	return nr, err
+	if err != nil {
+		return nr, err
+	}
+	return nr, c.handle(cl)
+}
+
+func (c *PingChannel) handle(cl channel.Client) error {
+	return c.sender.Broadcast(
+		channel.ClientFilter{Channel: c.channel, Client: cl},
+		data.Message{},
+	)
 }

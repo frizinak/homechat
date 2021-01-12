@@ -21,6 +21,7 @@ function init() {
   const elLogScroll = document.getElementsByClassName("overflow")[0];
   const elLog = document.getElementsByClassName("log")[0];
   const elInput = document.getElementsByClassName("inp")[0];
+  const elLatency = document.getElementsByClassName("latency")[0];
 
   const elUploadPopup = document.getElementsByClassName("upload-wrap")[0];
   const elUploadForm = elUploadPopup.getElementsByTagName("form")[0];
@@ -270,8 +271,11 @@ function init() {
       status.err = "";
       updateStatus();
     },
-    onHistory : function () {
-        elLog.innerHTML = '';
+    onHistory: function () {
+      elLog.innerHTML = '';
+    },
+    onLatency: function (ms) {
+      elLatency.innerText = ms + "ms";
     },
     onChatMessage: function (msg) {
       message(msg);

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"syscall/js"
+	"time"
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/wswasm"
@@ -21,6 +22,7 @@ type handler string
 const (
 	OnName              handler = "onName"
 	OnHistory           handler = "onHistory"
+	OnLatency           handler = "onLatency"
 	OnChatMessage       handler = "onChatMessage"
 	OnMusicMessage      handler = "onMusicMessage"
 	OnMusicStateMessage handler = "onMusicStateMessage"
@@ -41,6 +43,7 @@ func newJSHandler(h js.Value) *jsHandler {
 	methods := []handler{
 		OnName,
 		OnHistory,
+		OnLatency,
 		OnChatMessage,
 		OnMusicMessage,
 		OnMusicStateMessage,
@@ -87,6 +90,10 @@ func (j *jsHandler) HandleName(name string) {
 
 func (j *jsHandler) HandleHistory() {
 	j.handlers[OnHistory].Invoke()
+}
+
+func (j *jsHandler) HandleLatency(l time.Duration) {
+	j.handlers[OnLatency].Invoke(l.Milliseconds())
 }
 
 func (j *jsHandler) HandleChatMessage(m chatdata.ServerMessage) error {
@@ -169,6 +176,7 @@ func main() {
 			ServerURL: httpProto + "//" + host,
 			Name:      args[0].Get("name").String(),
 			Channels: []string{
+				vars.PingChannel,
 				vars.UserChannel,
 				vars.HistoryChannel,
 				vars.ChatChannel,

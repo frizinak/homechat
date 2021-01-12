@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"time"
 )
 
 type PlainUI struct {
@@ -13,11 +14,12 @@ func Plain(w io.Writer) *PlainUI {
 	return &PlainUI{w}
 }
 
-func (p *PlainUI) Users(msg string) {}
-func (p *PlainUI) Log(msg string)   {}
-func (p *PlainUI) Flash(msg string) { fmt.Fprintln(p.Writer, "FLASH", msg) }
-func (p *PlainUI) Err(err string)   { fmt.Fprintln(p.Writer, "ERR", err) }
-func (p *PlainUI) Clear()           {}
+func (p *PlainUI) Users(msg string)              {}
+func (p *PlainUI) Latency(latency time.Duration) {}
+func (p *PlainUI) Log(msg string)                {}
+func (p *PlainUI) Flash(msg string)              { fmt.Fprintln(p.Writer, "FLASH", msg) }
+func (p *PlainUI) Err(err string)                { fmt.Fprintln(p.Writer, "ERR", err) }
+func (p *PlainUI) Clear()                        {}
 func (p *PlainUI) BroadcastMulti(msgs []Msg, scroll bool) {
 	for _, m := range msgs {
 		p.Broadcast(m, scroll)
