@@ -71,12 +71,23 @@ func main() {
 		cache = appConf.Directory
 	}
 
+	addr := strings.Split(appConf.HTTPAddr, ":")
+	if len(addr) != 2 {
+		addr = []string{"127.0.0.1", "1200"}
+	}
+
+	port, err := strconv.Atoi(addr[1])
+	if err != nil {
+		panic(fmt.Errorf("Failed to parse server http address %w", err))
+	}
+
 	bandwidthIntervalSeconds := 0
 	appendChatDir := filepath.Join(cache, "chatlogs")
 	var maxUploadKBytes int64 = 1024 * 10
 	resave := appConf.Merge(&Config{
 		Directory: cache,
 		HTTPAddr:  "127.0.0.1:1200",
+		TCPAddr:   fmt.Sprintf("%s:%d", addr[0], port+1),
 		YMDir:     filepath.Join(cache, "ym"),
 
 		BandwidthIntervalSeconds: &bandwidthIntervalSeconds,
@@ -105,18 +116,6 @@ func main() {
 	if appendChatDir != "" {
 		os.MkdirAll(appendChatDir, 0o700)
 	}
-
-	addr := strings.Split(appConf.HTTPAddr, ":")
-	if len(addr) != 2 {
-		panic("invalid address")
-	}
-
-	port, err := strconv.Atoi(addr[1])
-	if err != nil {
-		panic(err)
-	}
-	port++
-	tcp := fmt.Sprintf("%s:%d", addr[0], port)
 
 	static := make(map[string][]byte)
 	func() {
@@ -221,7 +220,7 @@ func main() {
 		ProtocolVersion: vars.ProtocolVersion,
 		Log:             log.New(os.Stderr, "", 0),
 		HTTPAddress:     appConf.HTTPAddr,
-		TCPAddress:      tcp,
+		TCPAddress:      appConf.TCPAddr,
 		StorePath:       store,
 		UploadsPath:     uploads,
 		MaxUploadSize:   maxUploadKBytes * 1024,

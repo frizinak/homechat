@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/frizinak/homechat/client"
@@ -156,11 +157,11 @@ func (f *Flags) Parse() error {
 		return err
 	}
 
-	f.TCPConf = tcp.Config{Domain: strings.TrimSpace(f.AppConf.ServerAddress)}
+	f.TCPConf = tcp.Config{TCPAddr: f.AppConf.ServerTCPAddress}
 	f.ClientConf.Name = strings.TrimSpace(f.AppConf.Username)
 	f.ClientConf.Framed = false
 	f.ClientConf.Proto = channel.ProtoBinary
-	f.ClientConf.ServerURL = "http://" + f.TCPConf.Domain
+	f.ClientConf.ServerURL = "http://" + f.AppConf.ServerAddress
 	f.ClientConf.History = uint16(f.AppConf.MaxMessages)
 
 	if f.ClientConf.Name == "" {
@@ -235,13 +236,23 @@ func (f *Flags) validateAppConf() error {
 		}
 	}
 
+	addr := strings.Split(f.AppConf.ServerAddress, ":")
+	if len(addr) != 2 {
+		addr = []string{"127.0.0.1", "1200"}
+	}
+	port, err := strconv.Atoi(addr[1])
+	if err != nil {
+		panic(fmt.Errorf("Failed to parse server http address %w", err))
+	}
+
 	notifyCmd := "notify-send 'HomeChat' '%u: %m'"
 	resave := f.AppConf.Merge(&Config{
-		NotifyCommand: &notifyCmd,
-		NotifyWhen:    NotifyDefault,
-		ServerAddress: "",
-		Username:      "",
-		MaxMessages:   250,
+		NotifyCommand:    &notifyCmd,
+		NotifyWhen:       NotifyDefault,
+		ServerAddress:    "127.0.0.1:1200",
+		ServerTCPAddress: fmt.Sprintf("%s:%d", addr[0], port+1),
+		Username:         "",
+		MaxMessages:      250,
 	})
 
 	if !resave {

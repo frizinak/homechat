@@ -44,18 +44,18 @@ func main() {
 	f.Flags()
 	exit(f.Parse())
 
+	tcp := tcp.New(f.TCPConf)
 	if f.All.Mode == ModeUpload {
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
-		tcp, err := tcp.New(f.TCPConf)
-		exit(err)
 		client := client.New(tcp, handler, log, f.ClientConf)
 		var r io.ReadCloser = os.Stdin
 		if f.Upload.File != "" {
+			var err error
 			r, err = os.Open(f.Upload.File)
 			exit(err)
 		}
-		err = client.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, r)
+		err := client.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, r)
 		r.Close()
 		exit(err)
 		os.Exit(0)
@@ -64,8 +64,6 @@ func main() {
 	if f.All.OneOff != "" || !f.All.Interactive {
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
-		tcp, err := tcp.New(f.TCPConf)
-		exit(err)
 		client := client.New(tcp, handler, log, f.ClientConf)
 		if f.All.OneOff == "" {
 			r := io.LimitReader(os.Stdin, 1024*1024)
@@ -103,8 +101,6 @@ func main() {
 		f.All.Mode == ModeMusic,
 	)
 	handler := terminal.New(tui)
-	tcp, err := tcp.New(f.TCPConf)
-	exit(err)
 	client := client.New(tcp, handler, tui, f.ClientConf)
 	send := client.Chat
 	if f.All.Mode == ModeMusic {

@@ -1,10 +1,7 @@
 package tcp
 
 import (
-	"fmt"
 	"net"
-	"strconv"
-	"strings"
 
 	"github.com/frizinak/homechat/client"
 )
@@ -14,21 +11,11 @@ type Client struct {
 }
 
 type Config struct {
-	Domain string
+	TCPAddr string
 }
 
-func New(c Config) (*Client, error) {
-	client := &Client{}
-	addr := strings.Split(c.Domain, ":")
-	port, err := strconv.Atoi(addr[1])
-	if err != nil {
-		return nil, err
-	}
-	port++
-
-	client.tcpAddr = fmt.Sprintf("%s:%d", addr[0], port)
-
-	return client, nil
+func New(c Config) *Client {
+	return &Client{c.TCPAddr}
 }
 
 func (c *Client) Connect() (client.Conn, error) {

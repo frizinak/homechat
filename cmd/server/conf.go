@@ -7,14 +7,16 @@ import (
 )
 
 type Config struct {
-	Directory string
-	HTTPAddr  string
-	YMDir     string
-
-	BandwidthIntervalSeconds  *int
-	MaxUploadKBytes           *int64
+	Directory                 string
+	YMDir                     string
 	ChatMessagesAppendOnlyDir *string
-	MaxChatMessages           int
+
+	HTTPAddr string
+	TCPAddr  string
+
+	BandwidthIntervalSeconds *int
+	MaxUploadKBytes          *int64
+	MaxChatMessages          int
 
 	WttrCity           string
 	HolidayCountryCode string
@@ -94,6 +96,10 @@ func (c *Config) Merge(def *Config) bool {
 	if c.ChatMessagesAppendOnlyDir == nil {
 		resave = true
 		c.ChatMessagesAppendOnlyDir = def.ChatMessagesAppendOnlyDir
+	}
+	if c.TCPAddr == "" {
+		resave = true
+		c.TCPAddr = def.TCPAddr
 	}
 	return resave
 }

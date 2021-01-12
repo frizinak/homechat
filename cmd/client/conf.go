@@ -16,30 +16,33 @@ const (
 )
 
 type Config struct {
-	NotifyCommand *string
-	NotifyWhen    NotifyWhen
-	ServerAddress string
-	Username      string
-	MaxMessages   int
+	NotifyCommand    *string
+	NotifyWhen       NotifyWhen
+	ServerAddress    string
+	ServerTCPAddress string
+	Username         string
+	MaxMessages      int
 }
 
 func (c *Config) Help(w io.Writer) error {
 	buf := bytes.NewBuffer(nil)
-	buf.WriteString("NotifyCommand: program to run to show a notification\n")
-	buf.WriteString("               %u will be replaced with the username of the sender\n")
-	buf.WriteString("               %m will be replaced with the message\n")
-	buf.WriteString("               example: notify-send 'Homechat' '%u: %m'\n")
+	buf.WriteString("NotifyCommand:    program to run to show a notification\n")
+	buf.WriteString("                  %u will be replaced with the username of the sender\n")
+	buf.WriteString("                  %m will be replaced with the message\n")
+	buf.WriteString("                  example: notify-send 'Homechat' '%u: %m'\n")
 	buf.WriteString("\n")
-	buf.WriteString("NotifyWhen:    When to trigger the above command\n")
-	buf.WriteString("               one off 'default' or 'always'\n")
-	buf.WriteString("               default: direct messages or chat messages that start with '!'\n")
-	buf.WriteString("               always:  well... always\n")
+	buf.WriteString("NotifyWhen:       When to trigger the above command\n")
+	buf.WriteString("                  one off 'default' or 'always'\n")
+	buf.WriteString("                  default: direct messages or chat messages that start with '!'\n")
+	buf.WriteString("                  always:  well... always\n")
 	buf.WriteString("\n")
-	buf.WriteString("ServerAddress: ip:port of the server\n")
+	buf.WriteString("ServerAddress:    ip:port of the http server\n")
 	buf.WriteString("\n")
-	buf.WriteString("Username:      your desired username\n")
+	buf.WriteString("ServerTCPAddress: ip:port of the tcp server\n")
 	buf.WriteString("\n")
-	buf.WriteString("MaxMessages:   maximum amount of messages shown\n")
+	buf.WriteString("Username:         your desired username\n")
+	buf.WriteString("\n")
+	buf.WriteString("MaxMessages:      maximum amount of messages shown\n")
 	buf.WriteString("\n")
 	_, err := io.Copy(w, buf)
 	return err
@@ -92,6 +95,10 @@ func (c *Config) Merge(def *Config) bool {
 	if c.ServerAddress == "" {
 		resave = true
 		c.ServerAddress = def.ServerAddress
+	}
+	if c.ServerTCPAddress == "" {
+		resave = true
+		c.ServerTCPAddress = def.ServerTCPAddress
 	}
 	if c.MaxMessages <= 0 {
 		resave = true
