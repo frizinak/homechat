@@ -3,7 +3,7 @@ module github.com/frizinak/homechat
 go 1.15
 
 require (
-	github.com/amimof/huego v1.1.0 // indirect
+	github.com/amimof/huego v1.1.0
 	github.com/antchfx/xpath v1.1.11 // indirect
 	github.com/containerd/console v1.0.1
 	github.com/frizinak/binary v0.1.0

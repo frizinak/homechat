@@ -21,6 +21,7 @@ type Mode byte
 const (
 	ModeDefault Mode = iota
 	ModeLogs
+	ModeHue
 )
 
 type Flags struct {
@@ -29,6 +30,7 @@ type Flags struct {
 	flags struct {
 		serve  *flag.FlagSet
 		logs   *flag.FlagSet
+		hue    *flag.FlagSet
 		config *flag.FlagSet
 	}
 
@@ -82,26 +84,37 @@ func (f *Flags) Flags() {
 		"",
 		"The directory that contains your logs, defaults to server.json setting",
 	)
-	f.flags.logs.Usage = func() {
-		f.flags.logs.PrintDefaults()
-	}
+	f.flags.hue = flag.NewFlagSet("hue", flag.ExitOnError)
+	f.flags.hue.SetOutput(f.out)
 
 	f.flags.config = flag.NewFlagSet("config", flag.ExitOnError)
 	f.flags.config.SetOutput(f.out)
 
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigFile, "c", f.All.ConfigFile, "config file")
+
 	flag.Usage = func() {
 		fmt.Fprintln(f.out, "homechat-server")
 		flag.PrintDefaults()
 		fmt.Fprint(f.out, "\nCommands:\n")
 		fmt.Fprintln(f.out, "  - serve | <empty>: Server")
 		fmt.Fprintln(f.out, "  - logs:            Append-only logfile operations")
+		fmt.Fprintln(f.out, "  - hue:             Configure Philips Hue bridge credentials")
 		fmt.Fprintln(f.out, "  - config:          Config options explained")
 		fmt.Fprintln(f.out, "  - version:         Print version and exit")
 	}
 	f.flags.serve.Usage = func() {
+		fmt.Fprintln(f.out, "Start the server")
 		f.flags.serve.PrintDefaults()
+	}
+	f.flags.hue.Usage = func() {
+		fmt.Fprintln(f.out, "Discover hue bridge and create credentials")
+		fmt.Fprintln(f.out, "Automatically stores them in the active server.json")
+		f.flags.hue.PrintDefaults()
+	}
+	f.flags.logs.Usage = func() {
+		fmt.Fprintln(f.out, "Print contents of the Append-only logs for now")
+		f.flags.logs.PrintDefaults()
 	}
 	f.flags.config.Usage = func() {
 		fmt.Fprintf(f.out, "Config file used: '%s'\n\n", f.All.ConfigFile)
@@ -227,6 +240,11 @@ func (f *Flags) parseCommand() error {
 		}
 		if f.Logs.Dir == "" {
 			f.Logs.Dir = *f.AppConf.ChatMessagesAppendOnlyDir
+		}
+	case "hue":
+		f.All.Mode = ModeHue
+		if err := f.flags.hue.Parse(args[1:]); err != nil {
+			return err
 		}
 	case "version":
 		fmt.Fprintf(f.out, "%s (protocol: %s)\n", vars.Version, vars.ProtocolVersion)

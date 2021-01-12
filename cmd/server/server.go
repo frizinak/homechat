@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/amimof/huego"
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bot"
 	"github.com/frizinak/homechat/bound"
@@ -42,6 +43,41 @@ import (
 type flock struct {
 	path  string
 	mutex lockfile.Lockfile
+}
+
+func hue(f *Flags) error {
+	var hub *huego.Bridge
+	if f.AppConf.HueIP == "" {
+		var err error
+		fmt.Println("No ip set in config, discovering hue bridge")
+		hub, err = huego.Discover()
+		if err != nil {
+			return fmt.Errorf("Something went wrong during discover: %w", err)
+		}
+		f.AppConf.HueIP = hub.Host
+		fmt.Printf("found hub at '%s'\n", f.AppConf.HueIP)
+		if err := f.AppConf.Encode(f.All.ConfigFile); err != nil {
+			return err
+		}
+	}
+
+	fmt.Printf("creating new app on bridge at ip %s\n", f.AppConf.HueIP)
+	if hub == nil {
+		hub = huego.New(f.AppConf.HueIP, "")
+	}
+	fmt.Println("go press the bridge button and press enter to continue")
+	fmt.Scanln()
+	pass, err := hub.CreateUser("homechat")
+	if err != nil {
+		return err
+	}
+	f.AppConf.HuePass = pass
+	if err := f.AppConf.Encode(f.All.ConfigFile); err != nil {
+		return err
+	}
+
+	fmt.Println("success")
+	return nil
 }
 
 func logs(f *Flags) error {
@@ -370,6 +406,8 @@ func main() {
 		err = serve(flock, f)
 	case ModeLogs:
 		err = logs(f)
+	case ModeHue:
+		err = hue(f)
 	}
 
 	if err != nil {
