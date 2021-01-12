@@ -5,7 +5,6 @@ import (
 	"compress/gzip"
 	crand "crypto/rand"
 	"encoding/base64"
-	"flag"
 	"fmt"
 	"hash/fnv"
 	"io"
@@ -17,7 +16,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -35,90 +33,22 @@ import (
 	"github.com/frizinak/homechat/server/channel/upload"
 	"github.com/frizinak/homechat/server/channel/users"
 	"github.com/frizinak/homechat/vars"
+	"github.com/nightlyone/lockfile"
 )
 
-func main() {
-	rand.Seed(time.Now().UnixNano())
-	_confDir, err := os.UserConfigDir()
-	var confFile string
-	if err == nil {
-		confFile = filepath.Join(_confDir, "homechat", "server.json")
+func run(f *Flags) error {
+	appendChatDir := *f.AppConf.ChatMessagesAppendOnlyDir
+	if err := os.MkdirAll(f.All.Uploads, 0o700); err != nil {
+		return err
 	}
-
-	var dynamicHTTPDir string
-	flag.StringVar(&confFile, "c", confFile, "config file")
-	flag.StringVar(&dynamicHTTPDir, "http", "", "Directory the http server will directly serve from [for debugging]")
-	flag.Parse()
-
-	cache := filepath.Dir(confFile)
-	ucache, err := os.UserCacheDir()
-	if err == nil {
-		cache = filepath.Join(ucache, "homechat")
-	}
-
-	appConf := &Config{}
-	if err := appConf.Decode(confFile); err != nil {
-		if os.IsNotExist(err) {
-			if err := appConf.Encode(confFile); err != nil {
-				panic(err)
-			}
-		} else if err != nil {
-			panic(err)
-		}
-	}
-
-	if appConf.Directory != "" {
-		cache = appConf.Directory
-	}
-
-	addr := strings.Split(appConf.HTTPAddr, ":")
-	if len(addr) != 2 {
-		addr = []string{"127.0.0.1", "1200"}
-	}
-
-	port, err := strconv.Atoi(addr[1])
-	if err != nil {
-		panic(fmt.Errorf("Failed to parse server http address %w", err))
-	}
-
-	bandwidthIntervalSeconds := 0
-	appendChatDir := filepath.Join(cache, "chatlogs")
-	var maxUploadKBytes int64 = 1024 * 10
-	resave := appConf.Merge(&Config{
-		Directory: cache,
-		HTTPAddr:  "127.0.0.1:1200",
-		TCPAddr:   fmt.Sprintf("%s:%d", addr[0], port+1),
-		YMDir:     filepath.Join(cache, "ym"),
-
-		BandwidthIntervalSeconds: &bandwidthIntervalSeconds,
-		MaxUploadKBytes:          &maxUploadKBytes,
-
-		ChatMessagesAppendOnlyDir: &appendChatDir,
-		MaxChatMessages:           500,
-
-		WttrCity:           "tashkent",
-		HolidayCountryCode: "UZ",
-	})
-
-	bandwidthIntervalSeconds = *appConf.BandwidthIntervalSeconds
-	appendChatDir = *appConf.ChatMessagesAppendOnlyDir
-	maxUploadKBytes = *appConf.MaxUploadKBytes
-
-	if resave {
-		if err := appConf.Encode(confFile); err != nil {
-			panic(err)
-		}
-	}
-
-	store := filepath.Join(appConf.Directory, "chat.log")
-	uploads := filepath.Join(appConf.Directory, "uploads")
-	os.MkdirAll(uploads, 0o700)
 	if appendChatDir != "" {
-		os.MkdirAll(appendChatDir, 0o700)
+		if err := os.MkdirAll(appendChatDir, 0o700); err != nil {
+			return err
+		}
 	}
 
 	static := make(map[string][]byte)
-	func() {
+	err := func() error {
 		fs := []string{
 			"index.html",
 			"app.wasm",
@@ -130,7 +60,7 @@ func main() {
 
 		names, err := bound.AssetDir("clients")
 		if err != nil {
-			panic(err)
+			return err
 		}
 		for _, n := range names {
 			a := "clients/" + n
@@ -143,10 +73,14 @@ func main() {
 				static[g] = a
 			}
 		}
+		return nil
 	}()
+	if err != nil {
+		return err
+	}
 
 	func() {
-		if dynamicHTTPDir != "" {
+		if f.Serve.HTTPDir != "" {
 			return
 		}
 		re := regexp.MustCompile(`(?s)<!--scripts-->.*<!--eoscripts-->`)
@@ -177,8 +111,8 @@ func main() {
 	}()
 
 	var fh http.Handler
-	if dynamicHTTPDir != "" {
-		fh = http.FileServer(http.Dir(dynamicHTTPDir))
+	if f.Serve.HTTPDir != "" {
+		fh = http.FileServer(http.Dir(f.Serve.HTTPDir))
 	}
 
 	router := func(r *http.Request, l *log.Logger) (simplehttp.HandleFunc, int) {
@@ -216,26 +150,17 @@ func main() {
 		return nil, 0
 	}
 
-	c := server.Config{
-		ProtocolVersion: vars.ProtocolVersion,
-		Log:             log.New(os.Stderr, "", 0),
-		HTTPAddress:     appConf.HTTPAddr,
-		TCPAddress:      appConf.TCPAddr,
-		StorePath:       store,
-		UploadsPath:     uploads,
-		MaxUploadSize:   maxUploadKBytes * 1024,
-		Router:          router,
-		LogBandwidth:    time.Duration(bandwidthIntervalSeconds) * time.Second,
-	}
+	c := f.ServerConf
+	c.Router = router
 	s, err := server.New(c)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	now := time.Now().Format("2006-01-02--15-04-05.999999999")
 	rnd := make([]byte, 128)
 	if _, err := io.ReadFull(crand.Reader, rnd); err != nil {
-		panic(err)
+		return err
 	}
 	hsh := fnv.New64()
 	hsh.Write(rnd)
@@ -250,12 +175,12 @@ func main() {
 	)
 
 	chat := &chatpkg.ChatChannel{}
-	history, err := history.New(c.Log, appConf.MaxChatMessages, appendChatFile, chat)
+	history, err := history.New(c.Log, f.AppConf.MaxChatMessages, appendChatFile, chat)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	musicErr := status.New()
-	music := music.NewYM(c.Log, musicErr, appConf.YMDir)
+	music := music.NewYM(c.Log, musicErr, f.AppConf.YMDir)
 	*chat = *chatpkg.New(c.Log, history)
 	upload := upload.New(c.MaxUploadSize, chat, s)
 	users := users.New(
@@ -285,12 +210,12 @@ func main() {
 	quoteBots.AddBot("programming", bot.NewBotFunc(bot.ProgrammingQuote))
 	quoteBots.AddBot("cats", bot.NewBotFunc(bot.CatQuote))
 
-	weatherBot := bot.NewWttrBot(appConf.WttrCity)
+	weatherBot := bot.NewWttrBot(f.AppConf.WttrCity)
 
-	if appConf.HueIP != "" {
+	if f.AppConf.HueIP != "" {
 		hue := bot.NewHueBot(
-			appConf.HueIP,
-			appConf.HuePass,
+			f.AppConf.HueIP,
+			f.AppConf.HuePass,
 			[]string{},
 		)
 
@@ -298,7 +223,7 @@ func main() {
 	}
 
 	chat.AddBot("quote", quoteBots)
-	chat.AddBot("holidays", bot.NewHolidayBot(appConf.HolidayCountryCode))
+	chat.AddBot("holidays", bot.NewHolidayBot(f.AppConf.HolidayCountryCode))
 	chat.AddBot("wttr", weatherBot)
 	chat.AddBot("weather", weatherBot)
 	chat.AddBot("trivia", bot.NewTriviaBot())
@@ -332,10 +257,59 @@ func main() {
 
 	fmt.Printf("Starting server on http://%s tcp://%s\n", c.HTTPAddress, c.TCPAddress)
 	if err := s.Init(); err != nil {
-		panic(err)
+		return err
 	}
 
 	if err := s.Run(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func main() {
+	rand.Seed(time.Now().UnixNano())
+	_confDir, err := os.UserConfigDir()
+	var confFile string
+	if err == nil {
+		confFile = filepath.Join(_confDir, "homechat", "server.json")
+	}
+
+	ucache, err := os.UserCacheDir()
+	cache := ""
+	if err == nil {
+		cache = filepath.Join(ucache, "homechat")
+	}
+	f := NewFlags(os.Stdout, confFile, cache)
+	f.Flags()
+	if err := f.Parse(); err != nil {
+		panic(err)
+	}
+
+	semPath, err := filepath.Abs(filepath.Join(f.AppConf.Directory, "~lock"))
+	if err != nil {
+		panic(err)
+	}
+
+	sem, err := lockfile.New(semPath)
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		if err := sem.TryLock(); err != nil {
+			if err != lockfile.ErrNotExist {
+				panic(fmt.Errorf("Failed to get lock: '%s': %w", semPath, err))
+			}
+			fmt.Printf("could not claim lock at %s, retrying...\n", semPath)
+			time.Sleep(time.Second)
+			continue
+		}
+		break
+	}
+	defer sem.Unlock()
+
+	if err := run(f); err != nil {
 		panic(err)
 	}
 

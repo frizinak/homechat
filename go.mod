@@ -13,6 +13,7 @@ require (
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/mattn/go-runewidth v0.0.9
+	github.com/nightlyone/lockfile v1.0.0
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b
 	golang.org/x/sys v0.0.0-20210105210732-16f7687f5001 // indirect
 )

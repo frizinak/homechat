@@ -74,7 +74,7 @@ serve: $(SRC) bound/bound.go testclient/server.json
 
 .PHONY: serve-live
 serve-live: $(SRC) bound/bound.go testclient/server.json
-	go run ./cmd/server -c ./testclient/server.json -http ./public
+	go run ./cmd/server -c ./testclient/server.json serve -http ./public
 
 .PHONY: local
 local: $(NATIVE) $(TESTCLIENT)
