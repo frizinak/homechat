@@ -13,6 +13,7 @@ import (
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/tcp"
 	"github.com/frizinak/homechat/client/ws"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
 	"github.com/google/shlex"
@@ -159,12 +160,19 @@ func (f *Flags) Parse() error {
 		return err
 	}
 
+	keyfile := filepath.Join(f.All.ConfigDir, ".rsa_private_key")
+	key, err := crypto.EnsureKey(keyfile)
+	if err != nil {
+		return err
+	}
+
 	f.TCPConf = tcp.Config{TCPAddr: f.AppConf.ServerTCPAddress}
 	f.WSConf = ws.Config{
 		TLS:    false,
 		Domain: f.AppConf.ServerAddress,
 		Path:   "ws",
 	}
+	f.ClientConf.Key = key
 	f.ClientConf.Name = strings.TrimSpace(f.AppConf.Username)
 	f.ClientConf.Framed = false
 	f.ClientConf.Proto = channel.ProtoBinary

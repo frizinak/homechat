@@ -17,6 +17,16 @@ const (
 	MinSaltSize = 8
 )
 
+type DecrypterConfig struct {
+	MinSaltSize uint16
+	MinCost     uint8
+}
+
+type EncrypterConfig struct {
+	SaltSize uint16
+	Cost     uint8
+}
+
 const random = 20
 
 func SKey(passphrase, salt []byte, cost uint8) ([]byte, error) {
@@ -36,6 +46,9 @@ func SKey(passphrase, salt []byte, cost uint8) ([]byte, error) {
 type Decrypter struct {
 	r io.Reader
 
+	minSaltSize uint16
+	minCost     uint8
+
 	pass  []byte
 	size  int
 	sizeb byte
@@ -45,8 +58,8 @@ type Decrypter struct {
 	mode cipher.Stream
 }
 
-func NewDecrypter(r io.Reader, pass []byte) io.Reader {
-	d := &Decrypter{r: r, pass: pass}
+func NewDecrypter(c DecrypterConfig, r io.Reader, pass []byte) io.Reader {
+	d := &Decrypter{r: r, pass: pass, minSaltSize: c.MinSaltSize, minCost: c.MinCost}
 	return d
 }
 
@@ -64,6 +77,10 @@ func (d *Decrypter) readHeader() error {
 
 	if err := binary.Read(d.r, binary.LittleEndian, &saltSize); err != nil {
 		return err
+	}
+
+	if saltSize < d.minSaltSize || cost < d.minCost {
+		return errors.New("data does not conform to requirements")
 	}
 
 	header := make([]byte, saltSize+aes.BlockSize)
@@ -125,16 +142,15 @@ type Encrypter struct {
 }
 
 func NewEncrypter(
+	c EncrypterConfig,
 	w io.Writer,
 	pass []byte,
-	saltSize uint16,
-	cost uint8,
 ) io.Writer {
 	d := &Encrypter{
 		w:        w,
 		pass:     pass,
-		saltSize: saltSize,
-		cost:     cost,
+		saltSize: c.SaltSize,
+		cost:     c.Cost,
 	}
 	return d
 }
@@ -204,11 +220,11 @@ func NewEncDec(
 	w io.Writer,
 	readPass []byte,
 	writePass []byte,
-	saltSize uint16,
-	cost uint8,
+	ec EncrypterConfig,
+	dc DecrypterConfig,
 ) io.ReadWriter {
 	return &EncDec{
-		NewDecrypter(r, readPass),
-		NewEncrypter(w, writePass, saltSize, cost),
+		NewDecrypter(dc, r, readPass),
+		NewEncrypter(ec, w, writePass),
 	}
 }

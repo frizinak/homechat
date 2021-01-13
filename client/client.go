@@ -93,6 +93,7 @@ type Client struct {
 }
 
 type Config struct {
+	Key       *crypto.Key
 	ServerURL string
 	Name      string
 	Channels  []string
@@ -127,14 +128,14 @@ func (c *Client) Music(msg string) error {
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {
-	_, err := c.connect()
+	_, err := c.tryConnect()
 	if err != nil {
 		c.disconnect()
 		return err
 	}
 
 	c.sem.Lock()
-	if err := c.writeMulti(channel.ChannelMsg{Data: chnl}, msg); err != nil {
+	if err := c.writeMulti(c.w, channel.ChannelMsg{Data: chnl}, msg); err != nil {
 		c.sem.Unlock()
 		c.disconnect()
 		return err
@@ -146,6 +147,9 @@ func (c *Client) Send(chnl string, msg channel.Msg) error {
 
 func (c *Client) Connect() error {
 	_, err := c.connect()
+	if err != nil {
+		c.disconnect()
+	}
 	return err
 }
 
@@ -170,15 +174,11 @@ func (c *Client) disconnect() {
 	c.conn, c.r, c.w = nil, nil, nil
 }
 
-func (c *Client) connect() (io.Reader, error) {
-	if err := c.Err(); err != nil {
-		return nil, err
-	}
-
+func (c *Client) tryConnect() (io.Reader, error) {
 	c.sem.Lock()
+	defer c.sem.Unlock()
 	if c.r != nil {
 		r := c.r
-		c.sem.Unlock()
 		return r, nil
 	}
 
@@ -190,86 +190,136 @@ func (c *Client) connect() (io.Reader, error) {
 	c.lastConnect = time.Now()
 	conn, err := c.backend.Connect()
 	if err != nil {
-		c.sem.Unlock()
 		return nil, err
 	}
 
-	c.log.Log("connected")
+	c.log.Log("connecting...")
 	c.conn = conn
-	wpass := []byte("test")
-	rpass := []byte("test2")
+	if err := c.negotiateProto(conn); err != nil {
+		return conn, err
+	}
 
+	r, w, err := c.negotiateCrypto(conn)
+	if err != nil {
+		return conn, err
+	}
+	c.log.Log("encrypted...")
+
+	c.r, c.w = r, w
+
+	if err := c.negotiateUser(r, w); err != nil {
+		return c.r, err
+	}
+	c.log.Log("connected")
+
+	return c.r, nil
+}
+
+func (c *Client) negotiateProto(conn Conn) error {
+	return c.c.Proto.Write(conn)
+}
+
+func (c *Client) negotiateCrypto(conn Conn) (io.Reader, channel.WriteFlusher, error) {
 	var w channel.WriteFlusher = channel.NewPassthrough(conn)
 	if c.c.Framed {
 		w = channel.NewBuffered(conn)
 	}
 
+	key := c.c.Key
+	pkey, err := key.Public()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pubkeyMsg, err := channel.NewPubKeyMessage(pkey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := c.write(w, pubkeyMsg); err != nil {
+		return nil, nil, err
+	}
+
+	_serverPubKeyMsg, _, err := c.read(conn, channel.PubKeyServerMessage{})
+	if err != nil {
+		return nil, nil, err
+	}
+	serverPubKeyMsg := _serverPubKeyMsg.(channel.PubKeyServerMessage)
+
+	derive, err := channel.CommonSecret(pubkeyMsg, serverPubKeyMsg, key)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	rw := crypto.NewEncDec(
 		conn,
 		w,
-		rpass,
-		wpass,
-		32,
-		8,
+		derive(channel.CryptoClientRead),
+		derive(channel.CryptoClientWrite),
+		crypto.EncrypterConfig{SaltSize: 16, Cost: 8},
+		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 8},
 	)
 
-	c.r, c.w = rw, channel.NewWriterFlusher(rw, w)
+	return rw, channel.NewWriterFlusher(rw, w), nil
+}
 
-	if err := c.c.Proto.Write(conn); err != nil {
-		c.sem.Unlock()
-		return c.r, err
-	}
-
+func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) error {
 	msg := channel.IdentifyMsg{Data: c.c.Name, Channels: c.c.Channels, Version: vars.ProtocolVersion}
-	if err := c.write(msg); err != nil {
-		c.sem.Unlock()
-		return c.r, err
+	if err := c.write(w, msg); err != nil {
+		return err
 	}
 
-	_status, _, err := c.read(c.r, channel.StatusMsg{})
-	status := _status.(channel.StatusMsg)
-	if err != nil || !status.OK() {
-		c.fatal = err
-		if err == nil {
-			c.fatal = errors.New(status.Err)
-			if status.Is(channel.StatusUpdateClient) {
-				suffix := ""
-				if runtime.GOOS == "windows" {
-					suffix = ".exe"
-				}
-				c.fatal = fmt.Errorf(
-					"Client protocol does not match\nDownload new client: %s/clients/homechat-%s-%s%s",
-					c.c.ServerURL,
-					runtime.GOOS,
-					runtime.GOARCH,
-					suffix,
-				)
-			}
-		}
-		c.sem.Unlock()
-		return c.r, c.fatal
-	}
-	_identity, _, err := c.read(c.r, channel.IdentifyMsg{})
-	identity := _identity.(channel.IdentifyMsg)
+	_status, _, err := c.read(r, channel.StatusMsg{})
 	if err != nil {
-		c.sem.Unlock()
-		return c.r, err
+		return err
 	}
+
+	s := _status.(channel.StatusMsg)
+	if !s.OK() {
+		err = errors.New(s.Err)
+		if s.Is(channel.StatusUpdateClient) {
+			suffix := ""
+			if runtime.GOOS == "windows" {
+				suffix = ".exe"
+			}
+			err = fmt.Errorf(
+				"Client protocol does not match\nDownload new client: %s/clients/homechat-%s-%s%s",
+				c.c.ServerURL,
+				runtime.GOOS,
+				runtime.GOARCH,
+				suffix,
+			)
+		}
+		return err
+	}
+
+	_identity, _, err := c.read(r, channel.IdentifyMsg{})
+	if err != nil {
+		return err
+	}
+
+	identity := _identity.(channel.IdentifyMsg)
 	c.c.Name = identity.Data
 	c.handler.HandleName(c.c.Name)
-	c.sem.Unlock()
+	return nil
+}
 
+func (c *Client) connect() (io.Reader, error) {
+	if err := c.Err(); err != nil {
+		return nil, err
+	}
+
+	r, err := c.tryConnect()
+	if err != nil {
+		return r, err
+	}
 	if c.c.History > 0 {
 		if err = c.Send(vars.HistoryChannel, historydata.New(c.c.History)); err != nil {
-			return c.r, err
+			return r, err
 		}
 	}
 
-	if err = c.Send(vars.UserChannel, usersdata.Message{}); err != nil {
-		return c.r, err
-	}
-
-	return c.r, nil
+	return r, c.Send(vars.UserChannel, usersdata.Message{})
 }
 
 func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {
@@ -283,17 +333,17 @@ func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {
 	}
 }
 
-func (c *Client) writeMulti(ms ...channel.Msg) error {
+func (c *Client) writeMulti(w channel.WriteFlusher, ms ...channel.Msg) error {
 	for _, m := range ms {
-		if err := c.writeRaw(c.w, m); err != nil {
+		if err := c.writeRaw(w, m); err != nil {
 			return err
 		}
 	}
-	return c.w.Flush()
+	return w.Flush()
 }
 
-func (c *Client) write(m channel.Msg) error {
-	return c.writeMulti(m)
+func (c *Client) write(w channel.WriteFlusher, m channel.Msg) error {
+	return c.writeMulti(w, m)
 }
 
 func (c *Client) read(r io.Reader, msg channel.Msg) (channel.Msg, io.Reader, error) {

@@ -52,6 +52,8 @@ type Config struct {
 	// Arbitrary string clients will need to be able to connect
 	ProtocolVersion string
 
+	Key *crypto.Key
+
 	Log *log.Logger
 
 	// HTTP/WS listen address
@@ -577,6 +579,10 @@ func (s *Server) newClient(
 }
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool) error {
+	readPubkey := func(r io.Reader) (channel.PubKeyMessage, io.Reader, error) {
+		m, err := channel.BinaryPubKeyMessage(binary.NewReader(r))
+		return m, r, err
+	}
 	identify := func(r io.Reader) (channel.IdentifyMsg, io.Reader, error) {
 		m, err := channel.BinaryIdentifyMsg(binary.NewReader(r))
 		return m, r, err
@@ -596,6 +602,10 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	}
 
 	if proto == channel.ProtoJSON {
+		readPubkey = func(r io.Reader) (channel.PubKeyMessage, io.Reader, error) {
+			m, nr, err := channel.JSONPubKeyMessage(r)
+			return m, nr, err
+		}
 		identify = channel.JSONIdentifyMsg
 		getChannel = channel.JSONChannelMsg
 		do = func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
@@ -613,24 +623,40 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	writer := s.bw.NewWriter(conn)
 
 	const jsonMax = 1024 * 1024 * 20
-	limited := &io.LimitedReader{R: reader, N: 1024}
+	limited := &io.LimitedReader{R: reader, N: 9216}
 	reader = limited
-
-	rpass := []byte("test")
-	wpass := []byte("test2")
 
 	var w channel.WriteFlusher = channel.NewPassthrough(writer)
 	if frameWriter {
 		w = channel.NewBuffered(writer)
 	}
 
+	clientPubKeyMsg, _, err := readPubkey(reader)
+	if err != nil {
+		return err
+	}
+
+	serverPubKeyMsg, err := channel.NewPubKeyServerMessage(s.c.Key, clientPubKeyMsg)
+	if err != nil {
+		return err
+	}
+
+	if err := write(w, serverPubKeyMsg); err != nil {
+		return err
+	}
+
+	derive, err := channel.CommonSecret(clientPubKeyMsg, serverPubKeyMsg, nil)
+	if err != nil {
+		return err
+	}
+
 	rw := crypto.NewEncDec(
 		reader,
 		w,
-		rpass,
-		wpass,
-		32,
-		8,
+		derive(channel.CryptoServerRead),
+		derive(channel.CryptoServerWrite),
+		crypto.EncrypterConfig{SaltSize: 16, Cost: 8},
+		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 8},
 	)
 
 	enc := channel.NewWriterFlusher(rw, w)
@@ -642,7 +668,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	}
 
 	conf, c, err := s.newClient(proto, frameWriter, id, enc)
-	status := channel.StatusMsg{Code: channel.StatusOK, Err: ""}
+	status := channel.StatusMsg{Code: channel.StatusOK}
 	if err != nil {
 		status.Code = channel.StatusNOK
 		status.Err = err.Error()
@@ -700,7 +726,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 
 func (s *Server) onWS(conn *websocket.Conn) {
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(time.Second * 5)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(time.Second * 10)); err != nil {
 		return
 	}
 
@@ -723,7 +749,7 @@ func (s *Server) onWS(conn *websocket.Conn) {
 
 func (s *Server) onTCP(conn net.Conn) {
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(time.Second * 5)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(time.Second * 10)); err != nil {
 		return
 	}
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server"
 	"github.com/frizinak/homechat/vars"
 )
@@ -143,7 +144,14 @@ func (f *Flags) Parse() error {
 	f.All.Store = filepath.Join(f.AppConf.Directory, "chat.log")
 	f.All.Uploads = filepath.Join(f.AppConf.Directory, "uploads")
 
+	keyfile := filepath.Join(f.AppConf.Directory, ".rsa_private_server_key")
+	key, err := crypto.EnsureKey(keyfile)
+	if err != nil {
+		return err
+	}
+
 	f.ServerConf = server.Config{
+		Key:             key,
 		ProtocolVersion: vars.ProtocolVersion,
 		Log:             log.New(f.out, "", 0),
 		HTTPAddress:     f.AppConf.HTTPAddr,
