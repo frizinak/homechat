@@ -403,7 +403,7 @@ func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
 		return nil, fmt.Errorf("ERR upload create: %w", err)
 	}
 
-	if _, err := f.ReadFrom(r); err != nil {
+	if _, err = f.ReadFrom(r); err != nil {
 		f.Close()
 		return nil, fmt.Errorf("ERR upload write: %w", err)
 	}
@@ -579,7 +579,7 @@ func (s *Server) newClient(
 }
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool) error {
-	readPubkey := func(r io.Reader) (channel.PubKeyMessage, io.Reader, error) {
+	readPubKey := func(r io.Reader) (channel.PubKeyMessage, io.Reader, error) {
 		m, err := channel.BinaryPubKeyMessage(binary.NewReader(r))
 		return m, r, err
 	}
@@ -602,7 +602,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	}
 
 	if proto == channel.ProtoJSON {
-		readPubkey = func(r io.Reader) (channel.PubKeyMessage, io.Reader, error) {
+		readPubKey = func(r io.Reader) (channel.PubKeyMessage, io.Reader, error) {
 			m, nr, err := channel.JSONPubKeyMessage(r)
 			return m, nr, err
 		}
@@ -631,21 +631,22 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		w = channel.NewBuffered(writer)
 	}
 
-	clientPubKeyMsg, _, err := readPubkey(reader)
+	// --
+	key := s.c.Key
+	server, err := channel.NewPubKeyServerMessage(key)
 	if err != nil {
 		return err
 	}
 
-	serverPubKeyMsg, err := channel.NewPubKeyServerMessage(s.c.Key, clientPubKeyMsg)
+	if err := write(w, server); err != nil {
+		return err
+	}
+
+	client, _, err := readPubKey(conn)
 	if err != nil {
 		return err
 	}
-
-	if err := write(w, serverPubKeyMsg); err != nil {
-		return err
-	}
-
-	derive, err := channel.CommonSecret(clientPubKeyMsg, serverPubKeyMsg, nil)
+	derive, err := channel.CommonSecret(client, server, key)
 	if err != nil {
 		return err
 	}
@@ -655,8 +656,8 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		w,
 		derive(channel.CryptoServerRead),
 		derive(channel.CryptoServerWrite),
-		crypto.EncrypterConfig{SaltSize: 16, Cost: 8},
-		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 8},
+		crypto.EncrypterConfig{SaltSize: 32, Cost: 16},
+		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
 	)
 
 	enc := channel.NewWriterFlusher(rw, w)

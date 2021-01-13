@@ -4,12 +4,7 @@ package main
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/rsa"
 	"encoding/json"
-	"fmt"
 	"syscall/js"
 	"time"
 
@@ -149,6 +144,7 @@ func main() {
 	window.Set("homechat", public)
 
 	pem := localStorage.Call("getItem", "key")
+	_fp := localStorage.Call("getItem", "fp")
 
 	const binary = true
 	backendConf := wswasm.Config{
@@ -158,35 +154,19 @@ func main() {
 		Binary: binary,
 	}
 
-	s := time.Now()
-	_, err := rsa.GenerateKey(rand.Reader, 2048)
-	fmt.Println("rsa", time.Since(s).String())
-	s = time.Now()
-	_, err = ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
-	fmt.Println("p224", time.Since(s).String())
-	s = time.Now()
-	_, err = ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
-	fmt.Println("p521", time.Since(s).String())
-	panic(err)
+	fp := ""
+	if !_fp.IsNull() && !_fp.IsUndefined() {
+		fp = _fp.String()
+	}
 
-	key := crypto.NewKey(128, 128) // browsers
-	//key := crypto.NewKey(channel.AsymmetricMinKeySize, channel.AsymmetricMinKeySize) // browsers
-
-	if !pem.IsNull() && !pem.IsUndefined() { // big succ
+	key := crypto.NewKey(channel.ClientMinKeySize, channel.ClientMinKeySize) // browsers
+	if !pem.IsNull() && !pem.IsUndefined() {
 		if err := key.UnmarshalPEM([]byte(pem.String())); err != nil {
 			panic(err)
 		}
 	}
 
-	fmt.Println("gen")
-	err = key.Generate()
-	fmt.Println("priv", key.Size())
-	pub, err := key.Public()
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("pub", pub.Size())
-	fmt.Println("genned")
+	err := key.Generate()
 	if err == nil {
 		d, err := key.MarshalPEM()
 		if err != nil {
@@ -229,9 +209,10 @@ func main() {
 		}
 		handler = newJSHandler(args[0])
 		conf := client.Config{
-			Key:       key,
-			ServerURL: httpProto + "//" + host,
-			Name:      args[0].Get("name").String(),
+			Key:               key,
+			ServerFingerprint: fp,
+			ServerURL:         httpProto + "//" + host,
+			Name:              args[0].Get("name").String(),
 			Channels: []string{
 				vars.PingChannel,
 				vars.UserChannel,
@@ -252,6 +233,18 @@ func main() {
 		public.Set("music", createSender(c.Music))
 
 		go func() {
+			err := c.Connect()
+			if err == client.ErrFingerPrint {
+				// TODO!!!
+				newFP := c.ServerFingerprint()
+				localStorage.Call("setItem", "fp", newFP)
+				c.SetTrustedFingerprint(newFP)
+				if err := c.Connect(); err != nil {
+					panic(err)
+				}
+			} else if err != nil {
+				panic(err)
+			}
 			if err := c.Run(); err != nil {
 				panic(err)
 			}

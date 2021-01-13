@@ -214,11 +214,9 @@ func (c *Client) tryConnect() (io.Reader, error) {
 	if err != nil {
 		return conn, err
 	}
-	c.log.Log("encrypted...") // todo remove
 
 	c.serverFingerprint = fp
 	if c.c.ServerFingerprint == "" || c.c.ServerFingerprint != fp {
-		c.log.Log("FATAL") // todo remove
 		c.fatal = ErrFingerPrint
 		return conn, ErrFingerPrint
 	}
@@ -243,40 +241,35 @@ func (c *Client) negotiateCrypto(conn Conn) (string, io.Reader, channel.WriteFlu
 		w = channel.NewBuffered(conn)
 	}
 
-	key := c.c.Key
-	pkey, err := key.Public()
+	_server, _, err := c.read(conn, channel.PubKeyServerMessage{})
+	if err != nil {
+		return "", nil, nil, err
+	}
+	server := _server.(channel.PubKeyServerMessage)
+
+	client, err := channel.NewPubKeyMessage(c.c.Key, server)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	pubkeyMsg, err := channel.NewPubKeyMessage(pkey)
+	if err := c.write(w, client); err != nil {
+		return "", nil, nil, err
+	}
+
+	derive, err := channel.CommonSecret(client, server, nil)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	if err := c.write(w, pubkeyMsg); err != nil {
-		return "", nil, nil, err
-	}
-
-	_serverPubKeyMsg, _, err := c.read(conn, channel.PubKeyServerMessage{})
-	if err != nil {
-		return "", nil, nil, err
-	}
-	serverPubKeyMsg := _serverPubKeyMsg.(channel.PubKeyServerMessage)
-
-	fp := serverPubKeyMsg.Fingerprint()
-	derive, err := channel.CommonSecret(pubkeyMsg, serverPubKeyMsg, key)
-	if err != nil {
-		return fp, nil, nil, err
-	}
+	fp := server.Fingerprint()
 
 	rw := crypto.NewEncDec(
 		conn,
 		w,
 		derive(channel.CryptoClientRead),
 		derive(channel.CryptoClientWrite),
-		crypto.EncrypterConfig{SaltSize: 16, Cost: 8},
-		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 8},
+		crypto.EncrypterConfig{SaltSize: 32, Cost: 12},
+		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
 	)
 
 	return fp, rw, channel.NewWriterFlusher(rw, w), nil

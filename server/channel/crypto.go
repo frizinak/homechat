@@ -10,39 +10,165 @@ import (
 )
 
 const (
-	saltSize      = 32
-	preMasterSize = 48
-	masterSize    = 48
-	signSize      = 32
+	saltSize      = 64
+	preMasterSize = 64
+	masterSize    = 64
 
-	AsymmetricMinKeySize = 256
-	AsymmetricKeySize    = 512
+	ServerMinKeySize = 512
+	ServerKeySize    = 1024
+
+	ClientMinKeySize = 128
+	ClientKeySize    = 256
 )
 
-type PubKeyMessage struct {
-	key *crypto.PubKey
-	rnd []byte
+type PubKeyServerMessage struct {
+	key  *crypto.Key
+	pkey *crypto.PubKey
+	rnd  []byte
 
 	NeverEqual
 }
 
-func NewPubKeyMessage(pubkey *crypto.PubKey) (PubKeyMessage, error) {
-	var p PubKeyMessage
-	rnd := make([]byte, saltSize)
-	_, err := io.ReadFull(rand.Reader, rnd)
+func NewPubKeyServerMessage(key *crypto.Key) (PubKeyServerMessage, error) {
+	var p PubKeyServerMessage
+	pkey, err := key.Public()
 	if err != nil {
 		return p, err
 	}
 
-	p.key = pubkey
+	rnd := make([]byte, saltSize)
+	if _, err = io.ReadFull(rand.Reader, rnd); err != nil {
+		return p, err
+	}
+
+	p.key = key
+	p.pkey = pkey
 	p.rnd = rnd
 
 	return p, nil
 }
 
-func (m PubKeyMessage) Binary(w *binary.Writer) error {
-	w.WriteBytes(m.key.MarshalDER(), 16)
+func (m PubKeyServerMessage) Fingerprint() string {
+	return m.pkey.FingerprintString()
+}
+
+func (m PubKeyServerMessage) Binary(w *binary.Writer) error {
+	der := m.pkey.MarshalDER()
+	d := make([]byte, 0, len(der)+len(m.rnd))
+	d = append(d, der...)
+	d = append(d, m.rnd...)
+	sig, err := m.key.Sign(d)
+	if err != nil {
+		return err
+	}
+
+	w.WriteBytes(der, 16)
 	w.WriteBytes(m.rnd, 8)
+	w.WriteBytes(sig, 16)
+	return w.Err()
+}
+
+func (m PubKeyServerMessage) JSON(w io.Writer) error {
+	return errors.New("not impl yet todo")
+}
+
+func (m PubKeyServerMessage) FromBinary(r *binary.Reader) (Msg, error) {
+	return BinaryPubKeyServerMessage(r)
+}
+
+func (m PubKeyServerMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
+	return JSONPubKeyServerMessage(r)
+}
+
+func BinaryPubKeyServerMessage(r *binary.Reader) (PubKeyServerMessage, error) {
+	var p PubKeyServerMessage
+	der := r.ReadBytes(16)
+	rnd := r.ReadBytes(8)
+	sig := r.ReadBytes(16)
+	if err := r.Err(); err != nil {
+		return p, err
+	}
+
+	d := make([]byte, 0, len(der)+len(rnd))
+	d = append(d, der...)
+	d = append(d, rnd...)
+
+	pk := crypto.NewPubKey(ServerMinKeySize)
+	if err := pk.UnmarshalDER(der); err != nil {
+		return p, err
+	}
+
+	if err := pk.Verify(d, sig); err != nil {
+		return p, err
+	}
+
+	p.pkey = pk
+	p.rnd = rnd
+
+	return p, nil
+}
+
+func JSONPubKeyServerMessage(r io.Reader) (PubKeyServerMessage, io.Reader, error) {
+	return PubKeyServerMessage{}, r, errors.New("not impl yet todo")
+	// m := make(map[string]string)
+	// nr, err := JSON(r, &m)
+	// return nil, nr, err
+}
+
+type PubKeyMessage struct {
+	key  *crypto.Key
+	pkey *crypto.PubKey
+
+	serverPubKey *crypto.PubKey
+	rnd          []byte
+
+	preMaster, preMasterEnc []byte
+
+	NeverEqual
+}
+
+func NewPubKeyMessage(key *crypto.Key, m PubKeyServerMessage) (PubKeyMessage, error) {
+	var p PubKeyMessage
+	pkey, err := key.Public()
+	if err != nil {
+		return p, err
+	}
+
+	d := make([]byte, saltSize+preMasterSize)
+	_, err = io.ReadFull(rand.Reader, d)
+	if err != nil {
+		return p, err
+	}
+	rnd, pm := d[:saltSize], d[saltSize:saltSize+preMasterSize]
+
+	p.key = key
+	p.pkey = pkey
+	p.serverPubKey = m.pkey
+	p.rnd = rnd
+	p.preMaster = pm
+
+	return p, nil
+}
+
+func (m PubKeyMessage) Fingerprint() string {
+	return m.pkey.FingerprintString()
+}
+
+func (m PubKeyMessage) Binary(w *binary.Writer) error {
+	enc, err := m.serverPubKey.Encrypt(m.preMaster)
+	if err != nil {
+		return err
+	}
+
+	sig, err := m.key.Sign(enc)
+	if err != nil {
+		return err
+	}
+
+	w.WriteBytes(m.pkey.MarshalDER(), 16)
+	w.WriteBytes(m.rnd, 8)
+	w.WriteBytes(enc, 16)
+	w.WriteBytes(sig, 16)
 	return w.Err()
 }
 
@@ -62,131 +188,29 @@ func BinaryPubKeyMessage(r *binary.Reader) (PubKeyMessage, error) {
 	var p PubKeyMessage
 	der := r.ReadBytes(16)
 	rnd := r.ReadBytes(8)
-	if err := r.Err(); err != nil {
-		return p, err
-	}
-
-	pk := crypto.NewPubKey(AsymmetricMinKeySize)
-	if err := pk.UnmarshalDER(der); err != nil {
-		return p, err
-	}
-
-	p.key = pk
-	p.rnd = rnd
-
-	return p, nil
-}
-
-func JSONPubKeyMessage(r io.Reader) (PubKeyMessage, io.Reader, error) {
-	return PubKeyMessage{}, r, errors.New("not impl yet todo")
-	// m := make(map[string]string)
-	// nr, err := JSON(r, &m)
-	// return nil, nr, err
-}
-
-type PubKeyServerMessage struct {
-	rnd       []byte
-	forServer struct {
-		key       *crypto.Key
-		client    PubKeyMessage
-		preMaster []byte
-	}
-	forClient struct {
-		pkey         *crypto.PubKey
-		preMasterEnc []byte
-		sign         []byte
-	}
-
-	NeverEqual
-}
-
-func NewPubKeyServerMessage(key *crypto.Key, m PubKeyMessage) (PubKeyServerMessage, error) {
-	var p PubKeyServerMessage
-	pkey, err := key.Public()
-	if err != nil {
-		return p, err
-	}
-
-	d := make([]byte, saltSize+preMasterSize+signSize)
-	_, err = io.ReadFull(rand.Reader, d)
-	if err != nil {
-		return p, err
-	}
-	rnd, pm, sign := d[:saltSize], d[saltSize:saltSize+preMasterSize], d[saltSize+preMasterSize:]
-
-	p.forServer.key = key
-	p.forClient.pkey = pkey
-	p.forServer.client = m
-	p.rnd = rnd
-	p.forServer.preMaster = pm
-	p.forClient.sign = sign
-
-	return p, nil
-}
-
-func (m PubKeyServerMessage) Binary(w *binary.Writer) error {
-	enc, err := m.forServer.client.key.Encrypt(m.forServer.preMaster)
-	if err != nil {
-		return err
-	}
-
-	sig, err := m.forServer.key.Sign(m.forClient.sign)
-	if err != nil {
-		return err
-	}
-
-	w.WriteBytes(m.forClient.pkey.MarshalDER(), 16)
-	w.WriteBytes(m.rnd, 8)
-	w.WriteBytes(enc, 16)
-	w.WriteBytes(m.forClient.sign, 16)
-	w.WriteBytes(sig, 16)
-	return w.Err()
-}
-
-func (m PubKeyServerMessage) JSON(w io.Writer) error {
-	return errors.New("not impl yet todo")
-}
-
-func (m PubKeyServerMessage) FromBinary(r *binary.Reader) (Msg, error) {
-	return BinaryPubKeyServerMessage(r)
-}
-
-func (m PubKeyServerMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
-	return JSONPubKeyServerMessage(r)
-}
-
-func (m PubKeyServerMessage) Fingerprint() string {
-	return m.forClient.pkey.FingerprintString()
-}
-
-func BinaryPubKeyServerMessage(r *binary.Reader) (PubKeyServerMessage, error) {
-	var p PubKeyServerMessage
-	der := r.ReadBytes(16)
-	rnd := r.ReadBytes(8)
 	enc := r.ReadBytes(16)
-	sign := r.ReadBytes(16)
 	sig := r.ReadBytes(16)
 	if err := r.Err(); err != nil {
 		return p, err
 	}
 
-	pk := crypto.NewPubKey(AsymmetricMinKeySize)
+	pk := crypto.NewPubKey(ClientMinKeySize)
 	if err := pk.UnmarshalDER(der); err != nil {
 		return p, err
 	}
 
-	if err := pk.Verify(sign, sig); err != nil {
+	if err := pk.Verify(enc, sig); err != nil {
 		return p, err
 	}
 
-	p.forClient.pkey = pk
+	p.pkey = pk
 	p.rnd = rnd
-	p.forClient.preMasterEnc = enc
+	p.preMasterEnc = enc
 	return p, nil
 }
 
-func JSONPubKeyServerMessage(r io.Reader) (PubKeyServerMessage, io.Reader, error) {
-	return PubKeyServerMessage{}, r, errors.New("not impl yet todo")
+func JSONPubKeyMessage(r io.Reader) (PubKeyMessage, io.Reader, error) {
+	return PubKeyMessage{}, r, errors.New("not impl yet todo")
 	// m := make(map[string]string)
 	// nr, err := JSON(r, &m)
 	// return nil, nr, err
@@ -204,13 +228,13 @@ const (
 	CryptoServerRead  CryptoLabel = CryptoClientWrite
 )
 
-func CommonSecret(c PubKeyMessage, s PubKeyServerMessage, clientPrivate *crypto.Key) (DeriveSecret, error) {
+func CommonSecret(c PubKeyMessage, s PubKeyServerMessage, serverPrivate *crypto.Key) (DeriveSecret, error) {
 	clientRandom := c.rnd
 	serverRandom := s.rnd
-	preMaster := s.forServer.preMaster
+	preMaster := c.preMaster
 	if preMaster == nil {
 		var err error
-		preMaster, err = clientPrivate.Decrypt(s.forClient.preMasterEnc)
+		preMaster, err = serverPrivate.Decrypt(c.preMasterEnc)
 		if err != nil {
 			return nil, err
 		}

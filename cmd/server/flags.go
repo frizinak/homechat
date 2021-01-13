@@ -146,7 +146,7 @@ func (f *Flags) Parse() error {
 	f.All.Uploads = filepath.Join(f.AppConf.Directory, "uploads")
 
 	keyfile := filepath.Join(f.AppConf.Directory, ".rsa_private_server_key")
-	key, err := crypto.EnsureKey(keyfile, channel.AsymmetricMinKeySize, channel.AsymmetricKeySize)
+	key, err := crypto.EnsureKey(keyfile, channel.ServerMinKeySize, channel.ServerKeySize)
 	if err != nil {
 		return err
 	}

@@ -166,7 +166,7 @@ func (f *Flags) Parse() error {
 	}
 
 	keyfile := filepath.Join(f.All.ConfigDir, ".rsa_private_key")
-	key, err := crypto.EnsureKey(keyfile, channel.AsymmetricMinKeySize, channel.AsymmetricKeySize)
+	key, err := crypto.EnsureKey(keyfile, channel.ClientMinKeySize, channel.ClientKeySize)
 	if err != nil {
 		return err
 	}
