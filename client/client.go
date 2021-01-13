@@ -21,6 +21,8 @@ import (
 	"github.com/frizinak/homechat/vars"
 )
 
+var ErrFingerPrint = errors.New("fingerprint mismatch")
+
 type Backend interface {
 	Connect() (Conn, error)
 }
@@ -89,17 +91,22 @@ type Client struct {
 	lastConnect time.Time
 	fatal       error
 
+	serverFingerprint string
+
 	c Config
 }
 
 type Config struct {
-	Key       *crypto.Key
-	ServerURL string
-	Name      string
-	Channels  []string
-	Proto     channel.Proto
-	Framed    bool
-	History   uint16
+	Key *crypto.Key
+
+	ServerURL         string
+	ServerFingerprint string
+
+	Name     string
+	Channels []string
+	Proto    channel.Proto
+	Framed   bool
+	History  uint16
 }
 
 func New(b Backend, h Handler, log Logger, c Config) *Client {
@@ -113,11 +120,13 @@ func New(b Backend, h Handler, log Logger, c Config) *Client {
 	}
 }
 
-func (c *Client) Users() Users           { return c.users }
-func (c *Client) Playlists() []string    { return c.playlists }
-func (c *Client) Latency() time.Duration { return c.latency }
-func (c *Client) Name() string           { return c.c.Name }
-func (c *Client) Err() error             { return c.fatal }
+func (c *Client) Users() Users                   { return c.users }
+func (c *Client) Playlists() []string            { return c.playlists }
+func (c *Client) Latency() time.Duration         { return c.latency }
+func (c *Client) Name() string                   { return c.c.Name }
+func (c *Client) Err() error                     { return c.fatal }
+func (c *Client) ServerFingerprint() string      { return c.serverFingerprint }
+func (c *Client) SetTrustedFingerprint(n string) { c.c.ServerFingerprint = n }
 
 func (c *Client) Chat(msg string) error {
 	return c.Send(vars.ChatChannel, chatdata.Message{Data: msg})
@@ -146,6 +155,7 @@ func (c *Client) Send(chnl string, msg channel.Msg) error {
 }
 
 func (c *Client) Connect() error {
+	c.fatal = nil
 	_, err := c.connect()
 	if err != nil {
 		c.disconnect()
@@ -199,11 +209,19 @@ func (c *Client) tryConnect() (io.Reader, error) {
 		return conn, err
 	}
 
-	r, w, err := c.negotiateCrypto(conn)
+	c.log.Log("encrypting...")
+	fp, r, w, err := c.negotiateCrypto(conn)
 	if err != nil {
 		return conn, err
 	}
-	c.log.Log("encrypted...")
+	c.log.Log("encrypted...") // todo remove
+
+	c.serverFingerprint = fp
+	if c.c.ServerFingerprint == "" || c.c.ServerFingerprint != fp {
+		c.log.Log("FATAL") // todo remove
+		c.fatal = ErrFingerPrint
+		return conn, ErrFingerPrint
+	}
 
 	c.r, c.w = r, w
 
@@ -219,7 +237,7 @@ func (c *Client) negotiateProto(conn Conn) error {
 	return c.c.Proto.Write(conn)
 }
 
-func (c *Client) negotiateCrypto(conn Conn) (io.Reader, channel.WriteFlusher, error) {
+func (c *Client) negotiateCrypto(conn Conn) (string, io.Reader, channel.WriteFlusher, error) {
 	var w channel.WriteFlusher = channel.NewPassthrough(conn)
 	if c.c.Framed {
 		w = channel.NewBuffered(conn)
@@ -228,27 +246,28 @@ func (c *Client) negotiateCrypto(conn Conn) (io.Reader, channel.WriteFlusher, er
 	key := c.c.Key
 	pkey, err := key.Public()
 	if err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
 	pubkeyMsg, err := channel.NewPubKeyMessage(pkey)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
 	if err := c.write(w, pubkeyMsg); err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
 	_serverPubKeyMsg, _, err := c.read(conn, channel.PubKeyServerMessage{})
 	if err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 	serverPubKeyMsg := _serverPubKeyMsg.(channel.PubKeyServerMessage)
 
+	fp := serverPubKeyMsg.Fingerprint()
 	derive, err := channel.CommonSecret(pubkeyMsg, serverPubKeyMsg, key)
 	if err != nil {
-		return nil, nil, err
+		return fp, nil, nil, err
 	}
 
 	rw := crypto.NewEncDec(
@@ -260,7 +279,7 @@ func (c *Client) negotiateCrypto(conn Conn) (io.Reader, channel.WriteFlusher, er
 		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 8},
 	)
 
-	return rw, channel.NewWriterFlusher(rw, w), nil
+	return fp, rw, channel.NewWriterFlusher(rw, w), nil
 }
 
 func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) error {
@@ -290,6 +309,7 @@ func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) error {
 				suffix,
 			)
 		}
+		c.fatal = err
 		return err
 	}
 
@@ -369,7 +389,7 @@ func (c *Client) Run() error {
 	}
 
 	pings := make(chan time.Time, 1)
-	done := make(chan struct{})
+	done := make(chan struct{}, 1)
 	go func() {
 		for {
 			if hasPing {

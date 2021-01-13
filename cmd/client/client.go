@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -56,14 +57,14 @@ func main() {
 	if f.All.Mode == ModeUpload {
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
-		client := client.New(backend, handler, log, f.ClientConf)
+		cl := client.New(backend, handler, log, f.ClientConf)
 		var r io.ReadCloser = os.Stdin
 		if f.Upload.File != "" {
 			var err error
 			r, err = os.Open(f.Upload.File)
 			exit(err)
 		}
-		err := client.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, r)
+		err := cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, r)
 		r.Close()
 		exit(err)
 		os.Exit(0)
@@ -72,14 +73,14 @@ func main() {
 	if f.All.OneOff != "" || !f.All.Interactive {
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
-		client := client.New(backend, handler, log, f.ClientConf)
+		cl := client.New(backend, handler, log, f.ClientConf)
 		if f.All.OneOff == "" {
 			r := io.LimitReader(os.Stdin, 1024*1024)
 			if f.All.Linemode {
 				s := bufio.NewScanner(r)
 				s.Split(bufio.ScanLines)
 				for s.Scan() {
-					exit(client.Chat(s.Text()))
+					exit(cl.Chat(s.Text()))
 				}
 				exit(s.Err())
 				os.Exit(0)
@@ -91,10 +92,10 @@ func main() {
 		}
 
 		if f.All.Mode == ModeMusic {
-			exit(client.Music(f.All.OneOff))
+			exit(cl.Music(f.All.OneOff))
 			os.Exit(0)
 		}
-		exit(client.Chat(f.All.OneOff))
+		exit(cl.Chat(f.All.OneOff))
 		os.Exit(0)
 	}
 
@@ -114,10 +115,10 @@ func main() {
 		f.All.Mode == ModeMusic,
 	)
 	handler := terminal.New(tui)
-	client := client.New(backend, handler, tui, f.ClientConf)
-	send := client.Chat
+	cl := client.New(backend, handler, tui, f.ClientConf)
+	send := cl.Chat
 	if f.All.Mode == ModeMusic {
-		send = client.Music
+		send = cl.Music
 	}
 
 	go func() {
@@ -146,8 +147,8 @@ func main() {
 				n := complete(
 					tui.GetInput(),
 					"@",
-					client.Users().Names(),
-					map[string]struct{}{client.Name(): {}},
+					cl.Users().Names(),
+					map[string]struct{}{cl.Name(): {}},
 				)
 				if n != "" {
 					tui.SetInput(n)
@@ -201,7 +202,7 @@ func main() {
 				n := complete(
 					tui.GetInput(),
 					"",
-					client.Playlists(),
+					cl.Playlists(),
 					nil,
 				)
 				if n != "" {
@@ -252,7 +253,42 @@ func main() {
 	)
 	exit(err)
 
-	exit(client.Connect())
+	err = cl.Connect()
+	if err == client.ErrFingerPrint {
+		trust := f.AppConf.ServerFingerprint
+		newFP := cl.ServerFingerprint()
+		if newFP == "" {
+			exit(errors.New("Something went wrong during authentication"))
+		}
+		msg := "Server fingerprint changed!\nDo not blindly accept as something malicious might be going on."
+		if trust == "" {
+			msg = "Connecting to new server for first time.\nAsk the administrator of the server if the following key is correct:"
+		}
+
+		fmt.Fprintf(
+			os.Stderr,
+			"%s\n%s\nAccept new fingerprint for %s? [y/N]: ",
+			msg,
+			newFP,
+			f.AppConf.ServerAddress,
+		)
+		var answer string
+		fmt.Scanln(&answer)
+		if answer != "y" && answer != "Y" {
+			fmt.Fprintln(os.Stderr, "Not connecting, smart choice!")
+			os.Exit(1)
+		}
+
+		f.AppConf.ServerFingerprint = newFP
+		exit(f.SaveConfig())
+		cl.SetTrustedFingerprint(newFP)
+		err = cl.Connect()
+		if err == client.ErrFingerPrint {
+			fmt.Fprintln(os.Stderr, "Server fingerprint changed AGAIN!")
+			fmt.Fprintln(os.Stderr, "Not connecting, try again.")
+		}
+	}
+	exit(err)
 	tui.Start()
 
 	exit(currentConsole.SetRaw())
@@ -322,7 +358,7 @@ func main() {
 	}()
 
 	go handler.Run(msgs)
-	err = client.Run()
+	err = cl.Run()
 	resetTTY()
 	exit(err)
 }

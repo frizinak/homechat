@@ -4,12 +4,18 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/json"
+	"fmt"
 	"syscall/js"
 	"time"
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/wswasm"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
@@ -137,9 +143,12 @@ func main() {
 	location := document.Get("location")
 	host := location.Get("host").String()
 	httpProto := location.Get("protocol").String()
+	localStorage := window.Get("localStorage")
 
 	public := window.Get("Object").New()
 	window.Set("homechat", public)
+
+	pem := localStorage.Call("getItem", "key")
 
 	const binary = true
 	backendConf := wswasm.Config{
@@ -147,6 +156,46 @@ func main() {
 		Domain: host,
 		Path:   "ws",
 		Binary: binary,
+	}
+
+	s := time.Now()
+	_, err := rsa.GenerateKey(rand.Reader, 2048)
+	fmt.Println("rsa", time.Since(s).String())
+	s = time.Now()
+	_, err = ecdsa.GenerateKey(elliptic.P224(), rand.Reader)
+	fmt.Println("p224", time.Since(s).String())
+	s = time.Now()
+	_, err = ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	fmt.Println("p521", time.Since(s).String())
+	panic(err)
+
+	key := crypto.NewKey(128, 128) // browsers
+	//key := crypto.NewKey(channel.AsymmetricMinKeySize, channel.AsymmetricMinKeySize) // browsers
+
+	if !pem.IsNull() && !pem.IsUndefined() { // big succ
+		if err := key.UnmarshalPEM([]byte(pem.String())); err != nil {
+			panic(err)
+		}
+	}
+
+	fmt.Println("gen")
+	err = key.Generate()
+	fmt.Println("priv", key.Size())
+	pub, err := key.Public()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("pub", pub.Size())
+	fmt.Println("genned")
+	if err == nil {
+		d, err := key.MarshalPEM()
+		if err != nil {
+			panic(err)
+		}
+
+		localStorage.Call("setItem", "key", string(d))
+	} else if err != crypto.ErrKeyExists {
+		panic(err)
 	}
 
 	backend, err := wswasm.New(backendConf, window)
@@ -180,6 +229,7 @@ func main() {
 		}
 		handler = newJSHandler(args[0])
 		conf := client.Config{
+			Key:       key,
 			ServerURL: httpProto + "//" + host,
 			Name:      args[0].Get("name").String(),
 			Channels: []string{

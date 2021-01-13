@@ -2,12 +2,15 @@ package crypto
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/x509"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -19,8 +22,9 @@ import (
 )
 
 var (
-	ErrKeyExists = errors.New("a key already exists")
-	ErrNotRSA    = errors.New("key is not an rsa key")
+	ErrKeyExists   = errors.New("a key already exists")
+	ErrKeyTooSmall = errors.New("key is too small")
+	ErrNotRSA      = errors.New("key is not an rsa key")
 )
 
 const (
@@ -28,7 +32,7 @@ const (
 	typePublic  = "PUBLIC KEY"
 )
 
-const size = 4096
+const pkgMinBytes = 128
 
 func HMAC(result, secret, seed []byte) {
 	// copy from stdlib crypto/tls/prf
@@ -56,8 +60,15 @@ func hasher() hash.Hash {
 	return sha256.New()
 }
 
+func sigHasher() (crypto.Hash, hash.Hash) {
+	return crypto.SHA256, sha256.New()
+}
+
 func unmarshalPEM(typeHeader string, data []byte) ([]byte, error) {
 	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, errors.New("data is not pem encoded")
+	}
 	if block.Type != typeHeader {
 		return nil, ErrNotRSA
 	}
@@ -72,13 +83,13 @@ func marshalPEM(typeHeader string, data []byte) ([]byte, error) {
 	return w.Bytes(), err
 }
 
-func EnsureKey(file string) (*Key, error) {
-	k, err := KeyFromFile(file)
+func EnsureKey(file string, minBytes, desiredBytes int) (*Key, error) {
+	k, err := KeyFromFile(file, minBytes, desiredBytes)
 	if !os.IsNotExist(err) {
 		return k, err
 	}
 
-	k = NewKey()
+	k = NewKey(minBytes, desiredBytes)
 	if err := k.Generate(); err != nil {
 		return nil, err
 	}
@@ -103,40 +114,50 @@ func EnsureKey(file string) (*Key, error) {
 	return k, os.Rename(tmp, file)
 }
 
-func KeyFromFile(file string) (*Key, error) {
+func KeyFromFile(file string, minBytes, desiredBytes int) (*Key, error) {
 	f, err := os.Open(file)
 	if err != nil {
 		return nil, err
 	}
-	k, err := KeyFromReader(f)
+	k, err := KeyFromReader(f, minBytes, desiredBytes)
 	f.Close()
 	return k, err
 }
 
-func KeyFromReader(r io.Reader) (*Key, error) {
+func KeyFromReader(r io.Reader, minBytes, desiredBytes int) (*Key, error) {
 	d, err := ioutil.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
 
-	key := NewKey()
+	key := NewKey(minBytes, desiredBytes)
 	return key, key.UnmarshalPEM(d)
 }
 
 type Key struct {
 	private *rsa.PrivateKey
+	min     int
+	size    int
 }
 
-func NewKey() *Key {
-	return &Key{}
+func NewKey(minBytes, desiredBytes int) *Key {
+	if minBytes < pkgMinBytes {
+		minBytes = pkgMinBytes
+	}
+	if desiredBytes < minBytes {
+		desiredBytes = minBytes
+	}
+	return &Key{min: minBytes, size: desiredBytes}
 }
+
+func (k *Key) Size() int { return k.private.Size() }
 
 func (k *Key) Public() (*PubKey, error) {
 	if err := k.Generate(); err != nil && err != ErrKeyExists {
 		return nil, err
 	}
 
-	return &PubKey{k.private.Public().(*rsa.PublicKey)}, nil
+	return &PubKey{k.private.Public().(*rsa.PublicKey), k.min}, nil
 }
 
 func (k *Key) Decrypt(data []byte) ([]byte, error) {
@@ -146,12 +167,24 @@ func (k *Key) Decrypt(data []byte) ([]byte, error) {
 	return rsa.DecryptOAEP(hasher(), rand.Reader, k.private, data, nil)
 }
 
+func (k *Key) Sign(data []byte) ([]byte, error) {
+	if err := k.Generate(); err != nil && err != ErrKeyExists {
+		return nil, err
+	}
+	t, h := sigHasher()
+	if _, err := h.Write(data); err != nil {
+		return nil, err
+	}
+
+	return rsa.SignPKCS1v15(rand.Reader, k.private, t, h.Sum(nil))
+}
+
 func (k *Key) Generate() error {
 	if k.private != nil {
 		return ErrKeyExists
 	}
 
-	priv, err := rsa.GenerateKey(rand.Reader, size)
+	priv, err := rsa.GenerateKey(rand.Reader, k.size*8)
 	if err != nil {
 		return err
 	}
@@ -196,20 +229,72 @@ func (k *Key) UnmarshalDER(data []byte) error {
 		return ErrNotRSA
 	}
 
+	if rsa.Size() < k.min {
+		return ErrKeyTooSmall
+	}
+
 	k.private = rsa
 	return nil
 }
 
 type PubKey struct {
 	public *rsa.PublicKey
+	min    int
 }
 
-func NewPubKey() *PubKey {
-	return &PubKey{}
+func NewPubKey(minBytes int) *PubKey {
+	if minBytes < pkgMinBytes {
+		minBytes = pkgMinBytes
+	}
+	return &PubKey{min: minBytes}
 }
+
+func (k *PubKey) Size() int { return k.public.Size() }
 
 func (k *PubKey) Encrypt(data []byte) ([]byte, error) {
 	return rsa.EncryptOAEP(hasher(), rand.Reader, k.public, data, nil)
+}
+
+func (k *PubKey) Verify(data, sig []byte) error {
+	t, h := sigHasher()
+	if _, err := h.Write(data); err != nil {
+		return err
+	}
+
+	return rsa.VerifyPKCS1v15(k.public, t, h.Sum(nil), sig)
+}
+
+func (k *PubKey) Fingerprint() [32]byte {
+	b := k.public.N.Bytes()
+	r := make([]byte, 0, 1+len(b)+1+8)
+	var sign byte
+	if k.public.N.Sign() == -1 {
+		sign = 1
+	}
+	r = append(r, sign)
+	r = append(r, b...)
+	sign = 0
+	if k.public.E < 0 {
+		sign = 1
+	}
+	r = append(r, sign)
+	r = r[:cap(r)]
+	binary.LittleEndian.PutUint64(r[len(r)-8:], uint64(k.public.E))
+	return sha256.Sum256(r)
+}
+
+func (k *PubKey) FingerprintString() string {
+	n := k.Fingerprint()
+	dst := make([]byte, hex.EncodedLen(len(n))+len(n)-1)
+	var off int
+	for i := 0; i < len(n); i++ {
+		off = hex.EncodedLen(i) + i
+		w := hex.Encode(dst[off:], n[i:i+1])
+		if i != len(n)-1 {
+			dst[off+w] = ':'
+		}
+	}
+	return string(dst)
 }
 
 func (k *PubKey) MaxPayload() int {
@@ -238,6 +323,10 @@ func (k *PubKey) UnmarshalDER(data []byte) error {
 	key, err := x509.ParsePKCS1PublicKey(data)
 	if err != nil {
 		return err
+	}
+
+	if key.Size() < k.min {
+		return ErrKeyTooSmall
 	}
 
 	k.public = key

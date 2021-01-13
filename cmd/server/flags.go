@@ -14,6 +14,7 @@ import (
 
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server"
+	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
 )
 
@@ -145,7 +146,7 @@ func (f *Flags) Parse() error {
 	f.All.Uploads = filepath.Join(f.AppConf.Directory, "uploads")
 
 	keyfile := filepath.Join(f.AppConf.Directory, ".rsa_private_server_key")
-	key, err := crypto.EnsureKey(keyfile)
+	key, err := crypto.EnsureKey(keyfile, channel.AsymmetricMinKeySize, channel.AsymmetricKeySize)
 	if err != nil {
 		return err
 	}

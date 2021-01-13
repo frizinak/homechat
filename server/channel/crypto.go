@@ -9,9 +9,15 @@ import (
 	"github.com/frizinak/homechat/crypto"
 )
 
-const saltSize = 32
-const preMasterSize = 48
-const masterSize = 48
+const (
+	saltSize      = 32
+	preMasterSize = 48
+	masterSize    = 48
+	signSize      = 32
+
+	AsymmetricMinKeySize = 256
+	AsymmetricKeySize    = 512
+)
 
 type PubKeyMessage struct {
 	key *crypto.PubKey
@@ -35,7 +41,7 @@ func NewPubKeyMessage(pubkey *crypto.PubKey) (PubKeyMessage, error) {
 }
 
 func (m PubKeyMessage) Binary(w *binary.Writer) error {
-	w.WriteBytes(m.key.MarshalDER(), 32)
+	w.WriteBytes(m.key.MarshalDER(), 16)
 	w.WriteBytes(m.rnd, 8)
 	return w.Err()
 }
@@ -54,13 +60,13 @@ func (m PubKeyMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
 
 func BinaryPubKeyMessage(r *binary.Reader) (PubKeyMessage, error) {
 	var p PubKeyMessage
-	der := r.ReadBytes(32)
+	der := r.ReadBytes(16)
 	rnd := r.ReadBytes(8)
 	if err := r.Err(); err != nil {
 		return p, err
 	}
 
-	pk := crypto.NewPubKey()
+	pk := crypto.NewPubKey(AsymmetricMinKeySize)
 	if err := pk.UnmarshalDER(der); err != nil {
 		return p, err
 	}
@@ -79,12 +85,17 @@ func JSONPubKeyMessage(r io.Reader) (PubKeyMessage, io.Reader, error) {
 }
 
 type PubKeyServerMessage struct {
-	key          *crypto.Key
-	pkey         *crypto.PubKey
-	client       PubKeyMessage
-	rnd          []byte
-	preMaster    []byte
-	preMasterEnc []byte
+	rnd       []byte
+	forServer struct {
+		key       *crypto.Key
+		client    PubKeyMessage
+		preMaster []byte
+	}
+	forClient struct {
+		pkey         *crypto.PubKey
+		preMasterEnc []byte
+		sign         []byte
+	}
 
 	NeverEqual
 }
@@ -96,32 +107,39 @@ func NewPubKeyServerMessage(key *crypto.Key, m PubKeyMessage) (PubKeyServerMessa
 		return p, err
 	}
 
-	rndpm := make([]byte, saltSize+preMasterSize)
-	_, err = io.ReadFull(rand.Reader, rndpm)
+	d := make([]byte, saltSize+preMasterSize+signSize)
+	_, err = io.ReadFull(rand.Reader, d)
 	if err != nil {
 		return p, err
 	}
-	rnd, pm := rndpm[:saltSize], rndpm[saltSize:]
+	rnd, pm, sign := d[:saltSize], d[saltSize:saltSize+preMasterSize], d[saltSize+preMasterSize:]
 
-	p.key = key
-	p.pkey = pkey
-	p.client = m
+	p.forServer.key = key
+	p.forClient.pkey = pkey
+	p.forServer.client = m
 	p.rnd = rnd
-	p.preMaster = pm
+	p.forServer.preMaster = pm
+	p.forClient.sign = sign
 
 	return p, nil
 }
 
 func (m PubKeyServerMessage) Binary(w *binary.Writer) error {
-	enc, err := m.client.key.Encrypt(m.preMaster)
+	enc, err := m.forServer.client.key.Encrypt(m.forServer.preMaster)
 	if err != nil {
 		return err
 	}
 
-	w.WriteBytes(m.pkey.MarshalDER(), 32)
+	sig, err := m.forServer.key.Sign(m.forClient.sign)
+	if err != nil {
+		return err
+	}
+
+	w.WriteBytes(m.forClient.pkey.MarshalDER(), 16)
 	w.WriteBytes(m.rnd, 8)
-	w.WriteBytes(enc, 32)
-	// todo sign
+	w.WriteBytes(enc, 16)
+	w.WriteBytes(m.forClient.sign, 16)
+	w.WriteBytes(sig, 16)
 	return w.Err()
 }
 
@@ -137,23 +155,33 @@ func (m PubKeyServerMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
 	return JSONPubKeyServerMessage(r)
 }
 
+func (m PubKeyServerMessage) Fingerprint() string {
+	return m.forClient.pkey.FingerprintString()
+}
+
 func BinaryPubKeyServerMessage(r *binary.Reader) (PubKeyServerMessage, error) {
 	var p PubKeyServerMessage
-	der := r.ReadBytes(32)
+	der := r.ReadBytes(16)
 	rnd := r.ReadBytes(8)
-	enc := r.ReadBytes(32)
+	enc := r.ReadBytes(16)
+	sign := r.ReadBytes(16)
+	sig := r.ReadBytes(16)
 	if err := r.Err(); err != nil {
 		return p, err
 	}
 
-	pk := crypto.NewPubKey()
+	pk := crypto.NewPubKey(AsymmetricMinKeySize)
 	if err := pk.UnmarshalDER(der); err != nil {
 		return p, err
 	}
 
-	p.pkey = pk
+	if err := pk.Verify(sign, sig); err != nil {
+		return p, err
+	}
+
+	p.forClient.pkey = pk
 	p.rnd = rnd
-	p.preMasterEnc = enc
+	p.forClient.preMasterEnc = enc
 	return p, nil
 }
 
@@ -179,10 +207,10 @@ const (
 func CommonSecret(c PubKeyMessage, s PubKeyServerMessage, clientPrivate *crypto.Key) (DeriveSecret, error) {
 	clientRandom := c.rnd
 	serverRandom := s.rnd
-	preMaster := s.preMaster
+	preMaster := s.forServer.preMaster
 	if preMaster == nil {
 		var err error
-		preMaster, err = clientPrivate.Decrypt(s.preMasterEnc)
+		preMaster, err = clientPrivate.Decrypt(s.forClient.preMasterEnc)
 		if err != nil {
 			return nil, err
 		}

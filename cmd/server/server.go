@@ -22,6 +22,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "net/http/pprof"
+
 	"github.com/amimof/huego"
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bot"
@@ -129,6 +131,9 @@ func logs(f *Flags) error {
 func serve(flock flock, f *Flags) error {
 	os.MkdirAll(f.AppConf.Directory, 0o700)
 
+	go func() {
+		panic(http.ListenAndServe(":6060", nil))
+	}()
 	for {
 		if err := flock.mutex.TryLock(); err != nil {
 			if err != lockfile.ErrNotExist {

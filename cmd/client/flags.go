@@ -97,6 +97,7 @@ func (f *Flags) Flags() {
 
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
+
 	flag.Usage = func() {
 		fmt.Fprintln(f.out, "homechat")
 		flag.PrintDefaults()
@@ -139,6 +140,10 @@ func (f *Flags) Flags() {
 	}
 }
 
+func (f *Flags) SaveConfig() error {
+	return f.AppConf.Encode(f.All.ConfigFile)
+}
+
 func (f *Flags) Parse() error {
 	flag.Parse()
 	if f.All.ConfigDir == "" {
@@ -161,7 +166,7 @@ func (f *Flags) Parse() error {
 	}
 
 	keyfile := filepath.Join(f.All.ConfigDir, ".rsa_private_key")
-	key, err := crypto.EnsureKey(keyfile)
+	key, err := crypto.EnsureKey(keyfile, channel.AsymmetricMinKeySize, channel.AsymmetricKeySize)
 	if err != nil {
 		return err
 	}
@@ -172,11 +177,13 @@ func (f *Flags) Parse() error {
 		Domain: f.AppConf.ServerAddress,
 		Path:   "ws",
 	}
+
 	f.ClientConf.Key = key
 	f.ClientConf.Name = strings.TrimSpace(f.AppConf.Username)
 	f.ClientConf.Framed = false
 	f.ClientConf.Proto = channel.ProtoBinary
 	f.ClientConf.ServerURL = "http://" + f.AppConf.ServerAddress
+	f.ClientConf.ServerFingerprint = f.AppConf.ServerFingerprint
 	f.ClientConf.History = uint16(f.AppConf.MaxMessages)
 
 	if f.ClientConf.Name == "" {
