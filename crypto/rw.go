@@ -1,7 +1,6 @@
 package crypto
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -18,6 +17,8 @@ const (
 	MinSaltSize = 8
 )
 
+const random = 20
+
 func SKey(passphrase, salt []byte, cost uint8) ([]byte, error) {
 	if cost > MaxCost {
 		return nil, errors.New("scrypt cost too high")
@@ -32,28 +33,20 @@ func SKey(passphrase, salt []byte, cost uint8) ([]byte, error) {
 	return scrypt.Key(passphrase, salt, 1<<cost, 8, 1, 32)
 }
 
-func salt(size uint16) ([]byte, error) {
-	salt := make([]byte, size)
-	_, err := io.ReadFull(rand.Reader, salt)
-	return salt, err
-}
-
 type Decrypter struct {
-	r   io.Reader
-	buf *bytes.Buffer
+	r io.Reader
 
 	pass  []byte
 	size  int
 	sizeb byte
 
 	headerRead bool
-	eof        bool
 
-	mode cipher.BlockMode
+	mode cipher.Stream
 }
 
 func NewDecrypter(r io.Reader, pass []byte) io.Reader {
-	d := &Decrypter{r: r, pass: pass, buf: bytes.NewBuffer(make([]byte, 0, aes.BlockSize))}
+	d := &Decrypter{r: r, pass: pass}
 	return d
 }
 
@@ -61,7 +54,6 @@ func (d *Decrypter) readHeader() error {
 	if d.headerRead {
 		return nil
 	}
-
 	d.headerRead = true
 
 	var saltSize uint16
@@ -94,9 +86,13 @@ func (d *Decrypter) readHeader() error {
 
 	d.size = block.BlockSize()
 	d.sizeb = byte(d.size)
-	d.mode = cipher.NewCBCDecrypter(block, iv)
+	d.mode = cipher.NewCFBDecrypter(block, iv)
 
-	return nil
+	if cap(header) < random {
+		header = make([]byte, random)
+	}
+	_, err = io.ReadFull(d, header[:random])
+	return err
 }
 
 func (d *Decrypter) Read(p []byte) (int, error) {
@@ -107,36 +103,13 @@ func (d *Decrypter) Read(p []byte) (int, error) {
 		return 0, err
 	}
 
-	if d.buf.Len() != 0 {
-		n, err := d.buf.Read(p)
-		if err == io.EOF {
-			err = nil
-		}
-		return n, err
-	}
-
-	buf := make([]byte, d.size)
-	out := make([]byte, d.size)
-	padded := d.sizeb
-	read, err := io.ReadFull(d.r, buf)
+	read, err := d.r.Read(p)
 	if read == 0 {
 		return 0, err
 	}
 
-	d.mode.CryptBlocks(out, buf)
-	l := out[d.size-1]
-	if l < d.sizeb {
-		padded = d.sizeb - l
-		for i := d.sizeb - l; i < d.sizeb; i++ {
-			if out[i] != l {
-				padded = d.sizeb
-				break
-			}
-		}
-	}
-
-	d.buf.Write(out[:padded])
-	return d.buf.Read(p)
+	d.mode.XORKeyStream(p[:read], p[:read])
+	return read, nil
 }
 
 type Encrypter struct {
@@ -147,7 +120,7 @@ type Encrypter struct {
 	cost          uint8
 	headerWritten bool
 
-	mode cipher.BlockMode
+	mode cipher.Stream
 	size int
 }
 
@@ -170,20 +143,17 @@ func (d *Encrypter) writeHeader() error {
 	if d.headerWritten {
 		return nil
 	}
-
 	d.headerWritten = true
-	salt, err := salt(d.saltSize)
-	if err != nil {
+
+	randsaltiv := make([]byte, random+d.saltSize+aes.BlockSize)
+	if _, err := io.ReadFull(rand.Reader, randsaltiv); err != nil {
 		return err
 	}
+	rand, saltiv := randsaltiv[:random], randsaltiv[random:]
+	salt, iv := saltiv[:d.saltSize], saltiv[d.saltSize:]
 
 	key, err := SKey(d.pass, salt, d.cost)
 	if err != nil {
-		return err
-	}
-
-	iv := make([]byte, aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return err
 	}
 
@@ -200,18 +170,15 @@ func (d *Encrypter) writeHeader() error {
 		return err
 	}
 
-	if _, err := d.w.Write(salt); err != nil {
+	if _, err := d.w.Write(saltiv); err != nil {
 		return err
 	}
 
-	if _, err := d.w.Write(iv); err != nil {
-		return err
-	}
-
-	d.mode = cipher.NewCBCEncrypter(block, iv)
+	d.mode = cipher.NewCFBEncrypter(block, iv)
 	d.size = block.BlockSize()
 
-	return nil
+	_, err = d.Write(rand)
+	return err
 }
 
 func (d *Encrypter) Write(p []byte) (int, error) {
@@ -222,31 +189,9 @@ func (d *Encrypter) Write(p []byte) (int, error) {
 		return 0, err
 	}
 
-	r := bytes.NewReader(p)
-	written := 0
-	out := make([]byte, d.size)
-	buf := make([]byte, d.size)
-	for {
-		n, err := r.Read(buf[:d.size-1])
-		if n > 0 {
-			for i := n; i < d.size; i++ {
-				buf[i] = byte(d.size - n)
-			}
-			d.mode.CryptBlocks(out, buf)
-			_n, err := d.w.Write(out)
-			written += _n
-			if err != nil {
-				return written, err
-			}
-		}
-
-		if n == 0 && err == io.EOF {
-			return written, nil
-		}
-		if err != nil {
-			return written, err
-		}
-	}
+	buf := make([]byte, len(p))
+	d.mode.XORKeyStream(buf, p)
+	return d.w.Write(buf)
 }
 
 type EncDec struct {
