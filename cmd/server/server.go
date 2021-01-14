@@ -22,8 +22,6 @@ import (
 	"syscall"
 	"time"
 
-	_ "net/http/pprof"
-
 	"github.com/amimof/huego"
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bot"
@@ -129,11 +127,6 @@ func logs(f *Flags) error {
 }
 
 func serve(flock flock, f *Flags) error {
-	os.MkdirAll(f.AppConf.Directory, 0o700)
-
-	go func() {
-		panic(http.ListenAndServe(":6060", nil))
-	}()
 	for {
 		if err := flock.mutex.TryLock(); err != nil {
 			if err != lockfile.ErrNotExist {
@@ -146,16 +139,6 @@ func serve(flock flock, f *Flags) error {
 		break
 	}
 	defer flock.mutex.Unlock()
-
-	appendChatDir := *f.AppConf.ChatMessagesAppendOnlyDir
-	if err := os.MkdirAll(f.All.Uploads, 0o700); err != nil {
-		return err
-	}
-	if appendChatDir != "" {
-		if err := os.MkdirAll(appendChatDir, 0o700); err != nil {
-			return err
-		}
-	}
 
 	static := make(map[string][]byte)
 	err := func() error {
@@ -276,7 +259,7 @@ func serve(flock flock, f *Flags) error {
 	hsh.Write(rnd)
 
 	appendChatFile := filepath.Join(
-		appendChatDir,
+		f.Logs.Dir,
 		fmt.Sprintf(
 			"chat-%s-%s.log",
 			now,
@@ -397,7 +380,7 @@ func main() {
 		panic(err)
 	}
 
-	mutexPath, err := filepath.Abs(filepath.Join(f.AppConf.Directory, "~lock"))
+	mutexPath, err := filepath.Abs(filepath.Join(f.All.CacheDir, "~lock"))
 	if err != nil {
 		panic(err)
 	}

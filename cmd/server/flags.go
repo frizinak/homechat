@@ -141,9 +141,42 @@ func (f *Flags) Parse() error {
 		return err
 	}
 
+	if err := f.parseCommand(); err != nil {
+		return err
+	}
+
 	f.All.CacheDir = f.AppConf.Directory
 	f.All.Store = filepath.Join(f.AppConf.Directory, "chat.log")
 	f.All.Uploads = filepath.Join(f.AppConf.Directory, "uploads")
+	if f.Logs.Dir == "" {
+		f.Logs.Dir = *f.AppConf.ChatMessagesAppendOnlyDir
+	}
+
+	mkdir := func(name, path string) error {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			return fmt.Errorf("failed to create %s directory '%s': %w", name, path, err)
+		}
+		return nil
+	}
+
+	dirs := map[string]string{
+		"cache":   f.All.CacheDir,
+		"uploads": f.All.Uploads,
+		"logs":    f.Logs.Dir,
+	}
+
+	if f.All.Mode != ModeDefault {
+		dirs["logs"] = ""
+	}
+
+	for n, p := range dirs {
+		if p == "" {
+			continue
+		}
+		if err := mkdir(n, p); err != nil {
+			return err
+		}
+	}
 
 	keyfile := filepath.Join(f.AppConf.Directory, ".rsa_private_server_key")
 	key, err := crypto.EnsureKey(keyfile, channel.ServerMinKeySize, channel.ServerKeySize)
@@ -161,10 +194,6 @@ func (f *Flags) Parse() error {
 		UploadsPath:     f.All.Uploads,
 		MaxUploadSize:   *f.AppConf.MaxUploadKBytes * 1024,
 		LogBandwidth:    time.Duration(*f.AppConf.BandwidthIntervalSeconds) * time.Second,
-	}
-
-	if err := f.parseCommand(); err != nil {
-		return err
 	}
 
 	return nil
@@ -241,14 +270,10 @@ func (f *Flags) parseCommand() error {
 		if err := f.flags.serve.Parse(args[1:]); err != nil {
 			return err
 		}
-
 	case "logs":
 		f.All.Mode = ModeLogs
 		if err := f.flags.logs.Parse(args[1:]); err != nil {
 			return err
-		}
-		if f.Logs.Dir == "" {
-			f.Logs.Dir = *f.AppConf.ChatMessagesAppendOnlyDir
 		}
 	case "hue":
 		f.All.Mode = ModeHue
