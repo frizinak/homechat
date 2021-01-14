@@ -15,7 +15,7 @@ const (
 	masterSize    = 64
 
 	ServerMinKeySize = 512
-	ServerKeySize    = 1024
+	ServerKeySize    = 512
 
 	ClientMinKeySize = 128
 	ClientKeySize    = 256
