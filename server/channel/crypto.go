@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -17,6 +18,7 @@ const (
 	saltSize      = 64
 	preMasterSize = 64
 	masterSize    = 64
+	testSize      = 16
 
 	ServerMinKeySize = 512
 	ServerKeySize    = 512
@@ -35,6 +37,75 @@ func (h Hex) DecodeString(i string) ([]byte, error) { return hex.DecodeString(i)
 
 var stringEnc StringEncoder = base64.RawURLEncoding
 var stringDec StringDecoder = base64.RawURLEncoding
+
+type SymmetricTestMessage struct {
+	rnd []byte
+}
+
+func NewSymmetricTestMessage() (SymmetricTestMessage, error) {
+	rnd := make([]byte, testSize)
+	_, err := io.ReadFull(rand.Reader, rnd)
+	return SymmetricTestMessage{rnd}, err
+}
+
+func (s SymmetricTestMessage) Equal(m Msg) bool {
+	if v, ok := m.(SymmetricTestMessage); ok {
+		return bytes.Equal(s.rnd, v.rnd)
+	}
+	return false
+}
+
+func (s SymmetricTestMessage) Binary(w *binary.Writer) error {
+	for i := 0; i < testSize; i++ {
+		w.WriteUint8(s.rnd[i])
+	}
+	return w.Err()
+}
+
+func (s SymmetricTestMessage) JSON(w io.Writer) error {
+	d := map[string]string{"r": stringEnc.EncodeToString(s.rnd)}
+	return json.NewEncoder(w).Encode(d)
+}
+
+func (s SymmetricTestMessage) FromBinary(r *binary.Reader) (Msg, error) {
+	return BinarySymmetricTestMessage(r)
+}
+
+func (s SymmetricTestMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
+	return JSONSymmetricTestMessage(r)
+}
+
+func BinarySymmetricTestMessage(r *binary.Reader) (p SymmetricTestMessage, err error) {
+	rnd := make([]byte, testSize)
+	for i := 0; i < testSize; i++ {
+		rnd[i] = r.ReadUint8()
+	}
+	if err = r.Err(); err != nil {
+		return
+	}
+
+	p.rnd = rnd
+
+	return
+}
+
+func JSONSymmetricTestMessage(r io.Reader) (SymmetricTestMessage, io.Reader, error) {
+	// always return nil, the only valid check is SymmetricTestMessage.Equal
+	var s SymmetricTestMessage
+	m := make(map[string]string, 1)
+	nr, err := JSON(r, &m)
+	if err != nil {
+		return s, nr, nil
+	}
+
+	rnd, err := stringDec.DecodeString(m["r"])
+	if err != nil {
+		return s, nr, nil
+	}
+
+	s.rnd = rnd
+	return s, nr, nil
+}
 
 type PubKeyServerMessage struct {
 	key  *crypto.Key

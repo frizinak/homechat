@@ -32,8 +32,9 @@ import (
 )
 
 var (
-	fileRE   = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
-	errProto = errors.New("unsupported protocol version")
+	fileRE         = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
+	errProto       = errors.New("unsupported protocol version")
+	errKeyExchange = errors.New("client/server keys mismatch")
 )
 
 const (
@@ -579,18 +580,14 @@ func (s *Server) newClient(
 }
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool) error {
-	readPubKey := func(r io.Reader) (channel.PubKeyMessage, io.Reader, error) {
-		m, err := channel.BinaryPubKeyMessage(binary.NewReader(r))
+	read := func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
+		m, err := typ.FromBinary(binary.NewReader(r))
 		return m, r, err
 	}
-	identify := func(r io.Reader) (channel.IdentifyMsg, io.Reader, error) {
-		m, err := channel.BinaryIdentifyMsg(binary.NewReader(r))
-		return m, r, err
-	}
-	getChannel := func(r io.Reader) (channel.ChannelMsg, io.Reader, error) {
-		m, err := channel.BinaryChannelMsg(binary.NewReader(r))
-		return m, r, err
-	}
+	// getChannel := func(r io.Reader) (channel.ChannelMsg, io.Reader, error) {
+	// 	m, err := channel.BinaryChannelMsg(binary.NewReader(r))
+	// 	return m, r, err
+	// }
 	do := func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 		return r, h.HandleBIN(cl, binary.NewReader(r))
 	}
@@ -602,12 +599,10 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	}
 
 	if proto == channel.ProtoJSON {
-		readPubKey = func(r io.Reader) (channel.PubKeyMessage, io.Reader, error) {
-			m, nr, err := channel.JSONPubKeyMessage(r)
-			return m, nr, err
+		read = func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
+			return typ.FromJSON(r)
 		}
-		identify = channel.JSONIdentifyMsg
-		getChannel = channel.JSONChannelMsg
+		//getChannel = channel.JSONChannelMsg
 		do = func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 			return h.HandleJSON(cl, r)
 		}
@@ -631,7 +626,8 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		w = channel.NewBuffered(writer)
 	}
 
-	// --
+	var msg channel.Msg
+
 	key := s.c.Key
 	server, err := channel.NewPubKeyServerMessage(key)
 	if err != nil {
@@ -642,10 +638,12 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		return err
 	}
 
-	client, _, err := readPubKey(conn)
+	msg, _, err = read(conn, channel.PubKeyMessage{})
 	if err != nil {
 		return err
 	}
+	client := msg.(channel.PubKeyMessage)
+
 	derive, err := channel.CommonSecret(client, server, key)
 	if err != nil {
 		return err
@@ -663,10 +661,29 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	enc := channel.NewWriterFlusher(rw, w)
 	reader = rw
 
-	id, r, err := identify(reader)
+	test, err := channel.NewSymmetricTestMessage()
+	if err != nil {
+		return err
+	}
+
+	if err := write(enc, test); err != nil {
+		return err
+	}
+
+	msg, reader, err = read(reader, channel.SymmetricTestMessage{})
+	if err != nil {
+		return err
+	}
+
+	if !test.Equal(msg) {
+		return errKeyExchange
+	}
+
+	msg, reader, err = read(reader, channel.IdentifyMsg{})
 	if err != nil {
 		return fmt.Errorf("identify: %w", err)
 	}
+	id := msg.(channel.IdentifyMsg)
 
 	conf, c, err := s.newClient(proto, frameWriter, id, enc)
 	status := channel.StatusMsg{Code: channel.StatusOK}
@@ -701,13 +718,14 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		}
 
 		limited.N = 255
-		chnl, r, err = getChannel(r)
+		msg, reader, err = read(reader, channel.ChannelMsg{})
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("channel specify: %w", err)
 		}
+		chnl = msg.(channel.ChannelMsg)
 
 		h, ok := s.channels[chnl.Data]
 		if !ok {
@@ -718,7 +736,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		if proto != channel.ProtoBinary && limited.N > jsonMax {
 			limited.N = jsonMax
 		}
-		r, err = do(r, c, h)
+		reader, err = do(reader, c, h)
 		if err != nil {
 			return fmt.Errorf("channel %s: %w", chnl.Data, err)
 		}

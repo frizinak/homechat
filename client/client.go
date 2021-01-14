@@ -223,6 +223,10 @@ func (c *Client) tryConnect() (io.Reader, error) {
 
 	c.r, c.w = r, w
 
+	if err := c.negotiateSymmetric(r, w); err != nil {
+		return c.r, err
+	}
+
 	if err := c.negotiateUser(r, w); err != nil {
 		return c.r, err
 	}
@@ -273,6 +277,14 @@ func (c *Client) negotiateCrypto(conn Conn) (string, io.Reader, channel.WriteFlu
 	)
 
 	return fp, rw, channel.NewWriterFlusher(rw, w), nil
+}
+
+func (c *Client) negotiateSymmetric(r io.Reader, w channel.WriteFlusher) error {
+	test, _, err := c.read(r, channel.SymmetricTestMessage{})
+	if err != nil {
+		return err
+	}
+	return c.write(w, test)
 }
 
 func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) error {
