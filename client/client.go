@@ -64,6 +64,12 @@ type Conn interface {
 	io.Closer
 }
 
+type RW struct {
+	r    io.Reader
+	w    channel.WriteFlusher
+	conn io.Closer
+}
+
 type Logger interface {
 	Log(string)
 	Err(string)
@@ -84,9 +90,7 @@ type Client struct {
 
 	playlists []string
 
-	conn Conn
-	r    io.Reader
-	w    channel.WriteFlusher
+	conn *RW
 
 	lastConnect time.Time
 	fatal       error
@@ -137,14 +141,14 @@ func (c *Client) Music(msg string) error {
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {
-	_, err := c.tryConnect()
+	_, w, err := c.tryConnect()
 	if err != nil {
 		c.disconnect()
 		return err
 	}
 
 	c.sem.Lock()
-	if err := c.writeMulti(c.w, channel.ChannelMsg{Data: chnl}, msg); err != nil {
+	if err := c.writeMulti(w, channel.ChannelMsg{Data: chnl}, msg); err != nil {
 		c.sem.Unlock()
 		c.disconnect()
 		return err
@@ -179,17 +183,17 @@ func (c *Client) disconnect() {
 	c.sem.Lock()
 	defer c.sem.Unlock()
 	if c.conn != nil {
-		c.conn.Close()
+		c.conn.conn.Close()
 	}
-	c.conn, c.r, c.w = nil, nil, nil
+	c.conn = nil
 }
 
-func (c *Client) tryConnect() (io.Reader, error) {
+func (c *Client) tryConnect() (io.Reader, channel.WriteFlusher, error) {
 	c.sem.Lock()
 	defer c.sem.Unlock()
-	if c.r != nil {
-		r := c.r
-		return r, nil
+	conn := c.conn
+	if conn != nil {
+		return conn.r, conn.w, nil
 	}
 
 	for time.Since(c.lastConnect) < time.Second*2 {
@@ -198,54 +202,52 @@ func (c *Client) tryConnect() (io.Reader, error) {
 	}
 
 	c.lastConnect = time.Now()
-	conn, err := c.backend.Connect()
+	underlying, err := c.backend.Connect()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	c.log.Log("connecting...")
-	c.conn = conn
-	if err := c.negotiateProto(conn); err != nil {
-		return conn, err
+	if err := c.negotiateProto(underlying); err != nil {
+		return nil, nil, err
 	}
 
 	c.log.Log("encrypting...")
-	fp, r, w, err := c.negotiateCrypto(conn)
+	fp, r, w, err := c.negotiateCrypto(underlying, underlying)
 	if err != nil {
-		return conn, err
+		return nil, nil, err
 	}
 
 	c.serverFingerprint = fp
 	if c.c.ServerFingerprint == "" || c.c.ServerFingerprint != fp {
 		c.fatal = ErrFingerPrint
-		return conn, ErrFingerPrint
+		return nil, nil, ErrFingerPrint
 	}
 
-	c.r, c.w = r, w
-
 	if err := c.negotiateSymmetric(r, w); err != nil {
-		return c.r, err
+		return nil, nil, err
 	}
 
 	if err := c.negotiateUser(r, w); err != nil {
-		return c.r, err
+		return nil, nil, err
 	}
 	c.log.Log("connected")
 
-	return c.r, nil
+	c.conn = &RW{r, w, underlying}
+	return r, w, nil
 }
 
-func (c *Client) negotiateProto(conn Conn) error {
-	return c.c.Proto.Write(conn)
+func (c *Client) negotiateProto(w io.Writer) error {
+	return c.c.Proto.Write(w)
 }
 
-func (c *Client) negotiateCrypto(conn Conn) (string, io.Reader, channel.WriteFlusher, error) {
-	var w channel.WriteFlusher = channel.NewPassthrough(conn)
+func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, channel.WriteFlusher, error) {
+	var wf channel.WriteFlusher = channel.NewPassthrough(w)
 	if c.c.Framed {
-		w = channel.NewBuffered(conn)
+		wf = channel.NewBuffered(w)
 	}
 
-	_server, _, err := c.read(conn, channel.PubKeyServerMessage{})
+	_server, _, err := c.read(r, channel.PubKeyServerMessage{})
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -256,7 +258,7 @@ func (c *Client) negotiateCrypto(conn Conn) (string, io.Reader, channel.WriteFlu
 		return "", nil, nil, err
 	}
 
-	if err := c.write(w, client); err != nil {
+	if err := c.write(wf, client); err != nil {
 		return "", nil, nil, err
 	}
 
@@ -265,10 +267,8 @@ func (c *Client) negotiateCrypto(conn Conn) (string, io.Reader, channel.WriteFlu
 		return "", nil, nil, err
 	}
 
-	fp := server.Fingerprint()
-
 	rw := crypto.NewEncDec(
-		conn,
+		r,
 		w,
 		derive(channel.CryptoClientRead),
 		derive(channel.CryptoClientWrite),
@@ -276,7 +276,7 @@ func (c *Client) negotiateCrypto(conn Conn) (string, io.Reader, channel.WriteFlu
 		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
 	)
 
-	return fp, rw, channel.NewWriterFlusher(rw, w), nil
+	return server.Fingerprint(), rw, channel.NewWriterFlusher(rw, wf), nil
 }
 
 func (c *Client) negotiateSymmetric(r io.Reader, w channel.WriteFlusher) error {
@@ -334,7 +334,7 @@ func (c *Client) connect() (io.Reader, error) {
 		return nil, err
 	}
 
-	r, err := c.tryConnect()
+	r, _, err := c.tryConnect()
 	if err != nil {
 		return r, err
 	}
@@ -531,7 +531,7 @@ func (c *Client) Run() error {
 
 	var gerr error
 	for {
-		conn, err := c.connect()
+		r, err := c.connect()
 		if err != nil {
 			if err := c.Err(); err != nil {
 				gerr = err
@@ -542,7 +542,7 @@ func (c *Client) Run() error {
 			continue
 		}
 
-		if err := do(conn); err != nil {
+		if err := do(r); err != nil {
 			c.disconnect()
 			c.log.Err(err.Error())
 			continue
