@@ -221,7 +221,10 @@ func (k *Key) MarshalDER() ([]byte, error) {
 func (k *Key) UnmarshalDER(data []byte) error {
 	key, err := x509.ParsePKCS8PrivateKey(data)
 	if err != nil {
-		return err
+		key, err = x509.ParsePKCS1PrivateKey(data)
+		if err != nil {
+			return fmt.Errorf("Failed to parse data. (tried PKCS8 and PKCS1): %w", err)
+		}
 	}
 
 	rsa, ok := key.(*rsa.PrivateKey)
