@@ -47,11 +47,7 @@ type NeverEqual struct{}
 
 func (n NeverEqual) Equal(Msg) bool { return false }
 
-// todo never sensitive?
-type NilMsg struct {
-	NeverEqual
-	NonSensitive
-}
+type NilMsg struct{ NeverEqual }
 
 func (m NilMsg) Binary(w *binary.Writer) error                { return w.Err() }
 func (m NilMsg) JSON(w io.Writer) error                       { return nil }
@@ -59,11 +55,3 @@ func (m NilMsg) FromBinary(r *binary.Reader) (Msg, error)     { return BinaryNil
 func (m NilMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONNilMessage(r) }
 func BinaryNilMessage(r *binary.Reader) (m NilMsg, err error) { return }
 func JSONNilMessage(r io.Reader) (NilMsg, io.Reader, error)   { return NilMsg{}, r, nil }
-
-type NonSensitive struct{}
-
-func (nv NonSensitive) Sensitive() bool { return false }
-
-type AlwaysSensitive struct{}
-
-func (nv AlwaysSensitive) Sensitive() bool { return true }

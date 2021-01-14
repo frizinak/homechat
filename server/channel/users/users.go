@@ -77,7 +77,7 @@ func (c *UsersChannel) do(f channel.ClientFilter) error {
 	for _, ch := range c.usersChannels {
 		f.HasChannel = []string{ch}
 		users := c.col.GetUsers(ch)
-		s := data.ServerMessage{Channel: ch, Users: make([]data.User, len(users))}
+		s := data.ServerMessage{ch, make([]data.User, len(users))}
 		for i, u := range users {
 			s.Users[i] = data.User{u.Name, uint8(u.Clients)}
 		}

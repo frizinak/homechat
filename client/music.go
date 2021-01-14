@@ -14,10 +14,6 @@ type MusicState struct {
 	musicdata.ServerSongMessage
 }
 
-func (m MusicState) Sensitive() bool {
-	return m.ServerStateMessage.Sensitive() || m.ServerSongMessage.Sensitive()
-}
-
 func (m MusicState) Binary(w *binary.Writer) error {
 	if err := m.ServerStateMessage.Binary(w); err != nil {
 		return err

@@ -13,7 +13,6 @@ type Message struct {
 	Data string `json:"d"`
 
 	channel.NeverEqual
-	channel.AlwaysSensitive
 }
 
 func (m Message) Binary(w *binary.Writer) error {
@@ -63,7 +62,6 @@ type ServerMessage struct {
 	Shout  bool      `json:"shout"`
 
 	channel.NeverEqual
-	channel.AlwaysSensitive
 }
 
 func (m ServerMessage) Binary(w *binary.Writer) error {

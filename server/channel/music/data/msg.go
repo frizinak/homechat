@@ -12,7 +12,6 @@ type Message struct {
 	Command string `json:"cmd"`
 
 	channel.NeverEqual
-	channel.AlwaysSensitive
 }
 
 func (m Message) Binary(w *binary.Writer) error {
@@ -48,8 +47,6 @@ type ServerMessage struct {
 	Title string `json:"title"`
 	Text  string `json:"text"`
 	Songs []Song `json:"songs"`
-
-	channel.AlwaysSensitive
 }
 
 func (m ServerMessage) Binary(w *binary.Writer) error {
