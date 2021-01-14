@@ -40,12 +40,13 @@ var stringDec StringDecoder = base64.RawURLEncoding
 
 type SymmetricTestMessage struct {
 	rnd []byte
+	AlwaysSensitive
 }
 
 func NewSymmetricTestMessage() (SymmetricTestMessage, error) {
 	rnd := make([]byte, testSize)
 	_, err := io.ReadFull(rand.Reader, rnd)
-	return SymmetricTestMessage{rnd}, err
+	return SymmetricTestMessage{rnd: rnd}, err
 }
 
 func (s SymmetricTestMessage) Equal(m Msg) bool {
@@ -113,6 +114,7 @@ type PubKeyServerMessage struct {
 	rnd  []byte
 
 	NeverEqual
+	NonSensitive
 }
 
 func NewPubKeyServerMessage(key *crypto.Key) (PubKeyServerMessage, error) {
@@ -247,6 +249,7 @@ type PubKeyMessage struct {
 	preMaster, preMasterEnc []byte
 
 	NeverEqual
+	NonSensitive
 }
 
 func NewPubKeyMessage(key *crypto.Key, m PubKeyServerMessage) (PubKeyMessage, error) {

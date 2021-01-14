@@ -35,6 +35,8 @@ type User struct {
 type ServerMessage struct {
 	Channel string `json:"channel"`
 	Users   []User `json:"users"`
+
+	channel.AlwaysSensitive
 }
 
 func (m ServerMessage) Binary(w *binary.Writer) error {

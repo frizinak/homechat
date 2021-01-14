@@ -14,6 +14,8 @@ type ServerStateMessage struct {
 	Position time.Duration `json:"position"`
 	Duration time.Duration `json:"duration"`
 	Volume   float64       `json:"volume"`
+
+	channel.NonSensitive
 }
 
 func (m ServerStateMessage) Equal(msg channel.Msg) bool {
@@ -72,6 +74,8 @@ type ServerSongMessage struct {
 	NS    string `json:"ns"`
 	ID    string `json:"id"`
 	Title string `json:"title"`
+
+	channel.AlwaysSensitive
 }
 
 func (m ServerSongMessage) Equal(msg channel.Msg) bool { return m == msg }
