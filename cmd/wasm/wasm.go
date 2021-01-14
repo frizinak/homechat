@@ -146,6 +146,8 @@ func main() {
 	pem := localStorage.Call("getItem", "key")
 	_fp := localStorage.Call("getItem", "fp")
 
+	// TODO when server can handle tls and internal encryption is off
+	// binary should depend on proto
 	const binary = true
 	backendConf := wswasm.Config{
 		TLS:    httpProto == "https:",
