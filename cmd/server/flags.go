@@ -24,21 +24,24 @@ const (
 	ModeDefault Mode = iota
 	ModeLogs
 	ModeHue
+	ModeFingerprint
 )
 
 type Flags struct {
 	out io.Writer
 
 	flags struct {
-		serve  *flag.FlagSet
-		logs   *flag.FlagSet
-		hue    *flag.FlagSet
-		config *flag.FlagSet
+		serve       *flag.FlagSet
+		logs        *flag.FlagSet
+		hue         *flag.FlagSet
+		fingerprint *flag.FlagSet
+		config      *flag.FlagSet
 	}
 
 	All struct {
 		Mode Mode
 
+		Key        *crypto.Key
 		ConfigFile string
 		CacheDir   string
 		Store      string
@@ -89,6 +92,9 @@ func (f *Flags) Flags() {
 	f.flags.hue = flag.NewFlagSet("hue", flag.ExitOnError)
 	f.flags.hue.SetOutput(f.out)
 
+	f.flags.fingerprint = flag.NewFlagSet("fingerprint", flag.ExitOnError)
+	f.flags.fingerprint.SetOutput(f.out)
+
 	f.flags.config = flag.NewFlagSet("config", flag.ExitOnError)
 	f.flags.config.SetOutput(f.out)
 
@@ -102,6 +108,7 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "  - serve | <empty>: Server")
 		fmt.Fprintln(f.out, "  - logs:            Append-only logfile operations")
 		fmt.Fprintln(f.out, "  - hue:             Configure Philips Hue bridge credentials")
+		fmt.Fprintln(f.out, "  - fingerprint:     Show server publickey fingerprint")
 		fmt.Fprintln(f.out, "  - config:          Config options explained")
 		fmt.Fprintln(f.out, "  - version:         Print version and exit")
 	}
@@ -109,14 +116,18 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "Start the server")
 		f.flags.serve.PrintDefaults()
 	}
+	f.flags.logs.Usage = func() {
+		fmt.Fprintln(f.out, "Print contents of the Append-only logs for now")
+		f.flags.logs.PrintDefaults()
+	}
 	f.flags.hue.Usage = func() {
 		fmt.Fprintln(f.out, "Discover hue bridge and create credentials")
 		fmt.Fprintln(f.out, "Automatically stores them in the active server.json")
 		f.flags.hue.PrintDefaults()
 	}
-	f.flags.logs.Usage = func() {
-		fmt.Fprintln(f.out, "Print contents of the Append-only logs for now")
-		f.flags.logs.PrintDefaults()
+	f.flags.fingerprint.Usage = func() {
+		fmt.Fprintln(f.out, "Show server publickey fingerprint")
+		f.flags.fingerprint.PrintDefaults()
 	}
 	f.flags.config.Usage = func() {
 		fmt.Fprintf(f.out, "Config file used: '%s'\n\n", f.All.ConfigFile)
@@ -183,6 +194,7 @@ func (f *Flags) Parse() error {
 	if err != nil {
 		return err
 	}
+	f.All.Key = key
 
 	f.ServerConf = server.Config{
 		Key:             key,
@@ -278,6 +290,11 @@ func (f *Flags) parseCommand() error {
 	case "hue":
 		f.All.Mode = ModeHue
 		if err := f.flags.hue.Parse(args[1:]); err != nil {
+			return err
+		}
+	case "fingerprint":
+		f.All.Mode = ModeFingerprint
+		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
 			return err
 		}
 	case "version":

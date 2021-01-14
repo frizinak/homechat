@@ -31,6 +31,28 @@ func exit(err error) {
 	os.Exit(1)
 }
 
+func fingerprint(f *Flags) error {
+	pk, err := f.All.Key.Public()
+	if err != nil {
+		return fmt.Errorf("failed to parse publickey: %w", err)
+	}
+
+	serverFP := f.AppConf.ServerFingerprint
+	if serverFP == "" {
+		serverFP = "<none>"
+	}
+
+	fmt.Printf(
+		"%-30s\t%s\n%-30s\t%s\n",
+		"local",
+		pk.FingerprintString(),
+		fmt.Sprintf("remote[%s]", f.AppConf.ServerAddress),
+		serverFP,
+	)
+
+	return nil
+}
+
 func main() {
 	interactive := true
 	stat, _ := os.Stdin.Stat()
@@ -46,6 +68,13 @@ func main() {
 	f := NewFlags(os.Stdout, defaultDir, interactive)
 	f.Flags()
 	exit(f.Parse())
+
+	var err error
+	switch f.All.Mode {
+	case ModeFingerprint:
+		exit(fingerprint(f))
+		os.Exit(0)
+	}
 
 	var backend client.Backend = tcp.New(f.TCPConf)
 	if f.ClientConf.Proto == channel.ProtoJSON {

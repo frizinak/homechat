@@ -80,6 +80,16 @@ func hue(f *Flags) error {
 	return nil
 }
 
+func fingerprint(f *Flags) error {
+	pk, err := f.All.Key.Public()
+	if err != nil {
+		return fmt.Errorf("failed to parse publickey: %w", err)
+	}
+
+	fmt.Println(pk.FingerprintString())
+	return nil
+}
+
 func logs(f *Flags) error {
 	if f.Logs.Dir == "" {
 		return errors.New("no directory specified")
@@ -398,6 +408,10 @@ func main() {
 		err = logs(f)
 	case ModeHue:
 		err = hue(f)
+	case ModeFingerprint:
+		err = fingerprint(f)
+	default:
+		err = errors.New("no such mode")
 	}
 
 	if err != nil {

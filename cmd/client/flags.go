@@ -25,12 +25,14 @@ const (
 	ModeDefault Mode = iota
 	ModeMusic
 	ModeUpload
+	ModeFingerprint
 )
 
 type Flags struct {
 	out io.Writer
 
 	All struct {
+		Key        *crypto.Key
 		ConfigDir  string
 		ConfigFile string
 		KeymapFile string
@@ -50,10 +52,11 @@ type Flags struct {
 	}
 
 	flags struct {
-		chat   *flag.FlagSet
-		music  *flag.FlagSet
-		upload *flag.FlagSet
-		config *flag.FlagSet
+		chat        *flag.FlagSet
+		music       *flag.FlagSet
+		upload      *flag.FlagSet
+		config      *flag.FlagSet
+		fingerprint *flag.FlagSet
 	}
 
 	AppConf    *Config
@@ -95,6 +98,9 @@ func (f *Flags) Flags() {
 	f.flags.config = flag.NewFlagSet("config", flag.ExitOnError)
 	f.flags.config.SetOutput(f.out)
 
+	f.flags.fingerprint = flag.NewFlagSet("fingerprint", flag.ExitOnError)
+	f.flags.fingerprint.SetOutput(f.out)
+
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
 
@@ -106,6 +112,7 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "  - music:          Music client")
 		fmt.Fprintln(f.out, "  - upload:         Upload a file from stdin or commandline to chat")
 		fmt.Fprintln(f.out, "  - config:         Config options explained")
+		fmt.Fprintln(f.out, "  - fingerprint:    Show your and the server's trusted publickey fingerprint")
 		fmt.Fprintln(f.out, "  - version:        Print version and exit")
 	}
 	f.flags.chat.Usage = func() {
@@ -137,6 +144,10 @@ func (f *Flags) Flags() {
 		if err := f.AppConf.Help(f.out); err != nil {
 			panic(err)
 		}
+	}
+	f.flags.fingerprint.Usage = func() {
+		fmt.Fprintln(f.out, "Show your and the server's trusted publickey fingerprint")
+		f.flags.fingerprint.PrintDefaults()
 	}
 }
 
@@ -170,6 +181,7 @@ func (f *Flags) Parse() error {
 	if err != nil {
 		return err
 	}
+	f.All.Key = key
 
 	f.TCPConf = tcp.Config{TCPAddr: f.AppConf.ServerTCPAddress}
 	f.WSConf = ws.Config{
@@ -361,6 +373,11 @@ func (f *Flags) parseCommand() error {
 		f.Upload.File = f.flags.upload.Arg(0)
 		if f.Upload.File == "" && f.All.Interactive {
 			return errors.New("please provide a file")
+		}
+	case "fingerprint":
+		f.All.Mode = ModeFingerprint
+		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
+			return err
 		}
 	case "version":
 		fmt.Fprintf(f.out, "%s (protocol: %s)\n", vars.Version, vars.ProtocolVersion)
