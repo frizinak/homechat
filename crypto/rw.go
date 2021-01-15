@@ -56,6 +56,8 @@ type Decrypter struct {
 	headerRead bool
 
 	mode cipher.Stream
+
+	err error
 }
 
 func NewDecrypter(c DecrypterConfig, r io.Reader, pass []byte) io.Reader {
@@ -116,7 +118,12 @@ func (d *Decrypter) Read(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	if d.err != nil {
+		return 0, d.err
+	}
+
 	if err := d.readHeader(); err != nil {
+		d.err = err
 		return 0, err
 	}
 
@@ -139,6 +146,8 @@ type Encrypter struct {
 
 	mode cipher.Stream
 	size int
+
+	err error
 }
 
 func NewEncrypter(
@@ -201,7 +210,12 @@ func (d *Encrypter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+	if d.err != nil {
+		return 0, d.err
+	}
+
 	if err := d.writeHeader(); err != nil {
+		d.err = err
 		return 0, err
 	}
 

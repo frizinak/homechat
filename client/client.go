@@ -25,6 +25,7 @@ var ErrFingerPrint = errors.New("fingerprint mismatch")
 
 type Backend interface {
 	Connect() (Conn, error)
+	Framed() bool
 }
 
 type Handler interface {
@@ -109,7 +110,6 @@ type Config struct {
 	Name     string
 	Channels []string
 	Proto    channel.Proto
-	Framed   bool
 	History  uint16
 }
 
@@ -224,11 +224,11 @@ func (c *Client) tryConnect() (io.Reader, channel.WriteFlusher, error) {
 		return nil, nil, ErrFingerPrint
 	}
 
-	if err := c.negotiateSymmetric(r, w); err != nil {
+	if r, err = c.negotiateSymmetric(r, w); err != nil {
 		return nil, nil, err
 	}
 
-	if err := c.negotiateUser(r, w); err != nil {
+	if r, err = c.negotiateUser(r, w); err != nil {
 		return nil, nil, err
 	}
 	c.log.Log("connected")
@@ -243,11 +243,11 @@ func (c *Client) negotiateProto(w io.Writer) error {
 
 func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, channel.WriteFlusher, error) {
 	var wf channel.WriteFlusher = channel.NewPassthrough(w)
-	if c.c.Framed {
+	if c.backend.Framed() {
 		wf = channel.NewBuffered(w)
 	}
 
-	_server, _, err := c.read(r, channel.PubKeyServerMessage{})
+	_server, nr, err := c.read(r, channel.PubKeyServerMessage{})
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -268,34 +268,34 @@ func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, c
 	}
 
 	rw := crypto.NewEncDec(
-		r,
-		w,
+		nr,
+		wf,
 		derive(channel.CryptoClientRead),
 		derive(channel.CryptoClientWrite),
 		crypto.EncrypterConfig{SaltSize: 32, Cost: 12},
 		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
 	)
 
-	return server.Fingerprint(), rw, channel.NewWriterFlusher(rw, wf), nil
+	return server.Fingerprint(), rw, &channel.WriterFlusher{rw, wf}, nil
 }
 
-func (c *Client) negotiateSymmetric(r io.Reader, w channel.WriteFlusher) error {
-	test, _, err := c.read(r, channel.SymmetricTestMessage{})
+func (c *Client) negotiateSymmetric(r io.Reader, w channel.WriteFlusher) (io.Reader, error) {
+	test, nr, err := c.read(r, channel.SymmetricTestMessage{})
 	if err != nil {
-		return err
+		return nr, err
 	}
-	return c.write(w, test)
+	return nr, c.write(w, test)
 }
 
-func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) error {
+func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) (io.Reader, error) {
 	msg := channel.IdentifyMsg{Data: c.c.Name, Channels: c.c.Channels, Version: vars.ProtocolVersion}
 	if err := c.write(w, msg); err != nil {
-		return err
+		return r, err
 	}
 
-	_status, _, err := c.read(r, channel.StatusMsg{})
+	_status, nr, err := c.read(r, channel.StatusMsg{})
 	if err != nil {
-		return err
+		return nr, err
 	}
 
 	s := _status.(channel.StatusMsg)
@@ -315,18 +315,18 @@ func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) error {
 			)
 		}
 		c.fatal = err
-		return err
+		return nr, err
 	}
 
-	_identity, _, err := c.read(r, channel.IdentifyMsg{})
+	_identity, nr, err := c.read(nr, channel.IdentifyMsg{})
 	if err != nil {
-		return err
+		return nr, err
 	}
 
 	identity := _identity.(channel.IdentifyMsg)
 	c.c.Name = identity.Data
 	c.handler.HandleName(c.c.Name)
-	return nil
+	return nr, nil
 }
 
 func (c *Client) connect() (io.Reader, error) {
@@ -413,63 +413,65 @@ func (c *Client) Run() error {
 
 	musicState := MusicState{}
 
-	doOne := func(r io.Reader) error {
-		_chnl, nr, err := c.read(r, channel.ChannelMsg{})
+	doOne := func(r io.Reader) (io.Reader, error) {
+		var msg channel.Msg
+		var err error
+
+		msg, r, err = c.read(r, channel.ChannelMsg{})
 		if err != nil {
-			return err
+			return r, err
 		}
-		chnl := _chnl.(channel.ChannelMsg)
-		r = nr
+		chnl := msg.(channel.ChannelMsg)
 
 		switch chnl.Data {
 		case vars.PingChannel:
 			c.latency = time.Since(<-pings)
 			c.handler.HandleLatency(c.latency)
 		case vars.HistoryChannel:
-			_, _, err := c.read(r, historydata.ServerMessage{})
+			_, r, err = c.read(r, historydata.ServerMessage{})
 			if err != nil {
-				return err
+				return r, err
 			}
 			c.handler.HandleHistory()
 		case vars.ChatChannel:
-			_msg, _, err := c.read(r, chatdata.ServerMessage{})
+			msg, r, err = c.read(r, chatdata.ServerMessage{})
 			if err != nil {
-				return err
+				return r, err
 			}
-			return c.handler.HandleChatMessage(_msg.(chatdata.ServerMessage))
+			return r, c.handler.HandleChatMessage(msg.(chatdata.ServerMessage))
 		case vars.MusicChannel:
-			_msg, _, err := c.read(r, musicdata.ServerMessage{})
+			msg, r, err = c.read(r, musicdata.ServerMessage{})
 			if err != nil {
-				return err
+				return r, err
 			}
-			return c.handler.HandleMusicMessage(_msg.(musicdata.ServerMessage))
+			return r, c.handler.HandleMusicMessage(msg.(musicdata.ServerMessage))
 		case vars.MusicStateChannel:
-			_msg, _, err := c.read(r, musicdata.ServerStateMessage{})
+			msg, r, err = c.read(r, musicdata.ServerStateMessage{})
 			if err != nil {
-				return err
+				return r, err
 			}
-			musicState.ServerStateMessage = _msg.(musicdata.ServerStateMessage)
-			return c.handler.HandleMusicStateMessage(musicState)
+			musicState.ServerStateMessage = msg.(musicdata.ServerStateMessage)
+			return r, c.handler.HandleMusicStateMessage(musicState)
 		case vars.MusicSongChannel:
-			_msg, _, err := c.read(r, musicdata.ServerSongMessage{})
+			msg, r, err = c.read(r, musicdata.ServerSongMessage{})
 			if err != nil {
-				return err
+				return r, err
 			}
-			musicState.ServerSongMessage = _msg.(musicdata.ServerSongMessage)
-			return c.handler.HandleMusicStateMessage(musicState)
+			musicState.ServerSongMessage = msg.(musicdata.ServerSongMessage)
+			return r, c.handler.HandleMusicStateMessage(musicState)
 		case vars.MusicPlaylistChannel:
-			_msg, _, err := c.read(r, musicdata.ServerPlaylistMessage{})
+			msg, r, err = c.read(r, musicdata.ServerPlaylistMessage{})
 			if err != nil {
-				return err
+				return r, err
 			}
 
-			c.playlists = _msg.(musicdata.ServerPlaylistMessage).List
+			c.playlists = msg.(musicdata.ServerPlaylistMessage).List
 		case vars.UserChannel:
-			_msg, _, err := c.read(r, usersdata.ServerMessage{})
+			msg, r, err = c.read(r, usersdata.ServerMessage{})
 			if err != nil {
-				return err
+				return r, err
 			}
-			msg := _msg.(usersdata.ServerMessage)
+			msg := msg.(usersdata.ServerMessage)
 			users := make(map[string]User, len(msg.Users))
 			for _, u := range msg.Users {
 				users[u.Name] = User{Name: u.Name, Amount: u.Clients}
@@ -502,27 +504,28 @@ func (c *Client) Run() error {
 
 			sort.Sort(list)
 			c.users = list
-			return c.handler.HandleUsersMessage(msg, list)
+			return r, c.handler.HandleUsersMessage(msg, list)
 		case vars.MusicErrorChannel:
-			_msg, _, err := c.read(r, channel.StatusMsg{})
+			msg, r, err = c.read(r, channel.StatusMsg{})
 			if err != nil {
-				return err
+				return r, err
 			}
-			msg := _msg.(channel.StatusMsg)
+			msg := msg.(channel.StatusMsg)
 			if msg.OK() {
-				return nil
+				return r, nil
 			}
 			c.log.Flash(msg.Err)
 		default:
-			return fmt.Errorf("received unknown message type: '%s'", chnl)
+			return r, fmt.Errorf("received unknown message type: '%s'", chnl)
 		}
 
-		return nil
+		return r, nil
 	}
 
 	do := func(r io.Reader) error {
+		var err error
 		for {
-			err := doOne(r)
+			r, err = doOne(r)
 			if err != nil {
 				return err
 			}

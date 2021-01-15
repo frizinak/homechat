@@ -13,10 +13,8 @@ import (
 	"time"
 
 	"github.com/frizinak/homechat/client"
-	"github.com/frizinak/homechat/client/tcp"
+	"github.com/frizinak/homechat/client/backend/tcp"
 	"github.com/frizinak/homechat/client/terminal"
-	"github.com/frizinak/homechat/client/ws"
-	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/ui"
 	"github.com/frizinak/homechat/vars"
 
@@ -76,12 +74,9 @@ func main() {
 		os.Exit(0)
 	}
 
-	var backend client.Backend = tcp.New(f.TCPConf)
-	if f.ClientConf.Proto == channel.ProtoJSON {
-		var err error
-		backend, err = ws.New(f.WSConf)
-		exit(err)
-	}
+	backend := tcp.New(f.TCPConf)
+	//backend, err := ws.New(f.WSConf)
+	//exit(err)
 
 	if f.All.Mode == ModeUpload {
 		log := ui.Plain(ioutil.Discard)

@@ -170,8 +170,20 @@ func JSON(r io.Reader, data interface{}) (io.Reader, error) {
 	d := json.NewDecoder(r)
 	err := d.Decode(data)
 	buf := d.Buffered()
-	if bbuf, ok := buf.(*bytes.Reader); ok && bbuf.Len() == 0 {
-		return r, err
+	if bbuf, ok := buf.(*bytes.Reader); ok {
+		ln := bbuf.Len()
+		if ln == 1 { // almost always the case
+			// not sure if we gain a lot here, works even without this case
+			// newline is only required if were encoding raw ints.
+			// also: we could do this in any case (ln>0)
+			b, rerr := bbuf.ReadByte()
+			if rerr == nil && b == '\n' {
+				return r, err
+			}
+			bbuf.UnreadByte()
+		} else if ln == 0 {
+			return r, err
+		}
 	}
 
 	// if !d.More() { // will cause a read, nooope

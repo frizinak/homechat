@@ -33,32 +33,16 @@ func (w *BufferedWriteFlusher) Flush() error {
 }
 
 type PassthroughWriteFlusher struct {
-	w io.Writer
+	io.Writer
 }
 
 func NewPassthrough(w io.Writer) WriteFlusher {
 	return &PassthroughWriteFlusher{w}
 }
 
-func (w *PassthroughWriteFlusher) Write(b []byte) (int, error) {
-	return w.w.Write(b)
-}
-
 func (w *PassthroughWriteFlusher) Flush() error { return nil }
 
 type WriterFlusher struct {
-	w io.Writer
-	f Flusher
-}
-
-func NewWriterFlusher(w io.Writer, f Flusher) WriteFlusher {
-	return &WriterFlusher{w, f}
-}
-
-func (w *WriterFlusher) Write(b []byte) (int, error) {
-	return w.w.Write(b)
-}
-
-func (w *WriterFlusher) Flush() error {
-	return w.f.Flush()
+	io.Writer
+	Flusher
 }

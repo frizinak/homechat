@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/frizinak/homechat/client"
-	"github.com/frizinak/homechat/client/wswasm"
+	"github.com/frizinak/homechat/client/backend/wswasm"
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
@@ -226,7 +226,6 @@ func main() {
 				vars.MusicErrorChannel,
 			},
 			Proto:   proto,
-			Framed:  true,
 			History: 100,
 		}
 		c = client.New(backend, handler, handler, conf)

@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/frizinak/homechat/client"
-	"github.com/frizinak/homechat/client/tcp"
-	"github.com/frizinak/homechat/client/ws"
+	"github.com/frizinak/homechat/client/backend/tcp"
+	"github.com/frizinak/homechat/client/backend/ws"
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
@@ -192,7 +192,6 @@ func (f *Flags) Parse() error {
 
 	f.ClientConf.Key = key
 	f.ClientConf.Name = strings.TrimSpace(f.AppConf.Username)
-	f.ClientConf.Framed = false
 	f.ClientConf.Proto = channel.ProtoBinary
 	f.ClientConf.ServerURL = "http://" + f.AppConf.ServerAddress
 	f.ClientConf.ServerFingerprint = f.AppConf.ServerFingerprint

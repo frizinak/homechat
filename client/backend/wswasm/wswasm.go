@@ -160,3 +160,5 @@ func New(c Config, global js.Value) (*Client, error) {
 func (c *Client) Connect() (client.Conn, error) {
 	return newConn(c.global, c.uri, c.binary)
 }
+
+func (c *Client) Framed() bool { return true }

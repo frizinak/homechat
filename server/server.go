@@ -633,7 +633,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		return err
 	}
 
-	msg, _, err = read(conn, channel.PubKeyMessage{})
+	msg, reader, err = read(reader, channel.PubKeyMessage{})
 	if err != nil {
 		return err
 	}
@@ -653,7 +653,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
 	)
 
-	enc := channel.NewWriterFlusher(rw, w)
+	enc := &channel.WriterFlusher{rw, w}
 	reader = rw
 
 	test, err := channel.NewSymmetricTestMessage()
