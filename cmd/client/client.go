@@ -29,7 +29,7 @@ func exit(err error) {
 	os.Exit(1)
 }
 
-func fingerprint(f *Flags) error {
+func fingerprint(f *Flags, remoteAddress string) error {
 	pk, err := f.All.Key.Public()
 	if err != nil {
 		return fmt.Errorf("failed to parse publickey: %w", err)
@@ -44,7 +44,7 @@ func fingerprint(f *Flags) error {
 		"%-30s\t%s\n%-30s\t%s\n",
 		"local",
 		pk.FingerprintString(),
-		fmt.Sprintf("remote[%s]", f.AppConf.ServerAddress),
+		fmt.Sprintf("remote[%s]", remoteAddress),
 		serverFP,
 	)
 
@@ -67,16 +67,19 @@ func main() {
 	f.Flags()
 	exit(f.Parse())
 
+	remoteAddress := f.TCPConf.TCPAddr
+	// remoteAddress := f.WSConf.Domain
+
 	var err error
 	switch f.All.Mode {
 	case ModeFingerprint:
-		exit(fingerprint(f))
+		exit(fingerprint(f, remoteAddress))
 		os.Exit(0)
 	}
 
 	backend := tcp.New(f.TCPConf)
-	//backend, err := ws.New(f.WSConf)
-	//exit(err)
+	// backend, err := ws.New(f.WSConf)
+	// exit(err)
 
 	if f.All.Mode == ModeUpload {
 		log := ui.Plain(ioutil.Discard)
@@ -277,6 +280,7 @@ func main() {
 	)
 	exit(err)
 
+	fmt.Printf("Shaking hands with %s\n", remoteAddress)
 	err = cl.Connect()
 	if err == client.ErrFingerPrint {
 		trust := f.AppConf.ServerFingerprint
@@ -294,7 +298,7 @@ func main() {
 			"%s\n%s\nAccept new fingerprint for %s? [y/N]: ",
 			msg,
 			newFP,
-			f.AppConf.ServerAddress,
+			remoteAddress,
 		)
 		var answer string
 		fmt.Scanln(&answer)
