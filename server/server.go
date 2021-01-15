@@ -616,9 +616,9 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	limited := &io.LimitedReader{R: reader, N: 9216}
 	reader = limited
 
-	var w channel.WriteFlusher = channel.NewPassthrough(writer)
+	var writeFlusher channel.WriteFlusher = channel.NewPassthrough(writer)
 	if frameWriter {
-		w = channel.NewBuffered(writer)
+		writeFlusher = channel.NewBuffered(writer)
 	}
 
 	var msg channel.Msg
@@ -629,7 +629,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		return err
 	}
 
-	if err := write(w, server); err != nil {
+	if err := write(writeFlusher, server); err != nil {
 		return err
 	}
 
@@ -644,29 +644,33 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		return err
 	}
 
-	rw := crypto.NewEncDec(
+	encryptedRW := crypto.NewEncDec(
 		reader,
-		w,
+		writeFlusher,
 		derive(channel.CryptoServerRead),
 		derive(channel.CryptoServerWrite),
 		crypto.EncrypterConfig{SaltSize: 32, Cost: 16},
 		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
 	)
 
-	enc := &channel.WriterFlusher{rw, w}
-	reader = rw
+	writeFlusher = &channel.WriterFlusher{encryptedRW, writeFlusher}
+	reader = encryptedRW
 
 	test, err := channel.NewSymmetricTestMessage()
 	if err != nil {
 		return err
 	}
 
-	if err := write(enc, test); err != nil {
+	if err := write(writeFlusher, test); err != nil {
 		return err
 	}
 
 	msg, reader, err = read(reader, channel.SymmetricTestMessage{})
 	if err != nil {
+		if err == channel.ErrKeyExchange {
+			return errKeyExchange
+		}
+
 		return err
 	}
 
@@ -680,7 +684,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	}
 	id := msg.(channel.IdentifyMsg)
 
-	conf, c, err := s.newClient(proto, frameWriter, id, enc)
+	conf, c, err := s.newClient(proto, frameWriter, id, writeFlusher)
 	status := channel.StatusMsg{Code: channel.StatusOK}
 	if err != nil {
 		status.Code = channel.StatusNOK
@@ -690,13 +694,13 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		}
 	}
 
-	if err := write(enc, status); err != nil {
+	if err := write(writeFlusher, status); err != nil {
 		return err
 	}
 	if err != nil {
 		return err
 	}
-	if err := write(enc, channel.IdentifyMsg{Data: conf.Name}); err != nil {
+	if err := write(writeFlusher, channel.IdentifyMsg{Data: conf.Name}); err != nil {
 		return err
 	}
 	s.setClient(conf, c)

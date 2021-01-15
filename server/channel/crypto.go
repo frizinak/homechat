@@ -27,6 +27,10 @@ const (
 	ClientKeySize    = 256
 )
 
+var (
+	ErrKeyExchange = errors.New("invalid key exchange")
+)
+
 type (
 	StringEncoder interface{ EncodeToString([]byte) string }
 	StringDecoder interface{ DecodeString(string) ([]byte, error) }
@@ -60,9 +64,7 @@ func (s SymmetricTestMessage) Equal(m Msg) bool {
 }
 
 func (s SymmetricTestMessage) Binary(w *binary.Writer) error {
-	for i := 0; i < testSize; i++ {
-		w.WriteUint8(s.rnd[i])
-	}
+	w.WriteBytes(s.rnd, 8)
 	return w.Err()
 }
 
@@ -80,11 +82,13 @@ func (s SymmetricTestMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
 }
 
 func BinarySymmetricTestMessage(r *binary.Reader) (p SymmetricTestMessage, err error) {
-	rnd := make([]byte, testSize)
-	for i := 0; i < testSize; i++ {
-		rnd[i] = r.ReadUint8()
+	rnd := r.ReadBytes(8)
+	if len(rnd) != testSize {
+		err = ErrKeyExchange
+		return
 	}
 	if err = r.Err(); err != nil {
+		err = ErrKeyExchange
 		return
 	}
 
@@ -94,17 +98,16 @@ func BinarySymmetricTestMessage(r *binary.Reader) (p SymmetricTestMessage, err e
 }
 
 func JSONSymmetricTestMessage(r io.Reader) (SymmetricTestMessage, io.Reader, error) {
-	// always return nil, the only valid check is SymmetricTestMessage.Equal
 	var s SymmetricTestMessage
 	m := make(map[string]string, 1)
 	nr, err := JSON(r, &m)
 	if err != nil {
-		return s, nr, nil
+		return s, nr, ErrKeyExchange
 	}
 
 	rnd, err := stringDec.DecodeString(m["r"])
 	if err != nil {
-		return s, nr, nil
+		return s, nr, ErrKeyExchange
 	}
 
 	s.rnd = rnd
