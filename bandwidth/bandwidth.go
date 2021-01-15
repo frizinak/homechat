@@ -62,7 +62,7 @@ func (b *Tracker) NewWriter(w io.Writer) io.Writer {
 	return ww
 }
 
-func (b *Tracker) Get() (up, down float64) {
+func (b *Tracker) Get() (up, down float64, totalUp, totalDown uint64) {
 	b.sem.RLock()
 	var tdown, tup uint64
 	for _, r := range b.readers {
@@ -79,7 +79,7 @@ func (b *Tracker) Get() (up, down float64) {
 
 	up = float64(tup-b.lastUp) / since
 	down = float64(tdown-b.lastDown) / since
-	b.lastUp = tup
-	b.lastDown = tdown
+	b.lastUp, b.lastDown = tup, tdown
+	totalUp, totalDown = tup, tdown
 	return
 }

@@ -163,9 +163,11 @@ func (s *Server) Init() error {
 		}
 		for {
 			time.Sleep(s.c.LogBandwidth)
-			_up, _down := s.bw.Get()
+			_up, _down, _tup, _tdown := s.bw.Get()
 			up, down := NewBytes(_up, B).Human(), NewBytes(_down, B).Human()
-			s.c.Log.Printf("Bandwidth: up:%s down:%s", up, down)
+
+			tup, tdown := NewBytes(float64(_tup), B).Human(), NewBytes(float64(_tdown), B).Human()
+			s.c.Log.Printf("Bandwidth: up:%s [%s/s] down:%s [%s/s]", tup, up, tdown, down)
 		}
 	}()
 
@@ -613,7 +615,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	writer := s.bw.NewWriter(conn)
 
 	const jsonMax = 1024 * 1024 * 20
-	limited := &io.LimitedReader{R: reader, N: 9216}
+	limited := &io.LimitedReader{R: reader, N: 1024 * 10}
 	reader = limited
 
 	var writeFlusher channel.WriteFlusher = channel.NewPassthrough(writer)
@@ -665,6 +667,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		return err
 	}
 
+	limited.N = 1024 * 10
 	msg, reader, err = read(reader, channel.SymmetricTestMessage{})
 	if err != nil {
 		if err == channel.ErrKeyExchange {
