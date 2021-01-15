@@ -398,7 +398,10 @@ func (c *Client) Run() error {
 	go func() {
 		for {
 			if hasPing {
-				pings <- time.Now()
+				select {
+				case pings <- time.Now():
+				default:
+				}
 			}
 			if err := c.Send(vars.PingChannel, pingdata.Message{}); err != nil {
 				c.log.Err(err.Error())

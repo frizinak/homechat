@@ -3,8 +3,6 @@ package channel
 import (
 	"io"
 	"net/url"
-
-	"github.com/frizinak/binary"
 )
 
 type Channel interface {
@@ -19,7 +17,7 @@ type Channel interface {
 
 	LimitReader() int64
 
-	HandleBIN(Client, *binary.Reader) error
+	HandleBIN(Client, BinaryReader) error
 	HandleJSON(Client, io.Reader) (io.Reader, error)
 }
 

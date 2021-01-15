@@ -3,7 +3,6 @@ package ping
 import (
 	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/ping/data"
 )
@@ -27,7 +26,7 @@ func (c *PingChannel) Register(chnl string, s channel.Sender) error {
 	return nil
 }
 
-func (c *PingChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
+func (c *PingChannel) HandleBIN(cl channel.Client, r channel.BinaryReader) error {
 	_, err := data.BinaryMessage(r)
 	if err != nil {
 		return err

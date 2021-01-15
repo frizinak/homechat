@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/music/data"
 	"github.com/frizinak/homechat/server/channel/status"
@@ -107,7 +106,7 @@ func (c *YMChannel) PlaylistSendInterval(iv time.Duration) {
 	}
 }
 
-func (c *YMChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
+func (c *YMChannel) HandleBIN(cl channel.Client, r channel.BinaryReader) error {
 	m, err := data.BinaryMessage(r)
 	if err != nil {
 		return err

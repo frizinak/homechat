@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bandwidth"
 	"github.com/frizinak/homechat/crypto"
@@ -73,7 +72,8 @@ type Config struct {
 	Cert    []byte
 	CertKey []byte
 
-	Router simplehttp.Router
+	Router    simplehttp.Router
+	RWFactory channel.RWFactory
 
 	// Interval to log bandwidth, 0 = no logging
 	LogBandwidth time.Duration
@@ -548,7 +548,8 @@ func (s *Server) newClient(
 	proto channel.Proto,
 	frameWriter bool,
 	id channel.IdentifyMsg,
-	conn channel.WriteFlusher,
+	w channel.WriteFlusher,
+	binW channel.BinaryWriter,
 ) (client.Config, *client.Client, error) {
 	var conf client.Config
 	for _, h := range id.Channels {
@@ -578,19 +579,20 @@ func (s *Server) newClient(
 	conf.Channels = id.Channels
 	conf.JobBuffer = clientJobBuf
 
-	return conf, client.New(conf, conn, s.clientErrs), nil
+	return conf, client.New(conf, w, binW, s.clientErrs), nil
 }
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool) error {
 	read := func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
-		m, err := typ.FromBinary(binary.NewReader(r))
+		//m, err := typ.FromBinary(binary.NewReader(r))
+		m, err := typ.FromBinary(s.c.RWFactory.BinaryReader(r))
 		return m, r, err
 	}
 	do := func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
-		return r, h.HandleBIN(cl, binary.NewReader(r))
+		return r, h.HandleBIN(cl, s.c.RWFactory.BinaryReader(r))
 	}
 	write := func(w channel.WriteFlusher, m channel.Msg) error {
-		if err := m.Binary(binary.NewWriter(w)); err != nil {
+		if err := m.Binary(s.c.RWFactory.BinaryWriter(w)); err != nil {
 			return err
 		}
 		return w.Flush()
@@ -655,8 +657,9 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
 	)
 
-	writeFlusher = &channel.WriterFlusher{encryptedRW, writeFlusher}
-	reader = encryptedRW
+	writer = s.c.RWFactory.Writer(encryptedRW)
+	reader = s.c.RWFactory.Reader(encryptedRW)
+	writeFlusher = &channel.WriterFlusher{writer, writeFlusher}
 
 	test, err := channel.NewSymmetricTestMessage()
 	if err != nil {
@@ -687,7 +690,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	}
 	id := msg.(channel.IdentifyMsg)
 
-	conf, c, err := s.newClient(proto, frameWriter, id, writeFlusher)
+	conf, c, err := s.newClient(proto, frameWriter, id, writeFlusher, s.c.RWFactory.BinaryWriter(writeFlusher))
 	status := channel.StatusMsg{Code: channel.StatusOK}
 	if err != nil {
 		status.Code = channel.StatusNOK

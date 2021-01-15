@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
 )
@@ -14,7 +13,7 @@ type MusicState struct {
 	musicdata.ServerSongMessage
 }
 
-func (m MusicState) Binary(w *binary.Writer) error {
+func (m MusicState) Binary(w channel.BinaryWriter) error {
 	if err := m.ServerStateMessage.Binary(w); err != nil {
 		return err
 	}
@@ -27,7 +26,7 @@ func (m MusicState) JSON(w io.Writer) error {
 
 func (m MusicState) Equal(msg channel.Msg) bool { return m == msg }
 
-func (m MusicState) FromBinary(r *binary.Reader) (channel.Msg, error) {
+func (m MusicState) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
 	msg, err := m.ServerSongMessage.FromBinary(r)
 	if err != nil {
 		return m, err

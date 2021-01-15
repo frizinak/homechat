@@ -3,8 +3,6 @@ package channel
 import (
 	"errors"
 	"io"
-
-	"github.com/frizinak/binary"
 )
 
 type Limit struct {
@@ -29,7 +27,7 @@ type NoRunClose struct {
 type SendOnly struct{}
 
 func (s SendOnly) LimitReader() int64 { return 0 }
-func (s SendOnly) HandleBIN(cl Client, r *binary.Reader) error {
+func (s SendOnly) HandleBIN(cl Client, r BinaryReader) error {
 	return errors.New("this channel can not receive messages")
 }
 
@@ -49,9 +47,9 @@ func (n NeverEqual) Equal(Msg) bool { return false }
 
 type NilMsg struct{ NeverEqual }
 
-func (m NilMsg) Binary(w *binary.Writer) error                { return w.Err() }
+func (m NilMsg) Binary(w BinaryWriter) error                  { return w.Err() }
 func (m NilMsg) JSON(w io.Writer) error                       { return nil }
-func (m NilMsg) FromBinary(r *binary.Reader) (Msg, error)     { return BinaryNilMessage(r) }
+func (m NilMsg) FromBinary(r BinaryReader) (Msg, error)       { return BinaryNilMessage(r) }
 func (m NilMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONNilMessage(r) }
-func BinaryNilMessage(r *binary.Reader) (m NilMsg, err error) { return }
+func BinaryNilMessage(r BinaryReader) (m NilMsg, err error)   { return }
 func JSONNilMessage(r io.Reader) (NilMsg, io.Reader, error)   { return NilMsg{}, r, nil }

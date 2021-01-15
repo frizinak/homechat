@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/crypto"
 )
 
@@ -63,7 +62,7 @@ func (s SymmetricTestMessage) Equal(m Msg) bool {
 	return false
 }
 
-func (s SymmetricTestMessage) Binary(w *binary.Writer) error {
+func (s SymmetricTestMessage) Binary(w BinaryWriter) error {
 	w.WriteBytes(s.rnd, 8)
 	return w.Err()
 }
@@ -73,7 +72,7 @@ func (s SymmetricTestMessage) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(d)
 }
 
-func (s SymmetricTestMessage) FromBinary(r *binary.Reader) (Msg, error) {
+func (s SymmetricTestMessage) FromBinary(r BinaryReader) (Msg, error) {
 	return BinarySymmetricTestMessage(r)
 }
 
@@ -81,7 +80,7 @@ func (s SymmetricTestMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
 	return JSONSymmetricTestMessage(r)
 }
 
-func BinarySymmetricTestMessage(r *binary.Reader) (p SymmetricTestMessage, err error) {
+func BinarySymmetricTestMessage(r BinaryReader) (p SymmetricTestMessage, err error) {
 	rnd := r.ReadBytes(8)
 	if len(rnd) != testSize {
 		err = ErrKeyExchange
@@ -154,7 +153,7 @@ func (m PubKeyServerMessage) do() (der, sig []byte, err error) {
 	return
 }
 
-func (m PubKeyServerMessage) Binary(w *binary.Writer) error {
+func (m PubKeyServerMessage) Binary(w BinaryWriter) error {
 	der, sig, err := m.do()
 	if err != nil {
 		return err
@@ -182,7 +181,7 @@ func (m PubKeyServerMessage) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(d)
 }
 
-func (m PubKeyServerMessage) FromBinary(r *binary.Reader) (Msg, error) {
+func (m PubKeyServerMessage) FromBinary(r BinaryReader) (Msg, error) {
 	return BinaryPubKeyServerMessage(r)
 }
 
@@ -204,7 +203,7 @@ func verifyServerMessage(der, rnd, sig []byte) (*crypto.PubKey, error) {
 	return pk, nil
 }
 
-func BinaryPubKeyServerMessage(r *binary.Reader) (p PubKeyServerMessage, err error) {
+func BinaryPubKeyServerMessage(r BinaryReader) (p PubKeyServerMessage, err error) {
 	der := r.ReadBytes(16)
 	rnd := r.ReadBytes(8)
 	sig := r.ReadBytes(16)
@@ -294,7 +293,7 @@ func (m PubKeyMessage) do() (der, enc, sig []byte, err error) {
 	return
 }
 
-func (m PubKeyMessage) Binary(w *binary.Writer) error {
+func (m PubKeyMessage) Binary(w BinaryWriter) error {
 	der, enc, sig, err := m.do()
 	if err != nil {
 		return err
@@ -323,7 +322,7 @@ func (m PubKeyMessage) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(d)
 }
 
-func (m PubKeyMessage) FromBinary(r *binary.Reader) (Msg, error) {
+func (m PubKeyMessage) FromBinary(r BinaryReader) (Msg, error) {
 	return BinaryPubKeyMessage(r)
 }
 
@@ -344,7 +343,7 @@ func verifyMessage(der, enc, sig []byte) (*crypto.PubKey, error) {
 	return pk, nil
 }
 
-func BinaryPubKeyMessage(r *binary.Reader) (p PubKeyMessage, err error) {
+func BinaryPubKeyMessage(r BinaryReader) (p PubKeyMessage, err error) {
 	der := r.ReadBytes(16)
 	rnd := r.ReadBytes(8)
 	enc := r.ReadBytes(16)

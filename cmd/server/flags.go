@@ -206,6 +206,7 @@ func (f *Flags) Parse() error {
 		UploadsPath:     f.All.Uploads,
 		MaxUploadSize:   *f.AppConf.MaxUploadKBytes * 1024,
 		LogBandwidth:    time.Duration(*f.AppConf.BandwidthIntervalSeconds) * time.Second,
+		RWFactory:       channel.NewRWFactory(nil),
 	}
 
 	return nil

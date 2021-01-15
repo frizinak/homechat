@@ -16,7 +16,7 @@ type Saver interface {
 	Last(int, func(Msg) bool)
 }
 
-type Decoder = func(r *binary.Reader) (Msg, error)
+type Decoder = func(r BinaryReader) (Msg, error)
 
 type DecoderVersion string
 
@@ -28,7 +28,7 @@ type BinaryHistory struct {
 	haveNew bool
 
 	appendOnlyFile   io.Closer
-	appendOnlyWriter *binary.Writer
+	appendOnlyWriter BinaryWriter
 	app              chan Msg
 	appending        bool
 	done             chan struct{}
@@ -156,7 +156,7 @@ func (g *BinaryHistory) Load(file string) error {
 	}
 	defer f.Close()
 
-	do := func(r *binary.Reader, dec Decoder) error {
+	do := func(r BinaryReader, dec Decoder) error {
 		n := r.ReadUint64()
 		g.data = make([]Msg, 0, n)
 

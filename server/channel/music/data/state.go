@@ -5,7 +5,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 )
 
@@ -27,7 +26,7 @@ func (m ServerStateMessage) Equal(msg channel.Msg) bool {
 		m1.Volume == m.Volume
 }
 
-func (m ServerStateMessage) Binary(w *binary.Writer) error {
+func (m ServerStateMessage) Binary(w channel.BinaryWriter) error {
 	var pause uint8
 	if m.Paused {
 		pause = 1
@@ -45,7 +44,7 @@ func (m ServerStateMessage) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(m)
 }
 
-func (m ServerStateMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
+func (m ServerStateMessage) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
 	return BinaryServerStateMessage(r)
 }
 
@@ -53,7 +52,7 @@ func (m ServerStateMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error
 	return JSONServerStateMessage(r)
 }
 
-func BinaryServerStateMessage(r *binary.Reader) (ServerStateMessage, error) {
+func BinaryServerStateMessage(r channel.BinaryReader) (ServerStateMessage, error) {
 	c := ServerStateMessage{}
 	c.Paused = r.ReadUint8() == 1
 	c.Position = time.Second * time.Duration(r.ReadUint32())
@@ -76,7 +75,7 @@ type ServerSongMessage struct {
 
 func (m ServerSongMessage) Equal(msg channel.Msg) bool { return m == msg }
 
-func (m ServerSongMessage) Binary(w *binary.Writer) error {
+func (m ServerSongMessage) Binary(w channel.BinaryWriter) error {
 	w.WriteString(m.NS, 8)
 	w.WriteString(m.ID, 8)
 	w.WriteString(m.Title, 8)
@@ -87,7 +86,7 @@ func (m ServerSongMessage) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(m)
 }
 
-func (m ServerSongMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
+func (m ServerSongMessage) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
 	return BinaryServerSongMessage(r)
 }
 
@@ -95,7 +94,7 @@ func (m ServerSongMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error)
 	return JSONServerSongMessage(r)
 }
 
-func BinaryServerSongMessage(r *binary.Reader) (ServerSongMessage, error) {
+func BinaryServerSongMessage(r channel.BinaryReader) (ServerSongMessage, error) {
 	c := ServerSongMessage{}
 	c.NS = r.ReadString(8)
 	c.ID = r.ReadString(8)
