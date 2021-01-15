@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	saltSize      = 64
-	preMasterSize = 64
-	masterSize    = 64
-	testSize      = 16
+	saltSize      = 255
+	preMasterSize = 255
+	masterSize    = 255
+	testSize      = 3
 
 	ServerMinKeySize = 512
 	ServerKeySize    = 512
@@ -82,10 +82,6 @@ func (s SymmetricTestMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
 
 func BinarySymmetricTestMessage(r BinaryReader) (p SymmetricTestMessage, err error) {
 	rnd := r.ReadBytes(8)
-	if len(rnd) != testSize {
-		err = ErrKeyExchange
-		return
-	}
 	if err = r.Err(); err != nil {
 		err = ErrKeyExchange
 		return
@@ -190,6 +186,10 @@ func (m PubKeyServerMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
 }
 
 func verifyServerMessage(der, rnd, sig []byte) (*crypto.PubKey, error) {
+	if len(rnd) != saltSize {
+		return nil, errors.New("invalid salt size")
+	}
+
 	pk := crypto.NewPubKey(ServerMinKeySize)
 	if err := pk.UnmarshalDER(der); err != nil {
 		return nil, fmt.Errorf("invalid publickey: %w", err)
@@ -330,7 +330,11 @@ func (m PubKeyMessage) FromJSON(r io.Reader) (Msg, io.Reader, error) {
 	return JSONPubKeyMessage(r)
 }
 
-func verifyMessage(der, enc, sig []byte) (*crypto.PubKey, error) {
+func verifyMessage(der, rnd, enc, sig []byte) (*crypto.PubKey, error) {
+	if len(rnd) != saltSize {
+		return nil, errors.New("invalid salt size")
+	}
+
 	pk := crypto.NewPubKey(ClientMinKeySize)
 	if err := pk.UnmarshalDER(der); err != nil {
 		return nil, fmt.Errorf("invalid publickey: %w", err)
@@ -352,7 +356,7 @@ func BinaryPubKeyMessage(r BinaryReader) (p PubKeyMessage, err error) {
 		return
 	}
 
-	p.pkey, err = verifyMessage(der, enc, sig)
+	p.pkey, err = verifyMessage(der, rnd, enc, sig)
 	p.rnd = rnd
 	p.preMasterEnc = enc
 
@@ -382,7 +386,7 @@ func JSONPubKeyMessage(r io.Reader) (PubKeyMessage, io.Reader, error) {
 		return p, nr, fmt.Errorf("premaster not valid: %w", err)
 	}
 
-	p.pkey, err = verifyMessage(der, enc, sig)
+	p.pkey, err = verifyMessage(der, rnd, enc, sig)
 	p.rnd = rnd
 	p.preMasterEnc = enc
 

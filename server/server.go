@@ -653,8 +653,8 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		writeFlusher,
 		derive(channel.CryptoServerRead),
 		derive(channel.CryptoServerWrite),
-		crypto.EncrypterConfig{SaltSize: 32, Cost: 16},
-		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
+		crypto.EncrypterConfig{SaltSize: 32, Cost: 15},
+		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 12},
 	)
 
 	writer = s.c.RWFactory.Writer(encryptedRW)

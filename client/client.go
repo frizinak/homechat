@@ -272,8 +272,8 @@ func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, c
 		wf,
 		derive(channel.CryptoClientRead),
 		derive(channel.CryptoClientWrite),
-		crypto.EncrypterConfig{SaltSize: 32, Cost: 12},
-		crypto.DecrypterConfig{MinSaltSize: 32, MinCost: 12},
+		crypto.EncrypterConfig{SaltSize: 32, Cost: 15},
+		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 12},
 	)
 
 	return server.Fingerprint(), rw, &channel.WriterFlusher{rw, wf}, nil
