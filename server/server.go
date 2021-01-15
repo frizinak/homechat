@@ -647,8 +647,8 @@ func (s *Server) newClient(
 	return conf, client.New(conf, w, binW, s.clientErrs), nil
 }
 
-func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool) error {
-	paddress := strings.Split(conn.RemoteAddr().String(), ":")
+func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, frameWriter bool) error {
+	paddress := strings.Split(addr, ":")
 	if len(paddress) > 1 {
 		paddress = paddress[:len(paddress)-1]
 	}
@@ -832,6 +832,9 @@ func (s *Server) onWS(conn *websocket.Conn) {
 		return
 	}
 
+	// conn.RemoteAddr().String() causes weird hang...
+	address := conn.Request().RemoteAddr
+
 	proto := channel.ReadProto(conn)
 	// TODO uncomment when tls lands and when/if internal encryption is disabled
 	// conn.PayloadType = websocket.TextFrame
@@ -841,7 +844,7 @@ func (s *Server) onWS(conn *websocket.Conn) {
 
 	switch proto {
 	case channel.ProtoJSON, channel.ProtoBinary:
-		if err := s.handleConn(proto, conn, true); err != nil {
+		if err := s.handleConn(proto, conn, address, true); err != nil {
 			s.c.Log.Printf("client error: %s", err)
 		}
 	default:
@@ -860,7 +863,7 @@ func (s *Server) onTCP(conn net.Conn) {
 
 	switch proto {
 	case channel.ProtoJSON, channel.ProtoBinary:
-		if err := s.handleConn(proto, conn, false); err != nil {
+		if err := s.handleConn(proto, conn, conn.RemoteAddr().String(), false); err != nil {
 			s.c.Log.Printf("client error: %s", err)
 		}
 	default:
