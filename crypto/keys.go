@@ -136,6 +136,7 @@ func KeyFromReader(r io.Reader, minBytes, desiredBytes int) (*Key, error) {
 
 type Key struct {
 	private *rsa.PrivateKey
+	public  *PubKey
 	min     int
 	size    int
 }
@@ -153,11 +154,16 @@ func NewKey(minBytes, desiredBytes int) *Key {
 func (k *Key) Size() int { return k.private.Size() }
 
 func (k *Key) Public() (*PubKey, error) {
+	if k.public != nil {
+		return k.public, nil
+	}
+
 	if err := k.Generate(); err != nil && err != ErrKeyExists {
 		return nil, err
 	}
 
-	return &PubKey{k.private.Public().(*rsa.PublicKey), k.min}, nil
+	k.public = &PubKey{k.private.Public().(*rsa.PublicKey), k.min}
+	return k.public, nil
 }
 
 func (k *Key) Decrypt(data []byte) ([]byte, error) {
@@ -190,6 +196,7 @@ func (k *Key) Generate() error {
 	}
 
 	k.private = priv
+	k.public = nil
 	return nil
 }
 
@@ -237,6 +244,7 @@ func (k *Key) UnmarshalDER(data []byte) error {
 	}
 
 	k.private = rsa
+	k.public = nil
 	return nil
 }
 
