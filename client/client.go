@@ -262,19 +262,15 @@ func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, c
 		return "", nil, nil, err
 	}
 
-	derive, err := channel.CommonSecret(client, server, nil)
+	derive, err := channel.CommonSecret32(client, server, nil)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	rw := crypto.NewEncDec(
-		nr,
-		wf,
-		derive(channel.CryptoClientRead),
-		derive(channel.CryptoClientWrite),
-		crypto.EncrypterConfig{SaltSize: 32, Cost: 15},
-		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 12},
-	)
+	rw := &crypto.ReadWriter{
+		crypto.NewDecrypter(nr, derive(channel.CryptoClientRead)),
+		crypto.NewEncrypter(wf, derive(channel.CryptoClientWrite)),
+	}
 
 	return server.Fingerprint(), rw, &channel.WriterFlusher{rw, wf}, nil
 }

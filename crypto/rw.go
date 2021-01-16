@@ -4,65 +4,29 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/binary"
-	"errors"
 	"io"
-
-	"golang.org/x/crypto/scrypt"
 )
-
-const (
-	MaxCost     = 30
-	MinCost     = 6
-	MinSaltSize = 8
-)
-
-type DecrypterConfig struct {
-	MinSaltSize uint16
-	MinCost     uint8
-}
-
-type EncrypterConfig struct {
-	SaltSize uint16
-	Cost     uint8
-}
-
-const random = 20
-
-func SKey(passphrase, salt []byte, cost uint8) ([]byte, error) {
-	if cost > MaxCost {
-		return nil, errors.New("scrypt cost too high")
-	} else if cost < MinCost {
-		return nil, errors.New("scrypt cost too low")
-	}
-
-	if len(salt) < MinSaltSize {
-		return nil, errors.New("Salt too short")
-	}
-
-	return scrypt.Key(passphrase, salt, 1<<cost, 8, 1, 32)
-}
 
 type Decrypter struct {
 	r io.Reader
 
-	minSaltSize uint16
-	minCost     uint8
-
-	pass  []byte
 	size  int
 	sizeb byte
 
 	headerRead bool
 
-	mode cipher.Stream
+	block cipher.Block
+	mode  cipher.Stream
 
 	err error
 }
 
-func NewDecrypter(c DecrypterConfig, r io.Reader, pass []byte) io.Reader {
-	d := &Decrypter{r: r, pass: pass, minSaltSize: c.MinSaltSize, minCost: c.MinCost}
-	return d
+func NewDecrypter(r io.Reader, secret [32]byte) *Decrypter {
+	block, err := aes.NewCipher(secret[:])
+	if err != nil {
+		panic(err)
+	}
+	return &Decrypter{r: r, block: block}
 }
 
 func (d *Decrypter) readHeader() error {
@@ -71,47 +35,16 @@ func (d *Decrypter) readHeader() error {
 	}
 	d.headerRead = true
 
-	var saltSize uint16
-	var cost uint8
-	if err := binary.Read(d.r, binary.LittleEndian, &cost); err != nil {
+	bs := d.block.BlockSize()
+	iv := make([]byte, bs)
+	if _, err := io.ReadFull(d.r, iv); err != nil {
 		return err
 	}
 
-	if err := binary.Read(d.r, binary.LittleEndian, &saltSize); err != nil {
-		return err
-	}
-
-	if saltSize < d.minSaltSize || cost < d.minCost {
-		return errors.New("data does not conform to requirements")
-	}
-
-	header := make([]byte, saltSize+aes.BlockSize)
-	if _, err := io.ReadFull(d.r, header); err != nil {
-		return err
-	}
-
-	salt := header[:saltSize]
-	iv := header[saltSize:]
-
-	key, err := SKey(d.pass, salt, cost)
-	if err != nil {
-		return err
-	}
-
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return err
-	}
-
-	d.size = block.BlockSize()
+	d.size = bs
 	d.sizeb = byte(d.size)
-	d.mode = cipher.NewCFBDecrypter(block, iv)
-
-	if cap(header) < random {
-		header = make([]byte, random)
-	}
-	_, err = io.ReadFull(d, header[:random])
-	return err
+	d.mode = cipher.NewCFBDecrypter(d.block, iv)
+	return nil
 }
 
 func (d *Decrypter) Read(p []byte) (int, error) {
@@ -139,29 +72,22 @@ func (d *Decrypter) Read(p []byte) (int, error) {
 type Encrypter struct {
 	w io.Writer
 
-	pass          []byte
-	saltSize      uint16
-	cost          uint8
+	size int
+
 	headerWritten bool
 
-	mode cipher.Stream
-	size int
+	block cipher.Block
+	mode  cipher.Stream
 
 	err error
 }
 
-func NewEncrypter(
-	c EncrypterConfig,
-	w io.Writer,
-	pass []byte,
-) io.Writer {
-	d := &Encrypter{
-		w:        w,
-		pass:     pass,
-		saltSize: c.SaltSize,
-		cost:     c.Cost,
+func NewEncrypter(w io.Writer, secret [32]byte) *Encrypter {
+	block, err := aes.NewCipher(secret[:])
+	if err != nil {
+		panic(err)
 	}
-	return d
+	return &Encrypter{w: w, block: block}
 }
 
 func (d *Encrypter) writeHeader() error {
@@ -170,40 +96,19 @@ func (d *Encrypter) writeHeader() error {
 	}
 	d.headerWritten = true
 
-	randsaltiv := make([]byte, random+d.saltSize+aes.BlockSize)
-	if _, err := io.ReadFull(rand.Reader, randsaltiv); err != nil {
-		return err
-	}
-	rand, saltiv := randsaltiv[:random], randsaltiv[random:]
-	salt, iv := saltiv[:d.saltSize], saltiv[d.saltSize:]
-
-	key, err := SKey(d.pass, salt, d.cost)
-	if err != nil {
+	bs := d.block.BlockSize()
+	iv := make([]byte, bs)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		return err
 	}
 
-	block, err := aes.NewCipher(key)
-	if err != nil {
+	if _, err := d.w.Write(iv); err != nil {
 		return err
 	}
 
-	if err := binary.Write(d.w, binary.LittleEndian, d.cost); err != nil {
-		return err
-	}
-
-	if err := binary.Write(d.w, binary.LittleEndian, d.saltSize); err != nil {
-		return err
-	}
-
-	if _, err := d.w.Write(saltiv); err != nil {
-		return err
-	}
-
-	d.mode = cipher.NewCFBEncrypter(block, iv)
-	d.size = block.BlockSize()
-
-	_, err = d.Write(rand)
-	return err
+	d.mode = cipher.NewCFBEncrypter(d.block, iv)
+	d.size = d.block.BlockSize()
+	return nil
 }
 
 func (d *Encrypter) Write(p []byte) (int, error) {
@@ -224,21 +129,7 @@ func (d *Encrypter) Write(p []byte) (int, error) {
 	return d.w.Write(buf)
 }
 
-type EncDec struct {
-	io.Reader
-	io.Writer
-}
-
-func NewEncDec(
-	r io.Reader,
-	w io.Writer,
-	readPass []byte,
-	writePass []byte,
-	ec EncrypterConfig,
-	dc DecrypterConfig,
-) io.ReadWriter {
-	return &EncDec{
-		NewDecrypter(dc, r, readPass),
-		NewEncrypter(ec, w, writePass),
-	}
+type ReadWriter struct {
+	*Decrypter
+	*Encrypter
 }

@@ -15,9 +15,8 @@ import (
 
 const (
 	saltSize      = 255
-	preMasterSize = 255
-	masterSize    = 255
-	testSize      = 3
+	preMasterSize = 64
+	testSize      = 32
 
 	ServerMinKeySize = 512
 	ServerKeySize    = 512
@@ -394,6 +393,7 @@ func JSONPubKeyMessage(r io.Reader) (PubKeyMessage, io.Reader, error) {
 }
 
 type DeriveSecret func(label CryptoLabel) []byte
+type DeriveSecret32 func(label CryptoLabel) [32]byte
 
 type CryptoLabel string
 
@@ -405,7 +405,7 @@ const (
 	CryptoServerRead  CryptoLabel = CryptoClientWrite
 )
 
-func CommonSecret(c PubKeyMessage, s PubKeyServerMessage, serverPrivate *crypto.Key) (DeriveSecret, error) {
+func CommonSecret(c PubKeyMessage, s PubKeyServerMessage, serverPrivate *crypto.Key, size int) (DeriveSecret, error) {
 	clientRandom := c.rnd
 	serverRandom := s.rnd
 	preMaster := c.preMaster
@@ -426,9 +426,29 @@ func CommonSecret(c PubKeyMessage, s PubKeyServerMessage, serverPrivate *crypto.
 		seed = append(seed, label...)
 		seed = append(seed, clientRandom...)
 		seed = append(seed, serverRandom...)
-		master := make([]byte, masterSize)
+		master := make([]byte, size)
 		crypto.HMAC(master, preMaster, seed)
 
 		return master
+	}, nil
+}
+
+func CommonSecret32(c PubKeyMessage, s PubKeyServerMessage, serverPrivate *crypto.Key) (DeriveSecret32, error) {
+	d, err := CommonSecret(c, s, serverPrivate, 32)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(label CryptoLabel) [32]byte {
+		n := d(label)
+		if len(n) != 32 {
+			panic("invalid length")
+		}
+		var b [32]byte
+		if 32 != copy(b[:], n) {
+			panic("copy failed")
+		}
+
+		return b
 	}, nil
 }

@@ -718,20 +718,16 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 	}
 	client := msg.(channel.PubKeyMessage)
 
-	derive, err := channel.CommonSecret(client, server, key)
+	derive, err := channel.CommonSecret32(client, server, key)
 	if err != nil {
 		s.ban(address)
 		return err
 	}
 
-	encryptedRW := crypto.NewEncDec(
-		reader,
-		writeFlusher,
-		derive(channel.CryptoServerRead),
-		derive(channel.CryptoServerWrite),
-		crypto.EncrypterConfig{SaltSize: 32, Cost: 15},
-		crypto.DecrypterConfig{MinSaltSize: 16, MinCost: 12},
-	)
+	encryptedRW := &crypto.ReadWriter{
+		crypto.NewDecrypter(reader, derive(channel.CryptoServerRead)),
+		crypto.NewEncrypter(writeFlusher, derive(channel.CryptoServerWrite)),
+	}
 
 	writer = s.c.RWFactory.Writer(encryptedRW)
 	reader = s.c.RWFactory.Reader(encryptedRW)
