@@ -79,10 +79,6 @@ type Config struct {
 	LogBandwidth time.Duration
 }
 
-type Ban struct {
-	expiry time.Time
-}
-
 type Server struct {
 	c    Config
 	tls  bool
@@ -106,9 +102,6 @@ type Server struct {
 
 	bw Bandwidth
 
-	banMutex sync.RWMutex
-	bans     map[string]Ban
-
 	closing bool
 }
 
@@ -123,8 +116,6 @@ func New(c Config) (*Server, error) {
 		clientErrs: make(chan client.Error, clientErrBuf),
 
 		bw: &NoopBandwidth{},
-
-		bans: make(map[string]Ban),
 	}
 
 	if c.LogBandwidth != 0 {
@@ -152,55 +143,6 @@ func New(c Config) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) ban(address string) {
-	b := Ban{time.Now().Add(time.Second * 30)}
-	s.banMutex.Lock()
-	s.bans[address] = b
-	s.banMutex.Unlock()
-}
-
-func (s *Server) banned(address string) (time.Duration, bool) {
-	now := time.Now()
-	del := false
-	s.banMutex.RLock()
-	if v, ok := s.bans[address]; ok {
-		del = true
-		if v.expiry.After(now) {
-			s.banMutex.RUnlock()
-			return v.expiry.Sub(now), true
-		}
-	}
-	s.banMutex.RUnlock()
-
-	if del {
-		s.banMutex.Lock()
-		delete(s.bans, address)
-		s.banMutex.Unlock()
-	}
-
-	return 0, false
-}
-
-func (s *Server) banCleanup() {
-	now := time.Now()
-	deletes := make([]string, 0)
-	s.banMutex.RLock()
-	for i, v := range s.bans {
-		if !v.expiry.After(now) {
-			deletes = append(deletes, i)
-		}
-	}
-	s.banMutex.RUnlock()
-	if len(deletes) < 50 {
-		return
-	}
-	s.banMutex.Lock()
-	for _, i := range deletes {
-		delete(s.bans, i)
-	}
-	s.banMutex.Unlock()
-}
-
 func (s *Server) Init() error {
 	if err := s.load(); err != nil {
 		return err
@@ -212,13 +154,6 @@ func (s *Server) Init() error {
 			if err := s.Save(); err != nil {
 				s.c.Log.Println("ERR saving ", err)
 			}
-		}
-	}()
-
-	go func() {
-		for {
-			time.Sleep(time.Second)
-			s.banCleanup()
 		}
 	}()
 
@@ -648,15 +583,6 @@ func (s *Server) newClient(
 }
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, frameWriter bool) error {
-	paddress := strings.Split(addr, ":")
-	if len(paddress) > 1 {
-		paddress = paddress[:len(paddress)-1]
-	}
-	address := strings.Join(paddress, ":")
-	if dur, banned := s.banned(address); banned {
-		return fmt.Errorf("still banned [%s]: %s", dur, address)
-	}
-
 	read := func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
 		//m, err := typ.FromBinary(binary.NewReader(r))
 		m, err := typ.FromBinary(s.c.RWFactory.BinaryReader(r))
@@ -713,14 +639,12 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 
 	msg, reader, err = read(reader, channel.PubKeyMessage{})
 	if err != nil {
-		s.ban(address)
 		return err
 	}
 	client := msg.(channel.PubKeyMessage)
 
 	derive, err := channel.CommonSecret32(client, server, key)
 	if err != nil {
-		s.ban(address)
 		return err
 	}
 
@@ -745,7 +669,6 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 	limited.N = 1024 * 10
 	msg, reader, err = read(reader, channel.SymmetricTestMessage{})
 	if err != nil {
-		s.ban(address)
 		if err == channel.ErrKeyExchange {
 			return errKeyExchange
 		}
@@ -754,7 +677,6 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 	}
 
 	if !test.Equal(msg) {
-		s.ban(address)
 		return errKeyExchange
 	}
 
