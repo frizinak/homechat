@@ -36,8 +36,7 @@ const pkgMinBytes = 128
 
 func HMAC(result, secret, seed []byte) {
 	// copy from stdlib crypto/tls/prf
-	hash := sha512.New384
-	h := hmac.New(hash, secret)
+	h := hmac.New(sha512.New384, secret)
 	h.Write(seed)
 	a := h.Sum(nil)
 

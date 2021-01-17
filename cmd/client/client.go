@@ -93,6 +93,7 @@ func main() {
 		}
 		err := cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, r)
 		r.Close()
+		cl.Close()
 		exit(err)
 		os.Exit(0)
 	}
@@ -110,6 +111,7 @@ func main() {
 					exit(cl.Chat(s.Text()))
 				}
 				exit(s.Err())
+				cl.Close()
 				os.Exit(0)
 			}
 
@@ -120,9 +122,11 @@ func main() {
 
 		if f.All.Mode == ModeMusic {
 			exit(cl.Music(f.All.OneOff))
+			cl.Close()
 			os.Exit(0)
 		}
 		exit(cl.Chat(f.All.OneOff))
+		cl.Close()
 		os.Exit(0)
 	}
 

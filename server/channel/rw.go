@@ -188,3 +188,20 @@ type WriterFlusher struct {
 	io.Writer
 	Flusher
 }
+
+type FlushFlusher struct {
+	flushers []Flusher
+}
+
+func (w *FlushFlusher) Flush() error {
+	for _, f := range w.flushers {
+		if err := f.Flush(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func NewFlushFlusher(flushers ...Flusher) Flusher {
+	return &FlushFlusher{flushers}
+}

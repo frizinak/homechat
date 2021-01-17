@@ -172,11 +172,7 @@ func (c *Client) Close() {
 }
 
 func (c *Client) Upload(chnl, filename, msg string, r io.Reader) error {
-	if err := c.Send(chnl, uploaddata.NewMessage(filename, msg, r)); err != nil {
-		return err
-	}
-	c.disconnect()
-	return nil
+	return c.Send(chnl, uploaddata.NewMessage(filename, msg, r))
 }
 
 func (c *Client) disconnect() {
@@ -272,7 +268,14 @@ func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, c
 		crypto.NewEncrypter(wf, derive(channel.CryptoClientWrite)),
 	}
 
-	return server.Fingerprint(), rw, &channel.WriterFlusher{rw, wf}, nil
+	macRSecret := derive(channel.CryptoClientMacRead)
+	macWSecret := derive(channel.CryptoClientMacWrite)
+	macR := crypto.NewSHA1HMACReader(rw, macRSecret[:])
+	macW := crypto.NewSHA1HMACWriter(rw, macWSecret[:], (1<<16)-1)
+
+	wf = &channel.WriterFlusher{macW, channel.NewFlushFlusher(macW, wf)}
+
+	return server.Fingerprint(), macR, wf, nil
 }
 
 func (c *Client) negotiateSymmetric(r io.Reader, w channel.WriteFlusher) (io.Reader, error) {
@@ -360,6 +363,7 @@ func (c *Client) writeMulti(w channel.WriteFlusher, ms ...channel.Msg) error {
 			return err
 		}
 	}
+
 	return w.Flush()
 }
 

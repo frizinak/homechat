@@ -398,11 +398,16 @@ type DeriveSecret32 func(label CryptoLabel) [32]byte
 type CryptoLabel string
 
 const (
-	CryptoClientWrite CryptoLabel = "write"
-	CryptoClientRead  CryptoLabel = "read"
+	CryptoClientWrite    CryptoLabel = "write"
+	CryptoClientRead     CryptoLabel = "read"
+	CryptoClientMacWrite CryptoLabel = "mac-write"
+	CryptoClientMacRead  CryptoLabel = "mac-read"
 
 	CryptoServerWrite CryptoLabel = CryptoClientRead
 	CryptoServerRead  CryptoLabel = CryptoClientWrite
+
+	CryptoServerMacWrite CryptoLabel = CryptoClientMacRead
+	CryptoServerMacRead  CryptoLabel = CryptoClientMacWrite
 )
 
 func CommonSecret(c PubKeyMessage, s PubKeyServerMessage, serverPrivate *crypto.Key, size int) (DeriveSecret, error) {
