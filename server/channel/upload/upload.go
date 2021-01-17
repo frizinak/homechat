@@ -43,7 +43,7 @@ func (c *UploadChannel) HandleBIN(cl channel.Client, r channel.BinaryReader) err
 		return err
 	}
 
-	u, err := c.uploader.Upload(m.Filename, m.Reader())
+	u, err := c.uploader.Upload(m.Filename, m.Upload())
 	if err != nil {
 		return err
 	}

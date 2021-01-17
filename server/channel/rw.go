@@ -159,9 +159,6 @@ type BufferedWriteFlusher struct {
 }
 
 func NewBuffered(w io.Writer) WriteFlusher {
-	// todo
-	//b := binary.NewWriter(w)
-	//b.Err
 	return &BufferedWriteFlusher{w, bytes.NewBuffer(nil)}
 }
 
@@ -187,4 +184,21 @@ func (w *PassthroughWriteFlusher) Flush() error { return nil }
 type WriterFlusher struct {
 	io.Writer
 	Flusher
+}
+
+type FlushFlusher struct {
+	flushers []Flusher
+}
+
+func (w *FlushFlusher) Flush() error {
+	for _, f := range w.flushers {
+		if err := f.Flush(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func NewFlushFlusher(flushers ...Flusher) Flusher {
+	return &FlushFlusher{flushers}
 }

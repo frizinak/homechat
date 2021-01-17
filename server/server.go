@@ -27,6 +27,7 @@ import (
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/client"
+	"github.com/frizinak/homechat/vars"
 	"golang.org/x/net/websocket"
 )
 
@@ -406,12 +407,12 @@ func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
 		return nil, fmt.Errorf("ERR upload create: %w", err)
 	}
 
-	if _, err = f.ReadFrom(r); err != nil {
-		f.Close()
+	_, err = f.ReadFrom(r)
+	f.Close()
+	if err != nil {
 		return nil, fmt.Errorf("ERR upload write: %w", err)
 	}
 
-	f.Close()
 	if err := os.Rename(tmp, dst); err != nil {
 		return nil, fmt.Errorf("ERR upload rename; %w", err)
 	}
@@ -479,7 +480,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, l *log.Logger)
 func (s *Server) unsetClient(c *client.Client) {
 	s.clientsMutex.Lock()
 	c.Stop()
-	for _, h := range c.Channels() {
+	ch := c.Channels()
+	for _, h := range ch {
 		ix := -1
 		if _, ok := s.clients[h]; !ok {
 			continue
@@ -502,9 +504,13 @@ func (s *Server) unsetClient(c *client.Client) {
 		)
 
 		l := len(s.clients[h][name])
-		s.c.Log.Printf("remove client '%s[%d]'  for '%s'", name, l, h)
+		s.c.Log.Printf("remove client '%s[%d]' for '%s'", name, l, h)
 	}
 	s.clientsMutex.Unlock()
+
+	if len(ch) == 0 {
+		s.c.Log.Printf("remove client '%s[0]'", c.Name())
+	}
 
 	go func() {
 		if err := s.onUserUpdate.UserUpdate(c, channel.Disconnect); err != nil {
@@ -584,7 +590,6 @@ func (s *Server) newClient(
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, frameWriter bool) error {
 	read := func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
-		//m, err := typ.FromBinary(binary.NewReader(r))
 		m, err := typ.FromBinary(s.c.RWFactory.BinaryReader(r))
 		return m, r, err
 	}
@@ -653,9 +658,15 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 		crypto.NewEncrypter(writeFlusher, derive(channel.CryptoServerWrite)),
 	}
 
-	writer = s.c.RWFactory.Writer(encryptedRW)
-	reader = s.c.RWFactory.Reader(encryptedRW)
-	writeFlusher = &channel.WriterFlusher{writer, writeFlusher}
+	macRSecret := derive(channel.CryptoServerMacRead)
+	macWSecret := derive(channel.CryptoServerMacWrite)
+	macR := crypto.NewSHA1HMACReader(encryptedRW, macRSecret[:])
+	macW := crypto.NewSHA1HMACWriter(encryptedRW, macWSecret[:], (1<<16)-1)
+
+	writer = s.c.RWFactory.Writer(macW)
+	reader = s.c.RWFactory.Reader(macR)
+
+	writeFlusher = &channel.WriterFlusher{writer, channel.NewFlushFlusher(macW, writeFlusher)}
 
 	test, err := channel.NewSymmetricTestMessage()
 	if err != nil {
@@ -728,6 +739,10 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 		}
 		chnl = msg.(channel.ChannelMsg)
 
+		if chnl.Data == vars.EOFChannel {
+			return nil
+		}
+
 		h, ok := s.channels[chnl.Data]
 		if !ok {
 			return fmt.Errorf("impossible channel '%s'", chnl.Data)
@@ -737,8 +752,10 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 		if proto != channel.ProtoBinary && limited.N > jsonMax {
 			limited.N = jsonMax
 		}
+
 		reader, err = do(reader, c, h)
 		if err != nil {
+			panic(err)
 			return fmt.Errorf("channel %s: %w", chnl.Data, err)
 		}
 	}

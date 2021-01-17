@@ -147,6 +147,10 @@ func (c *Client) Send(chnl string, msg channel.Msg) error {
 		return err
 	}
 
+	return c.send(w, chnl, msg)
+}
+
+func (c *Client) send(w channel.WriteFlusher, chnl string, msg channel.Msg) error {
 	c.sem.Lock()
 	if err := c.writeMulti(w, channel.ChannelMsg{Data: chnl}, msg); err != nil {
 		c.sem.Unlock()
@@ -168,15 +172,22 @@ func (c *Client) Connect() error {
 }
 
 func (c *Client) Close() {
+	var w channel.WriteFlusher
+	c.sem.Lock()
+	if c.conn != nil {
+		w = c.conn.w
+	}
+	c.sem.Unlock()
+
+	if w != nil {
+		c.send(w, vars.EOFChannel, channel.EOF{})
+	}
+
 	c.disconnect()
 }
 
-func (c *Client) Upload(chnl, filename, msg string, r io.Reader) error {
-	if err := c.Send(chnl, uploaddata.NewMessage(filename, msg, r)); err != nil {
-		return err
-	}
-	c.disconnect()
-	return nil
+func (c *Client) Upload(chnl, filename, msg string, size int64, r io.Reader) error {
+	return c.Send(chnl, uploaddata.NewMessage(filename, msg, size, r))
 }
 
 func (c *Client) disconnect() {
@@ -272,7 +283,14 @@ func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, c
 		crypto.NewEncrypter(wf, derive(channel.CryptoClientWrite)),
 	}
 
-	return server.Fingerprint(), rw, &channel.WriterFlusher{rw, wf}, nil
+	macRSecret := derive(channel.CryptoClientMacRead)
+	macWSecret := derive(channel.CryptoClientMacWrite)
+	macR := crypto.NewSHA1HMACReader(rw, macRSecret[:])
+	macW := crypto.NewSHA1HMACWriter(rw, macWSecret[:], (1<<16)-1)
+
+	wf = &channel.WriterFlusher{macW, channel.NewFlushFlusher(macW, wf)}
+
+	return server.Fingerprint(), macR, wf, nil
 }
 
 func (c *Client) negotiateSymmetric(r io.Reader, w channel.WriteFlusher) (io.Reader, error) {
@@ -360,6 +378,7 @@ func (c *Client) writeMulti(w channel.WriteFlusher, ms ...channel.Msg) error {
 			return err
 		}
 	}
+
 	return w.Flush()
 }
 

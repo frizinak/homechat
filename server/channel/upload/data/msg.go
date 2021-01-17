@@ -10,27 +10,32 @@ import (
 type Message struct {
 	Filename string
 	Message  string
-	r        io.Reader
+	Size     int64
+	Hash     []byte
+
+	r io.Reader
 
 	channel.NeverEqual
 }
 
-func NewMessage(filename, msg string, r io.Reader) Message {
-	return Message{Filename: filename, Message: msg, r: r}
+func NewMessage(filename, msg string, size int64, r io.Reader) Message {
+	return Message{Filename: filename, Message: msg, Size: size, r: r}
 }
 
-func (m Message) Reader() io.Reader {
+func (m Message) Upload() io.Reader {
 	return m.r
 }
 
 func (m Message) Binary(w channel.BinaryWriter) error {
 	w.WriteString(m.Filename, 8)
 	w.WriteString(m.Message, 16)
+	w.WriteUint64(uint64(m.Size))
 	if err := w.Err(); err != nil {
 		return err
 	}
 
-	_, err := io.Copy(w.Writer(), m.r)
+	conn := w.Writer()
+	_, err := io.Copy(conn, m.r)
 	return err
 }
 
@@ -45,7 +50,8 @@ func BinaryMessage(r channel.BinaryReader) (Message, error) {
 	m := Message{}
 	m.Filename = r.ReadString(8)
 	m.Message = r.ReadString(16)
-	m.r = r.Reader()
+	m.Size = int64(r.ReadUint64())
+	m.r = io.LimitReader(r.Reader(), m.Size)
 	return m, r.Err()
 }
 
