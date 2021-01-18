@@ -24,7 +24,7 @@ type TermUI struct {
 	flash       string
 	flashExpiry time.Time
 
-	latency time.Duration
+	latency *time.Duration
 
 	sem   sync.Mutex
 	log   []msg
@@ -69,7 +69,7 @@ func (ui *TermUI) Users(msg string) {
 }
 
 func (ui *TermUI) Latency(n time.Duration) {
-	ui.latency = n
+	ui.latency = &n
 	ui.Flush()
 }
 
@@ -303,13 +303,13 @@ func (ui *TermUI) Flush() {
 	}
 	logs = logs[offset:till]
 
-	latency := int(ui.latency / 1e6)
-	lat := strconv.Itoa(latency) + "ms"
-	if latency > 1000 {
-		lat = ">1s"
-	}
-	if ui.latency == 0 {
-		lat = "?ms"
+	lat := "?ms"
+	if ui.latency != nil {
+		latency := int(*ui.latency / 1e6)
+		lat = strconv.Itoa(latency) + "ms"
+		if latency > 1000 {
+			lat = ">1s"
+		}
 	}
 
 	status := ui.status
