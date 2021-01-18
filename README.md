@@ -14,7 +14,6 @@ random list of features:
 non features:
 
 - notifications: only cli since it's a pain in browsers
-- encryption: messages can be tampered with, no MAC yet
 
 roadmap:
 
