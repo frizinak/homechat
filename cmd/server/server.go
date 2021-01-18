@@ -3,25 +3,33 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"flag"
+	crand "crypto/rand"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"hash/fnv"
+	"io"
 	"log"
 	"math/rand"
 	"mime"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
-	"strconv"
+	"sort"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/amimof/huego"
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bot"
 	"github.com/frizinak/homechat/bound"
 	"github.com/frizinak/homechat/server"
 	"github.com/frizinak/homechat/server/channel"
-	"github.com/frizinak/homechat/server/channel/chat"
+	chatpkg "github.com/frizinak/homechat/server/channel/chat"
+	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	"github.com/frizinak/homechat/server/channel/history"
 	"github.com/frizinak/homechat/server/channel/music"
 	"github.com/frizinak/homechat/server/channel/ping"
@@ -29,80 +37,121 @@ import (
 	"github.com/frizinak/homechat/server/channel/upload"
 	"github.com/frizinak/homechat/server/channel/users"
 	"github.com/frizinak/homechat/vars"
+	"github.com/nightlyone/lockfile"
 )
 
-func main() {
-	rand.Seed(time.Now().UnixNano())
+type flock struct {
+	path  string
+	mutex lockfile.Lockfile
+}
 
-	_confDir, err := os.UserConfigDir()
-	var confFile string
-	if err == nil {
-		confFile = filepath.Join(_confDir, "homechat", "server.json")
-	}
-
-	var dynamicHTTPDir string
-	flag.StringVar(&confFile, "c", confFile, "config file")
-	flag.StringVar(&dynamicHTTPDir, "http", "", "Directory the http server will directly serve from [for debugging]")
-	flag.Parse()
-
-	cache := filepath.Dir(confFile)
-	ucache, err := os.UserCacheDir()
-	if err == nil {
-		cache = filepath.Join(ucache, "homechat")
-	}
-
-	appConf := &Config{}
-	if err := appConf.Decode(confFile); err != nil {
-		if os.IsNotExist(err) {
-			if err := appConf.Encode(confFile); err != nil {
-				panic(err)
-			}
-		} else if err != nil {
-			panic(err)
+func hue(f *Flags) error {
+	var hub *huego.Bridge
+	if f.AppConf.HueIP == "" {
+		var err error
+		fmt.Println("No ip set in config, discovering hue bridge")
+		hub, err = huego.Discover()
+		if err != nil {
+			return fmt.Errorf("Something went wrong during discover: %w", err)
+		}
+		f.AppConf.HueIP = hub.Host
+		fmt.Printf("found hub at '%s'\n", f.AppConf.HueIP)
+		if err := f.AppConf.Encode(f.All.ConfigFile); err != nil {
+			return err
 		}
 	}
 
-	bandwidthIntervalSeconds := 0
-	var maxUploadKBytes int64 = 1024 * 10
-	resave := appConf.Merge(&Config{
-		Directory: cache,
-		HTTPAddr:  "127.0.0.1:1200",
-		YMDir:     filepath.Join(cache, "ym"),
-
-		BandwidthIntervalSeconds: &bandwidthIntervalSeconds,
-		MaxUploadKBytes:          &maxUploadKBytes,
-
-		WttrCity:           "tashkent",
-		HolidayCountryCode: "UZ",
-	})
-
-	bandwidthIntervalSeconds = *appConf.BandwidthIntervalSeconds
-	maxUploadKBytes = *appConf.MaxUploadKBytes
-
-	if resave {
-		if err := appConf.Encode(confFile); err != nil {
-			panic(err)
-		}
+	fmt.Printf("creating new app on bridge at ip %s\n", f.AppConf.HueIP)
+	if hub == nil {
+		hub = huego.New(f.AppConf.HueIP, "")
 	}
-
-	store := filepath.Join(appConf.Directory, "chat.log")
-	uploads := filepath.Join(appConf.Directory, "uploads")
-	os.MkdirAll(uploads, 0o700)
-
-	addr := strings.Split(appConf.HTTPAddr, ":")
-	if len(addr) != 2 {
-		panic("invalid address")
-	}
-
-	port, err := strconv.Atoi(addr[1])
+	fmt.Println("go press the bridge button and press enter to continue")
+	fmt.Scanln()
+	pass, err := hub.CreateUser("homechat")
 	if err != nil {
-		panic(err)
+		return err
 	}
-	port++
-	tcp := fmt.Sprintf("%s:%d", addr[0], port)
+	f.AppConf.HuePass = pass
+	if err := f.AppConf.Encode(f.All.ConfigFile); err != nil {
+		return err
+	}
+
+	fmt.Println("success")
+	return nil
+}
+
+func fingerprint(f *Flags) error {
+	pk, err := f.All.Key.Public()
+	if err != nil {
+		return fmt.Errorf("failed to parse publickey: %w", err)
+	}
+
+	fmt.Println(pk.FingerprintString())
+	return nil
+}
+
+func logs(f *Flags) error {
+	if f.Logs.Dir == "" {
+		return errors.New("no directory specified")
+	}
+	log := f.ServerConf.Log
+	chat := &chatpkg.ChatChannel{}
+	hist, err := history.New(log, f.AppConf.MaxChatMessages, "", chat)
+	if err != nil {
+		return err
+	}
+	*chat = *chatpkg.New(log, hist)
+
+	glob, err := filepath.Glob(filepath.Join(f.Logs.Dir, "*"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(glob)
+
+	cb := func(msg channel.Msg) {
+		l := msg.(history.Log)
+		m := l.Msg.(chatdata.Message)
+		fmt.Printf("%s %-10s | %s\n", l.Stamp.Format("2006-01-02 15:04:05"), l.From.Name(), m.Data)
+	}
+
+	do := func(path string) error {
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		err = hist.DecodeAppendFile(f, cb)
+		if err != nil {
+			return fmt.Errorf("an error occurred in '%s': %w", path, err)
+		}
+		return nil
+	}
+
+	for _, p := range glob {
+		if err := do(p); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func serve(flock flock, f *Flags) error {
+	for {
+		if err := flock.mutex.TryLock(); err != nil {
+			if err != lockfile.ErrNotExist {
+				panic(fmt.Errorf("Failed to get lock: '%s': %w", flock.path, err))
+			}
+			fmt.Printf("could not claim lock at %s, retrying...\n", flock.path)
+			time.Sleep(time.Second)
+			continue
+		}
+		break
+	}
+	defer flock.mutex.Unlock()
 
 	static := make(map[string][]byte)
-	func() {
+	err := func() error {
 		fs := []string{
 			"index.html",
 			"app.wasm",
@@ -114,7 +163,7 @@ func main() {
 
 		names, err := bound.AssetDir("clients")
 		if err != nil {
-			panic(err)
+			return err
 		}
 		for _, n := range names {
 			a := "clients/" + n
@@ -127,10 +176,14 @@ func main() {
 				static[g] = a
 			}
 		}
+		return nil
 	}()
+	if err != nil {
+		return err
+	}
 
 	func() {
-		if dynamicHTTPDir != "" {
+		if f.Serve.HTTPDir != "" {
 			return
 		}
 		re := regexp.MustCompile(`(?s)<!--scripts-->.*<!--eoscripts-->`)
@@ -161,8 +214,8 @@ func main() {
 	}()
 
 	var fh http.Handler
-	if dynamicHTTPDir != "" {
-		fh = http.FileServer(http.Dir(dynamicHTTPDir))
+	if f.Serve.HTTPDir != "" {
+		fh = http.FileServer(http.Dir(f.Serve.HTTPDir))
 	}
 
 	router := func(r *http.Request, l *log.Logger) (simplehttp.HandleFunc, int) {
@@ -200,27 +253,38 @@ func main() {
 		return nil, 0
 	}
 
-	c := server.Config{
-		ProtocolVersion: vars.ProtocolVersion,
-		Log:             log.New(os.Stderr, "", 0),
-		HTTPAddress:     appConf.HTTPAddr,
-		TCPAddress:      tcp,
-		StorePath:       store,
-		UploadsPath:     uploads,
-		MaxUploadSize:   maxUploadKBytes * 1024,
-		Router:          router,
-		LogBandwidth:    time.Duration(bandwidthIntervalSeconds) * time.Second,
-	}
+	c := f.ServerConf
+	c.Router = router
 	s, err := server.New(c)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	history := history.New(100000, 1000)
+	now := time.Now().Format("2006-01-02--15-04-05.999999999")
+	rnd := make([]byte, 128)
+	if _, err := io.ReadFull(crand.Reader, rnd); err != nil {
+		return err
+	}
+	hsh := fnv.New64()
+	hsh.Write(rnd)
+
+	appendChatFile := filepath.Join(
+		f.Logs.Dir,
+		fmt.Sprintf(
+			"chat-%s-%s.log",
+			now,
+			base64.RawURLEncoding.EncodeToString(hsh.Sum(nil)),
+		),
+	)
+
+	chat := &chatpkg.ChatChannel{}
+	history, err := history.New(c.Log, f.AppConf.MaxChatMessages, appendChatFile, chat)
+	if err != nil {
+		return err
+	}
 	musicErr := status.New()
-	music := music.NewYM(c.Log, musicErr, appConf.YMDir)
-	chat := chat.New(c.Log, history)
-	history.SetOutput(chat)
+	music := music.NewYM(c.Log, musicErr, f.AppConf.YMDir)
+	*chat = *chatpkg.New(c.Log, history)
 	upload := upload.New(c.MaxUploadSize, chat, s)
 	users := users.New(
 		[]string{vars.ChatChannel, vars.MusicChannel},
@@ -249,12 +313,12 @@ func main() {
 	quoteBots.AddBot("programming", bot.NewBotFunc(bot.ProgrammingQuote))
 	quoteBots.AddBot("cats", bot.NewBotFunc(bot.CatQuote))
 
-	weatherBot := bot.NewWttrBot(appConf.WttrCity)
+	weatherBot := bot.NewWttrBot(f.AppConf.WttrCity)
 
-	if appConf.HueIP != "" {
+	if f.AppConf.HueIP != "" {
 		hue := bot.NewHueBot(
-			appConf.HueIP,
-			appConf.HuePass,
+			f.AppConf.HueIP,
+			f.AppConf.HuePass,
 			[]string{},
 		)
 
@@ -262,15 +326,95 @@ func main() {
 	}
 
 	chat.AddBot("quote", quoteBots)
-	chat.AddBot("holidays", bot.NewHolidayBot(appConf.HolidayCountryCode))
+	chat.AddBot("holidays", bot.NewHolidayBot(f.AppConf.HolidayCountryCode))
 	chat.AddBot("wttr", weatherBot)
 	chat.AddBot("weather", weatherBot)
 	chat.AddBot("trivia", bot.NewTriviaBot())
 
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	var saveErr error
+	go func() {
+		<-sig
+		fmt.Println("saving")
+		serverErr := s.Save()
+		ymErr := music.SaveCollection()
+		if serverErr != nil {
+			saveErr = fmt.Errorf(
+				"error occurred when trying to run server.Save: %w",
+				serverErr,
+			)
+		}
+		if ymErr != nil {
+			saveErr = fmt.Errorf(
+				"error occurred when trying to run libym.Collection.Save %w, additionally: %s",
+				serverErr,
+				err.Error(),
+			)
+		}
+		if saveErr != nil {
+			fmt.Fprintln(os.Stderr, saveErr)
+		}
+		s.Close()
+	}()
+
 	fmt.Printf("Starting server on http://%s tcp://%s\n", c.HTTPAddress, c.TCPAddress)
 	if err := s.Init(); err != nil {
+		return err
+	}
+
+	if err := s.Run(); err != nil {
+		return err
+	}
+
+	fmt.Println("bye...")
+	return nil
+}
+
+func main() {
+	rand.Seed(time.Now().UnixNano())
+	_confDir, err := os.UserConfigDir()
+	var confFile string
+	if err == nil {
+		confFile = filepath.Join(_confDir, "homechat", "server.json")
+	}
+
+	ucache, err := os.UserCacheDir()
+	cache := ""
+	if err == nil {
+		cache = filepath.Join(ucache, "homechat")
+	}
+	f := NewFlags(os.Stdout, confFile, cache)
+	f.Flags()
+	if err := f.Parse(); err != nil {
 		panic(err)
 	}
 
-	panic(s.Run())
+	mutexPath, err := filepath.Abs(filepath.Join(f.All.CacheDir, "~lock"))
+	if err != nil {
+		panic(err)
+	}
+
+	mutex, err := lockfile.New(mutexPath)
+	if err != nil {
+		panic(err)
+	}
+
+	flock := flock{mutexPath, mutex}
+	switch f.All.Mode {
+	case ModeDefault:
+		err = serve(flock, f)
+	case ModeLogs:
+		err = logs(f)
+	case ModeHue:
+		err = hue(f)
+	case ModeFingerprint:
+		err = fingerprint(f)
+	default:
+		err = errors.New("no such mode")
+	}
+
+	if err != nil {
+		panic(err)
+	}
 }

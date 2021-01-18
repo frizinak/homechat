@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/bot"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/chat/data"
@@ -33,6 +32,7 @@ type ChatChannel struct {
 
 	channel.NoSave
 	channel.Limit
+	channel.NoRunClose
 }
 
 func New(log *log.Logger, hist *history.HistoryChannel) *ChatChannel {
@@ -54,12 +54,12 @@ func (c *ChatChannel) AddBot(cmd string, bot bot.Bot) {
 	c.bots.AddBot(cmd, bot)
 }
 
-func (c *ChatChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
+func (c *ChatChannel) HandleBIN(cl channel.Client, r channel.BinaryReader) error {
 	m, err := data.BinaryMessage(r)
 	if err != nil {
 		return err
 	}
-	return c.handle(cl, m)
+	return c.Handle(cl, m)
 }
 
 func (c *ChatChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader, error) {
@@ -67,7 +67,7 @@ func (c *ChatChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader, err
 	if err != nil {
 		return nr, err
 	}
-	return nr, c.handle(cl, m)
+	return nr, c.Handle(cl, m)
 }
 
 func (c *ChatChannel) UserUpdate(cl channel.Client, r channel.ConnectionReason) error {
@@ -93,11 +93,27 @@ func (c *ChatChannel) FromHistory(to channel.Client, l history.Log) ([]channel.B
 	return b, nil
 }
 
-func (c *ChatChannel) DecodeHistoryItem(r *binary.Reader) (channel.Msg, error) {
+func (c *ChatChannel) DecodeHistoryItem(r channel.BinaryReader) (channel.Msg, error) {
 	return data.BinaryMessage(r)
 }
 
-func (c *ChatChannel) handle(cl channel.Client, m data.Message) error {
+func (c *ChatChannel) isShout(str string) (int, bool) {
+	return 1, len(str) != 0 && str[0] == '!'
+}
+
+func (c *ChatChannel) isToBot(str string) (n int, bot, silent bool) {
+	bot = len(str) != 0 && str[0] == '/'
+	silent = bot && len(str) > 1 && str[1] == '/'
+	switch {
+	case silent:
+		n = 2
+	case bot:
+		n = 1
+	}
+	return
+}
+
+func (c *ChatChannel) Handle(cl channel.Client, m data.Message) error {
 	c.hist.AddLog(cl, m)
 	b := c.batch(data.NotifyDefault, cl, m)
 
@@ -108,12 +124,14 @@ func (c *ChatChannel) handle(cl channel.Client, m data.Message) error {
 		}
 	}
 
-	if len(m.Data) == 0 || (m.Data[0] != ':' && m.Data[0] != '/') {
+	n, isToBot, silent := c.isToBot(m.Data)
+	if !isToBot {
 		return gerr
 	}
 
+	m.Data = m.Data[n:]
 	go func() {
-		if err := c.botMessage(cl, m); err != nil {
+		if err := c.botMessage(cl, m, silent); err != nil {
 			c.log.Println("bot err", err)
 		}
 	}()
@@ -121,9 +139,8 @@ func (c *ChatChannel) handle(cl channel.Client, m data.Message) error {
 	return gerr
 }
 
-func (c *ChatChannel) botMessage(cl channel.Client, m data.Message) error {
-	silent := m.Data[0] == ':'
-	cmd := multiSpaceRE.Split(channel.StripUnprintable(m.Data[1:]), -1)
+func (c *ChatChannel) botMessage(cl channel.Client, m data.Message, silent bool) error {
+	cmd := multiSpaceRE.Split(channel.StripUnprintable(m.Data), -1)
 	name, d, err := c.bots.Message(cl.Name(), cmd...)
 	if err == bot.ErrNotExists {
 		return nil
@@ -145,7 +162,7 @@ func (c *ChatChannel) botMessage(cl channel.Client, m data.Message) error {
 		d = fmt.Sprintf("@%s \n%s", cl.Name(), d)
 	}
 
-	return c.handle(channel.NewBot(name), data.Message{Data: d})
+	return c.Handle(channel.NewBot(name), data.Message{Data: d})
 }
 
 func (c *ChatChannel) batch(notify data.Notify, cl channel.Client, m data.Message) []channel.Batch {
@@ -167,13 +184,15 @@ func (c *ChatChannel) batch(notify data.Notify, cl channel.Client, m data.Messag
 		Notify:  notify,
 	}
 
-	if len(s.Data) > 0 && s.Data[0] == ':' {
+	if _, _, isToBotSilent := c.isToBot(s.Data); isToBotSilent {
 		f.To = []string{cl.Name()}
 		b = append(b, channel.Batch{f, s})
 		return b
 	}
 
-	if len(s.Data) > 0 && s.Data[0] == '!' {
+	if n, isShout := c.isShout(s.Data); isShout {
+		s.Data = s.Data[n:]
+		s.Shout = true
 		s.Notify = notify | data.NotifyPersonal
 	}
 

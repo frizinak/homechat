@@ -4,17 +4,16 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 )
 
 type Message struct {
 	Command string `json:"cmd"`
 
-	*channel.NeverEqual
+	channel.NeverEqual
 }
 
-func (m Message) Binary(w *binary.Writer) error {
+func (m Message) Binary(w channel.BinaryWriter) error {
 	w.WriteString(m.Command, 16)
 	return w.Err()
 }
@@ -23,10 +22,10 @@ func (m Message) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(m)
 }
 
-func (m Message) FromBinary(r *binary.Reader) (channel.Msg, error)     { return BinaryMessage(r) }
-func (m Message) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) { return JSONMessage(r) }
+func (m Message) FromBinary(r channel.BinaryReader) (channel.Msg, error) { return BinaryMessage(r) }
+func (m Message) FromJSON(r io.Reader) (channel.Msg, io.Reader, error)   { return JSONMessage(r) }
 
-func BinaryMessage(r *binary.Reader) (Message, error) {
+func BinaryMessage(r channel.BinaryReader) (Message, error) {
 	c := Message{}
 	c.Command = r.ReadString(16)
 	return c, r.Err()
@@ -49,7 +48,7 @@ type ServerMessage struct {
 	Songs []Song `json:"songs"`
 }
 
-func (m ServerMessage) Binary(w *binary.Writer) error {
+func (m ServerMessage) Binary(w channel.BinaryWriter) error {
 	var a uint8
 	w.WriteString(m.Title, 16)
 	w.WriteString(m.Text, 32)
@@ -87,7 +86,7 @@ func (m ServerMessage) Equal(msg channel.Msg) bool {
 	return true
 }
 
-func (m ServerMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
+func (m ServerMessage) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
 	return BinaryServerMessage(r)
 }
 
@@ -95,7 +94,7 @@ func (m ServerMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 	return JSONServerMessage(r)
 }
 
-func BinaryServerMessage(r *binary.Reader) (ServerMessage, error) {
+func BinaryServerMessage(r channel.BinaryReader) (ServerMessage, error) {
 	m := ServerMessage{}
 	m.Title = r.ReadString(16)
 	m.Text = r.ReadString(32)

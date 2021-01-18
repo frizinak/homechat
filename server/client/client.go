@@ -1,11 +1,8 @@
 package client
 
 import (
-	"bytes"
 	"errors"
-	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 )
 
@@ -23,7 +20,8 @@ type Client struct {
 	proto       channel.Proto
 	frameWriter bool
 
-	w io.Writer
+	w            channel.WriteFlusher
+	binaryWriter channel.BinaryWriter
 
 	name     string
 	channels []string
@@ -44,16 +42,17 @@ type Config struct {
 	JobBuffer   int
 }
 
-func New(c Config, conn io.Writer, errs chan<- Error) *Client {
+func New(c Config, conn channel.WriteFlusher, binaryWriter channel.BinaryWriter, errs chan<- Error) *Client {
 	return &Client{
-		w:           conn,
-		frameWriter: c.FrameWriter,
-		proto:       c.Proto,
-		name:        c.Name,
-		channels:    c.Channels,
-		last:        make(map[string]channel.Msg),
-		jobs:        make(chan Job, c.JobBuffer),
-		errs:        errs,
+		w:            conn,
+		binaryWriter: binaryWriter,
+		frameWriter:  c.FrameWriter,
+		proto:        c.Proto,
+		name:         c.Name,
+		channels:     c.Channels,
+		last:         make(map[string]channel.Msg),
+		jobs:         make(chan Job, c.JobBuffer),
+		errs:         errs,
 	}
 }
 
@@ -86,44 +85,29 @@ func (c *Client) send(chnl string, msg channel.Msg) error {
 	if last, ok := c.last[chnl]; ok && msg.Equal(last) {
 		return nil
 	}
-
-	w := c.w
-	var buf *bytes.Buffer
-	if c.frameWriter {
-		buf = bytes.NewBuffer(nil)
-		w = buf
-	}
+	c.last[chnl] = msg
 
 	p := channel.ChannelMsg{Data: chnl}
 	switch c.proto {
 	case channel.ProtoBinary:
-		wr := binary.NewWriter(w)
-		if err := p.Binary(wr); err != nil {
+		if err := p.Binary(c.binaryWriter); err != nil {
 			return err
 		}
-		if err := msg.Binary(wr); err != nil {
+		if err := msg.Binary(c.binaryWriter); err != nil {
 			return err
 		}
 	case channel.ProtoJSON:
-		if err := p.JSON(w); err != nil {
+		if err := p.JSON(c.w); err != nil {
 			return err
 		}
-		if err := msg.JSON(w); err != nil {
+		if err := msg.JSON(c.w); err != nil {
 			return err
 		}
 	default:
 		return errors.New("client uses unsupported protocol")
 	}
 
-	if buf != nil {
-		if _, err := c.w.Write(buf.Bytes()); err != nil {
-			return err
-		}
-	}
-
-	c.last[chnl] = msg
-
-	return nil
+	return c.w.Flush()
 }
 
 func (c *Client) Name() string       { return c.name }

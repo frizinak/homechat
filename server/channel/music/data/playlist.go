@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 )
 
@@ -31,7 +30,7 @@ func (m ServerPlaylistMessage) Equal(msg channel.Msg) bool {
 	return true
 }
 
-func (m ServerPlaylistMessage) Binary(w *binary.Writer) error {
+func (m ServerPlaylistMessage) Binary(w channel.BinaryWriter) error {
 	w.WriteUint32(uint32(len(m.List)))
 	for _, p := range m.List {
 		w.WriteString(p, 16)
@@ -43,7 +42,7 @@ func (m ServerPlaylistMessage) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(m)
 }
 
-func (m ServerPlaylistMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
+func (m ServerPlaylistMessage) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
 	return BinaryServerPlaylistMessage(r)
 }
 
@@ -51,7 +50,7 @@ func (m ServerPlaylistMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, er
 	return JSONServerPlaylistMessage(r)
 }
 
-func BinaryServerPlaylistMessage(r *binary.Reader) (ServerPlaylistMessage, error) {
+func BinaryServerPlaylistMessage(r channel.BinaryReader) (ServerPlaylistMessage, error) {
 	c := ServerPlaylistMessage{}
 	n := r.ReadUint32()
 	c.List = make([]string, n)

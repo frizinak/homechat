@@ -6,9 +6,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"syscall/js"
+	"time"
 
 	"github.com/frizinak/homechat/client"
-	"github.com/frizinak/homechat/client/wswasm"
+	"github.com/frizinak/homechat/client/backend/wswasm"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
@@ -21,6 +23,7 @@ type handler string
 const (
 	OnName              handler = "onName"
 	OnHistory           handler = "onHistory"
+	OnLatency           handler = "onLatency"
 	OnChatMessage       handler = "onChatMessage"
 	OnMusicMessage      handler = "onMusicMessage"
 	OnMusicStateMessage handler = "onMusicStateMessage"
@@ -41,6 +44,7 @@ func newJSHandler(h js.Value) *jsHandler {
 	methods := []handler{
 		OnName,
 		OnHistory,
+		OnLatency,
 		OnChatMessage,
 		OnMusicMessage,
 		OnMusicStateMessage,
@@ -89,6 +93,10 @@ func (j *jsHandler) HandleHistory() {
 	j.handlers[OnHistory].Invoke()
 }
 
+func (j *jsHandler) HandleLatency(l time.Duration) {
+	j.handlers[OnLatency].Invoke(l.Milliseconds())
+}
+
 func (j *jsHandler) HandleChatMessage(m chatdata.ServerMessage) error {
 	return j.on(OnChatMessage, m)
 }
@@ -130,14 +138,46 @@ func main() {
 	location := document.Get("location")
 	host := location.Get("host").String()
 	httpProto := location.Get("protocol").String()
+	localStorage := window.Get("localStorage")
 
 	public := window.Get("Object").New()
 	window.Set("homechat", public)
 
+	pem := localStorage.Call("getItem", "key")
+	_fp := localStorage.Call("getItem", "fp")
+
+	// TODO when server can handle tls and internal encryption is off
+	// binary should depend on proto
+	const binary = true
 	backendConf := wswasm.Config{
 		TLS:    httpProto == "https:",
 		Domain: host,
 		Path:   "ws",
+		Binary: binary,
+	}
+
+	fp := ""
+	if !_fp.IsNull() && !_fp.IsUndefined() {
+		fp = _fp.String()
+	}
+
+	key := crypto.NewKey(channel.ClientMinKeySize, channel.ClientMinKeySize) // browsers
+	if !pem.IsNull() && !pem.IsUndefined() {
+		if err := key.UnmarshalPEM([]byte(pem.String())); err != nil {
+			panic(err)
+		}
+	}
+
+	err := key.Generate()
+	if err == nil {
+		d, err := key.MarshalPEM()
+		if err != nil {
+			panic(err)
+		}
+
+		localStorage.Call("setItem", "key", string(d))
+	} else if err != crypto.ErrKeyExists {
+		panic(err)
 	}
 
 	backend, err := wswasm.New(backendConf, window)
@@ -159,6 +199,11 @@ func main() {
 		})
 	}
 
+	proto := channel.ProtoJSON
+	if binary {
+		proto = channel.ProtoBinary
+	}
+
 	public.Set("init", js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		if len(args) != 1 {
 			console.Call("error", "init requires 1 arg")
@@ -166,9 +211,12 @@ func main() {
 		}
 		handler = newJSHandler(args[0])
 		conf := client.Config{
-			ServerURL: httpProto + "//" + host,
-			Name:      args[0].Get("name").String(),
+			Key:               key,
+			ServerFingerprint: fp,
+			ServerURL:         httpProto + "//" + host,
+			Name:              args[0].Get("name").String(),
 			Channels: []string{
+				vars.PingChannel,
 				vars.UserChannel,
 				vars.HistoryChannel,
 				vars.ChatChannel,
@@ -177,8 +225,7 @@ func main() {
 				vars.MusicSongChannel,
 				vars.MusicErrorChannel,
 			},
-			Proto:   channel.ProtoJSON,
-			Framed:  true,
+			Proto:   proto,
 			History: 100,
 		}
 		c = client.New(backend, handler, handler, conf)
@@ -187,6 +234,18 @@ func main() {
 		public.Set("music", createSender(c.Music))
 
 		go func() {
+			err := c.Connect()
+			if err == client.ErrFingerPrint {
+				// TODO!!!
+				newFP := c.ServerFingerprint()
+				localStorage.Call("setItem", "fp", newFP)
+				c.SetTrustedFingerprint(newFP)
+				if err := c.Connect(); err != nil {
+					panic(err)
+				}
+			} else if err != nil {
+				panic(err)
+			}
 			if err := c.Run(); err != nil {
 				panic(err)
 			}

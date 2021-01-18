@@ -22,17 +22,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bandwidth"
+	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/client"
+	"github.com/frizinak/homechat/vars"
 	"golang.org/x/net/websocket"
 )
 
 var (
-	fileRE   = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
-	errProto = errors.New("unsupported protocol version")
+	fileRE         = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
+	errProto       = errors.New("unsupported protocol version")
+	errKeyExchange = errors.New("client/server keys mismatch")
 )
 
 const (
@@ -50,6 +52,8 @@ type writeJob struct {
 type Config struct {
 	// Arbitrary string clients will need to be able to connect
 	ProtocolVersion string
+
+	Key *crypto.Key
 
 	Log *log.Logger
 
@@ -69,18 +73,20 @@ type Config struct {
 	Cert    []byte
 	CertKey []byte
 
-	Router simplehttp.Router
+	Router    simplehttp.Router
+	RWFactory channel.RWFactory
 
 	// Interval to log bandwidth, 0 = no logging
 	LogBandwidth time.Duration
 }
 
 type Server struct {
-	c   Config
-	tls bool
-	s   *simplehttp.Server
-	ws  websocket.Server
-	tcp net.Listener
+	c    Config
+	tls  bool
+	http *http.Server
+	s    *simplehttp.Server
+	ws   websocket.Server
+	tcp  net.Listener
 
 	saveMutex sync.Mutex
 
@@ -96,6 +102,8 @@ type Server struct {
 	onUserUpdate channel.UserUpdateHandler
 
 	bw Bandwidth
+
+	closing bool
 }
 
 func New(c Config) (*Server, error) {
@@ -130,8 +138,8 @@ func New(c Config) (*Server, error) {
 	}
 
 	nilLogger := log.New(ioutil.Discard, "", 0)
-	hs := &http.Server{TLSConfig: tlsConf, ErrorLog: nilLogger}
-	s.s = simplehttp.FromHTTPServer(hs, s.route, s.c.Log)
+	s.http = &http.Server{TLSConfig: tlsConf, ErrorLog: nilLogger}
+	s.s = simplehttp.FromHTTPServer(s.http, s.route, s.c.Log)
 
 	return s, nil
 }
@@ -144,11 +152,9 @@ func (s *Server) Init() error {
 	go func() {
 		for {
 			time.Sleep(saveInterval)
-			s.saveMutex.Lock()
-			if err := s.save(); err != nil {
+			if err := s.Save(); err != nil {
 				s.c.Log.Println("ERR saving ", err)
 			}
-			s.saveMutex.Unlock()
 		}
 	}()
 
@@ -158,9 +164,11 @@ func (s *Server) Init() error {
 		}
 		for {
 			time.Sleep(s.c.LogBandwidth)
-			_up, _down := s.bw.Get()
+			_up, _down, _tup, _tdown := s.bw.Get()
 			up, down := NewBytes(_up, B).Human(), NewBytes(_down, B).Human()
-			s.c.Log.Printf("Bandwidth: up:%s down:%s", up, down)
+
+			tup, tdown := NewBytes(float64(_tup), B).Human(), NewBytes(float64(_tdown), B).Human()
+			s.c.Log.Printf("Bandwidth: up:%s [%s/s] down:%s [%s/s]", tup, up, tdown, down)
 		}
 	}()
 
@@ -309,6 +317,13 @@ func (s *Server) GetUsers(ch string) []channel.User {
 	return n
 }
 
+func (s *Server) Save() error {
+	s.saveMutex.Lock()
+	err := s.save()
+	s.saveMutex.Unlock()
+	return err
+}
+
 func (s *Server) save() error {
 	errs := make([]string, 0)
 	for i, c := range s.channels {
@@ -392,12 +407,12 @@ func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
 		return nil, fmt.Errorf("ERR upload create: %w", err)
 	}
 
-	if _, err := f.ReadFrom(r); err != nil {
-		f.Close()
+	_, err = f.ReadFrom(r)
+	f.Close()
+	if err != nil {
 		return nil, fmt.Errorf("ERR upload write: %w", err)
 	}
 
-	f.Close()
 	if err := os.Rename(tmp, dst); err != nil {
 		return nil, fmt.Errorf("ERR upload rename; %w", err)
 	}
@@ -465,7 +480,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request, l *log.Logger)
 func (s *Server) unsetClient(c *client.Client) {
 	s.clientsMutex.Lock()
 	c.Stop()
-	for _, h := range c.Channels() {
+	ch := c.Channels()
+	for _, h := range ch {
 		ix := -1
 		if _, ok := s.clients[h]; !ok {
 			continue
@@ -488,9 +504,13 @@ func (s *Server) unsetClient(c *client.Client) {
 		)
 
 		l := len(s.clients[h][name])
-		s.c.Log.Printf("remove client '%s[%d]'  for '%s'", name, l, h)
+		s.c.Log.Printf("remove client '%s[%d]' for '%s'", name, l, h)
 	}
 	s.clientsMutex.Unlock()
+
+	if len(ch) == 0 {
+		s.c.Log.Printf("remove client '%s[0]'", c.Name())
+	}
 
 	go func() {
 		if err := s.onUserUpdate.UserUpdate(c, channel.Disconnect); err != nil {
@@ -530,7 +550,13 @@ func (s *Server) setClient(conf client.Config, c *client.Client) {
 	}()
 }
 
-func (s *Server) newClient(proto channel.Proto, frameWriter bool, id channel.IdentifyMsg, conn io.Writer) (client.Config, *client.Client, error) {
+func (s *Server) newClient(
+	proto channel.Proto,
+	frameWriter bool,
+	id channel.IdentifyMsg,
+	w channel.WriteFlusher,
+	binW channel.BinaryWriter,
+) (client.Config, *client.Client, error) {
 	var conf client.Config
 	for _, h := range id.Channels {
 		if _, ok := s.channels[h]; !ok {
@@ -559,38 +585,36 @@ func (s *Server) newClient(proto channel.Proto, frameWriter bool, id channel.Ide
 	conf.Channels = id.Channels
 	conf.JobBuffer = clientJobBuf
 
-	return conf, client.New(conf, conn, s.clientErrs), nil
+	return conf, client.New(conf, w, binW, s.clientErrs), nil
 }
 
-func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool) error {
-	identify := func(r io.Reader) (channel.IdentifyMsg, io.Reader, error) {
-		m, err := channel.BinaryIdentifyMsg(binary.NewReader(r))
-		return m, r, err
-	}
-	getChannel := func(r io.Reader) (channel.ChannelMsg, io.Reader, error) {
-		m, err := channel.BinaryChannelMsg(binary.NewReader(r))
+func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, frameWriter bool) error {
+	read := func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
+		m, err := typ.FromBinary(s.c.RWFactory.BinaryReader(r))
 		return m, r, err
 	}
 	do := func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
-		return r, h.HandleBIN(cl, binary.NewReader(r))
+		return r, h.HandleBIN(cl, s.c.RWFactory.BinaryReader(r))
 	}
-	write := func(w io.Writer, m channel.Msg) error {
-		return m.Binary(binary.NewWriter(w))
+	write := func(w channel.WriteFlusher, m channel.Msg) error {
+		if err := m.Binary(s.c.RWFactory.BinaryWriter(w)); err != nil {
+			return err
+		}
+		return w.Flush()
 	}
 
 	if proto == channel.ProtoJSON {
-		identify = channel.JSONIdentifyMsg
-		getChannel = channel.JSONChannelMsg
+		read = func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
+			return typ.FromJSON(r)
+		}
 		do = func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
 			return h.HandleJSON(cl, r)
 		}
-		write = func(w io.Writer, m channel.Msg) error {
-			b := bytes.NewBuffer(nil)
-			if err := m.JSON(b); err != nil {
+		write = func(w channel.WriteFlusher, m channel.Msg) error {
+			if err := m.JSON(w); err != nil {
 				return err
 			}
-			_, err := w.Write(b.Bytes())
-			return err
+			return w.Flush()
 		}
 	}
 
@@ -598,14 +622,83 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 	writer := s.bw.NewWriter(conn)
 
 	const jsonMax = 1024 * 1024 * 20
-	limited := &io.LimitedReader{R: reader, N: 1024}
-	id, r, err := identify(limited)
+	limited := &io.LimitedReader{R: reader, N: 1024 * 10}
+	reader = limited
+
+	var writeFlusher channel.WriteFlusher = channel.NewPassthrough(writer)
+	if frameWriter {
+		writeFlusher = channel.NewBuffered(writer)
+	}
+
+	var msg channel.Msg
+
+	key := s.c.Key
+	server, err := channel.NewPubKeyServerMessage(key)
+	if err != nil {
+		return err
+	}
+
+	if err := write(writeFlusher, server); err != nil {
+		return err
+	}
+
+	msg, reader, err = read(reader, channel.PubKeyMessage{})
+	if err != nil {
+		return err
+	}
+	client := msg.(channel.PubKeyMessage)
+
+	derive, err := channel.CommonSecret32(client, server, key)
+	if err != nil {
+		return err
+	}
+
+	encryptedRW := &crypto.ReadWriter{
+		crypto.NewDecrypter(reader, derive(channel.CryptoServerRead)),
+		crypto.NewEncrypter(writeFlusher, derive(channel.CryptoServerWrite)),
+	}
+
+	macRSecret := derive(channel.CryptoServerMacRead)
+	macWSecret := derive(channel.CryptoServerMacWrite)
+	macR := crypto.NewSHA1HMACReader(encryptedRW, macRSecret[:])
+	macW := crypto.NewSHA1HMACWriter(encryptedRW, macWSecret[:], (1<<16)-1)
+
+	writer = s.c.RWFactory.Writer(macW)
+	reader = s.c.RWFactory.Reader(macR)
+
+	writeFlusher = &channel.WriterFlusher{writer, channel.NewFlushFlusher(macW, writeFlusher)}
+
+	test, err := channel.NewSymmetricTestMessage()
+	if err != nil {
+		return err
+	}
+
+	if err := write(writeFlusher, test); err != nil {
+		return err
+	}
+
+	limited.N = 1024 * 10
+	msg, reader, err = read(reader, channel.SymmetricTestMessage{})
+	if err != nil {
+		if err == channel.ErrKeyExchange {
+			return errKeyExchange
+		}
+
+		return err
+	}
+
+	if !test.Equal(msg) {
+		return errKeyExchange
+	}
+
+	msg, reader, err = read(reader, channel.IdentifyMsg{})
 	if err != nil {
 		return fmt.Errorf("identify: %w", err)
 	}
+	id := msg.(channel.IdentifyMsg)
 
-	conf, c, err := s.newClient(proto, frameWriter, id, writer)
-	status := channel.StatusMsg{Code: channel.StatusOK, Err: ""}
+	conf, c, err := s.newClient(proto, frameWriter, id, writeFlusher, s.c.RWFactory.BinaryWriter(writeFlusher))
+	status := channel.StatusMsg{Code: channel.StatusOK}
 	if err != nil {
 		status.Code = channel.StatusNOK
 		status.Err = err.Error()
@@ -614,13 +707,13 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		}
 	}
 
-	if err := write(writer, status); err != nil {
+	if err := write(writeFlusher, status); err != nil {
 		return err
 	}
 	if err != nil {
 		return err
 	}
-	if err := write(writer, channel.IdentifyMsg{Data: conf.Name}); err != nil {
+	if err := write(writeFlusher, channel.IdentifyMsg{Data: conf.Name}); err != nil {
 		return err
 	}
 	s.setClient(conf, c)
@@ -628,17 +721,26 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 
 	var chnl channel.ChannelMsg
 	for {
+		if s.closing {
+			return nil
+		}
+
 		if err := conn.SetDeadline(time.Now().Add(time.Second * 120)); err != nil {
 			return err
 		}
 
 		limited.N = 255
-		chnl, r, err = getChannel(r)
+		msg, reader, err = read(reader, channel.ChannelMsg{})
 		if err == io.EOF {
 			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("channel specify: %w", err)
+		}
+		chnl = msg.(channel.ChannelMsg)
+
+		if chnl.Data == vars.EOFChannel {
+			return nil
 		}
 
 		h, ok := s.channels[chnl.Data]
@@ -650,8 +752,10 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 		if proto != channel.ProtoBinary && limited.N > jsonMax {
 			limited.N = jsonMax
 		}
-		r, err = do(r, c, h)
+
+		reader, err = do(reader, c, h)
 		if err != nil {
+			panic(err)
 			return fmt.Errorf("channel %s: %w", chnl.Data, err)
 		}
 	}
@@ -659,15 +763,23 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, frameWriter bool
 
 func (s *Server) onWS(conn *websocket.Conn) {
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(time.Second * 5)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(time.Second * 10)); err != nil {
 		return
 	}
 
+	// conn.RemoteAddr().String() causes weird hang...
+	address := conn.Request().RemoteAddr
+
 	proto := channel.ReadProto(conn)
+	// TODO uncomment when tls lands and when/if internal encryption is disabled
+	// conn.PayloadType = websocket.TextFrame
+	// if proto == channel.ProtoBinary {
+	conn.PayloadType = websocket.BinaryFrame
+	//}
 
 	switch proto {
 	case channel.ProtoJSON, channel.ProtoBinary:
-		if err := s.handleConn(proto, conn, true); err != nil {
+		if err := s.handleConn(proto, conn, address, true); err != nil {
 			s.c.Log.Printf("client error: %s", err)
 		}
 	default:
@@ -678,7 +790,7 @@ func (s *Server) onWS(conn *websocket.Conn) {
 
 func (s *Server) onTCP(conn net.Conn) {
 	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(time.Second * 5)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(time.Second * 10)); err != nil {
 		return
 	}
 
@@ -686,7 +798,7 @@ func (s *Server) onTCP(conn net.Conn) {
 
 	switch proto {
 	case channel.ProtoJSON, channel.ProtoBinary:
-		if err := s.handleConn(proto, conn, false); err != nil {
+		if err := s.handleConn(proto, conn, conn.RemoteAddr().String(), false); err != nil {
 			s.c.Log.Printf("client error: %s", err)
 		}
 	default:
@@ -701,8 +813,30 @@ func (s *Server) Run() error {
 	if err != nil {
 		return fmt.Errorf("could not open tcp connection %s: %w", s.c.TCPAddress, err)
 	}
+
+	errs := make(chan error, 1)
+	for chName, ch := range s.channels {
+		go func(chName string, ch channel.Channel) {
+			if err := ch.Run(); err != nil {
+				errs <- fmt.Errorf("channel runtime error '%s': %w", chName, err)
+			}
+		}(chName, ch)
+	}
+
+	go func() {
+		for err := range errs {
+			s.c.Log.Println(err)
+			s.closing = true
+			s.Close()
+		}
+	}()
+
 	go func() {
 		for {
+			if s.closing {
+				s.tcp.Close()
+				break
+			}
 			conn, err := s.tcp.Accept()
 			if err != nil {
 				s.c.Log.Println("tcp err:", err)
@@ -714,6 +848,28 @@ func (s *Server) Run() error {
 	}()
 
 	err = s.s.Start(s.c.HTTPAddress, s.tls)
-	s.tcp.Close()
-	return err
+	if s.closing {
+		err = nil
+	}
+	s.closing = true
+	strs := make([]string, 0)
+	if err != nil {
+		strs = append(strs, err.Error())
+	}
+	for _, ch := range s.channels {
+		if err := ch.Close(); err != nil {
+			strs = append(strs, err.Error())
+		}
+	}
+
+	if len(strs) == 0 {
+		return nil
+	}
+
+	return errors.New(strings.Join(strs, ", "))
+}
+
+func (s *Server) Close() {
+	s.closing = true
+	s.http.Close()
 }

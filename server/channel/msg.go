@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-
-	"github.com/frizinak/binary"
 )
 
 type Proto byte
@@ -44,17 +42,13 @@ func StripUnprintable(str string) string {
 }
 
 type Msg interface {
-	Binary(*binary.Writer) error
+	Binary(BinaryWriter) error
 	JSON(io.Writer) error
 	Equal(Msg) bool
 
-	FromBinary(*binary.Reader) (Msg, error)
+	FromBinary(BinaryReader) (Msg, error)
 	FromJSON(io.Reader) (Msg, io.Reader, error)
 }
-
-type NeverEqual struct{}
-
-func (n *NeverEqual) Equal(Msg) bool { return false }
 
 type StatusCode byte
 
@@ -68,13 +62,13 @@ type StatusMsg struct {
 	Code StatusCode `json:"code"`
 	Err  string     `json:"err"`
 
-	*NeverEqual
+	NeverEqual
 }
 
 func (m StatusMsg) Is(s StatusCode) bool { return m.Code == s }
 func (m StatusMsg) OK() bool             { return m.Code == StatusOK }
 
-func (m StatusMsg) Binary(w *binary.Writer) error {
+func (m StatusMsg) Binary(w BinaryWriter) error {
 	w.WriteUint8(byte(m.Code))
 	w.WriteString(m.Err, 8)
 	return w.Err()
@@ -84,10 +78,10 @@ func (m StatusMsg) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(m)
 }
 
-func (m StatusMsg) FromBinary(r *binary.Reader) (Msg, error)     { return BinaryStatusMsg(r) }
+func (m StatusMsg) FromBinary(r BinaryReader) (Msg, error)       { return BinaryStatusMsg(r) }
 func (m StatusMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONStatusMsg(r) }
 
-func BinaryStatusMsg(r *binary.Reader) (StatusMsg, error) {
+func BinaryStatusMsg(r BinaryReader) (StatusMsg, error) {
 	var m StatusMsg
 	m.Code = StatusCode(r.ReadUint8())
 	m.Err = r.ReadString(8)
@@ -105,10 +99,10 @@ type IdentifyMsg struct {
 	Channels []string `json:"c"`
 	Version  string   `json:"v"`
 
-	*NeverEqual
+	NeverEqual
 }
 
-func (h IdentifyMsg) Binary(w *binary.Writer) error {
+func (h IdentifyMsg) Binary(w BinaryWriter) error {
 	w.WriteString(h.Version, 8)
 	w.WriteString(h.Data, 8)
 	w.WriteUint8(uint8(len(h.Channels)))
@@ -122,10 +116,10 @@ func (h IdentifyMsg) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(h)
 }
 
-func (m IdentifyMsg) FromBinary(r *binary.Reader) (Msg, error)     { return BinaryIdentifyMsg(r) }
+func (m IdentifyMsg) FromBinary(r BinaryReader) (Msg, error)       { return BinaryIdentifyMsg(r) }
 func (m IdentifyMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONIdentifyMsg(r) }
 
-func BinaryIdentifyMsg(r *binary.Reader) (IdentifyMsg, error) {
+func BinaryIdentifyMsg(r BinaryReader) (IdentifyMsg, error) {
 	v := r.ReadString(8)
 	n := StripUnprintable(r.ReadString(8))
 	nh := int(r.ReadUint8())
@@ -146,7 +140,7 @@ type ChannelMsg struct {
 	Data string `json:"d"`
 }
 
-func (h ChannelMsg) Binary(w *binary.Writer) error {
+func (h ChannelMsg) Binary(w BinaryWriter) error {
 	w.WriteString(h.Data, 8)
 	return w.Err()
 }
@@ -155,11 +149,11 @@ func (h ChannelMsg) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(h)
 }
 
-func (m ChannelMsg) FromBinary(r *binary.Reader) (Msg, error)     { return BinaryChannelMsg(r) }
+func (m ChannelMsg) FromBinary(r BinaryReader) (Msg, error)       { return BinaryChannelMsg(r) }
 func (m ChannelMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONChannelMsg(r) }
 func (m ChannelMsg) Equal(Msg) bool                               { return false }
 
-func BinaryChannelMsg(r *binary.Reader) (ChannelMsg, error) {
+func BinaryChannelMsg(r BinaryReader) (ChannelMsg, error) {
 	n := StripUnprintable(r.ReadString(8))
 	return ChannelMsg{n}, r.Err()
 }
@@ -170,12 +164,43 @@ func JSONChannelMsg(r io.Reader) (ChannelMsg, io.Reader, error) {
 	return msg, nr, err
 }
 
+type EOF struct {
+	NilMsg
+}
+
+func (m EOF) FromBinary(r BinaryReader) (Msg, error)       { return BinaryMessage(r) }
+func (m EOF) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONMessage(r) }
+
+func BinaryMessage(r BinaryReader) (EOF, error) {
+	n, err := BinaryNilMessage(r)
+	c := EOF{n}
+	return c, err
+}
+
+func JSONMessage(r io.Reader) (EOF, io.Reader, error) {
+	n, nr, err := JSONNilMessage(r)
+	c := EOF{n}
+	return c, nr, err
+}
+
 func JSON(r io.Reader, data interface{}) (io.Reader, error) {
 	d := json.NewDecoder(r)
 	err := d.Decode(data)
 	buf := d.Buffered()
-	if bbuf, ok := buf.(*bytes.Reader); ok && bbuf.Len() == 0 {
-		return r, err
+	if bbuf, ok := buf.(*bytes.Reader); ok {
+		ln := bbuf.Len()
+		if ln == 1 { // almost always the case
+			// not sure if we gain a lot here, works even without this case
+			// newline is only required if were encoding raw ints.
+			// also: we could do this in any case (ln>0)
+			b, rerr := bbuf.ReadByte()
+			if rerr == nil && b == '\n' {
+				return r, err
+			}
+			bbuf.UnreadByte()
+		} else if ln == 0 {
+			return r, err
+		}
 	}
 
 	// if !d.More() { // will cause a read, nooope
@@ -190,12 +215,3 @@ func JSON(r io.Reader, data interface{}) (io.Reader, error) {
 	//}
 	return io.MultiReader(buf, r), err
 }
-
-type NilMsg struct{ *NeverEqual }
-
-func (m *NilMsg) Binary(w *binary.Writer) error                { return w.Err() }
-func (m *NilMsg) JSON(w io.Writer) error                       { return nil }
-func (m *NilMsg) FromBinary(r *binary.Reader) (Msg, error)     { return BinaryNilMessage(r) }
-func (m *NilMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONNilMessage(r) }
-func BinaryNilMessage(r *binary.Reader) (m *NilMsg, err error) { return }
-func JSONNilMessage(r io.Reader) (*NilMsg, io.Reader, error)   { return nil, r, nil }

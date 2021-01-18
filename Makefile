@@ -1,7 +1,20 @@
-SRC := $(shell find . -type f -name '*.go' -not -name 'bound.go') go.mod
+#SRC := $(shell find . -type f -name '*.go' -not -name 'bound.go') go.mod
 ASSETS :=  $(shell find public -type f -not -name '*.gz')
 ASSETS += public/app.wasm
 ASSETS += public/index.html public/app.js public/wasm_exec.js public/wasm_init.js public/style.css
+
+TPL := '{{ $$root := .Dir }}{{ range .GoFiles }}{{ printf "%s/%s\n" $$root . }}{{ end }}'
+CLIENT_DEPS = $(shell go list -f '{{ join .Deps "\n" }}' ./cmd/client)
+CLIENT_FILES = $(shell go list -f $(TPL) ./cmd/client $(CLIENT_DEPS))
+
+SERVER_DEPS = $(shell go list -f '{{ join .Deps "\n" }}' ./cmd/server)
+SERVER_FILES = $(shell go list -f $(TPL) ./cmd/server $(SERVER_DEPS))
+
+WASM_DEPS = $(shell GOOS=js GOARCH=wasm go list -f '{{ join .Deps "\n" }}' ./cmd/wasm)
+WASM_FILES = $(shell GOOS=js GOARCH=wasm go list -f $(TPL) ./cmd/wasm $(WASM_DEPS))
+
+BINDATA_DEPS = $(shell go list -f '{{ join .Deps "\n" }}' ./cmd/bindata)
+BINDATA_FILES = $(shell go list -f $(TPL) ./cmd/bindata $(BINDATA_DEPS))
 
 ASSETS_GZ := $(foreach f, $(ASSETS), $(f).gz)
 CLIENTS := dist/homechat-linux-amd64 dist/homechat-darwin-amd64 dist/homechat-linux-arm64 dist/homechat-windows-amd64.exe
@@ -25,19 +38,20 @@ client: $(NATIVE)
 clients: $(CLIENTS)
 
 .PHONY: install
-install: $(NATIVE)
-	cp -f $< "$$GOBIN/homechat"
+install: $(NATIVE) dist/homechat-server
+	cp -f dist/homechat-server "$$GOBIN/homechat-server"
+	cp -f "$(NATIVE)" "$$GOBIN/homechat"
 
-dist/homechat-server: $(SRC) bound/bound.go | dist
+dist/homechat-server: $(SERVER_FILES) bound/bound.go | dist
 	go build -o "$@" ./cmd/server
 
-public/app.wasm: $(SRC)
+public/app.wasm: $(WASM_FILES)
 	GOARCH=wasm GOOS=js go build -o $@ -trimpath -ldflags "-s -w" ./cmd/wasm
 
 public/%.gz: public/%
 	cat "$<" | gzip > "$@"
 
-dist/homechat-%: $(SRC) | dist
+dist/homechat-%: $(CLIENT_FILES) | dist
 	GOOS=$$(echo $* | cut -d- -f1) \
 		 GOARCH=$$(echo $* | cut -d- -f2 | cut -d. -f1) \
 		 go build -o "$@" -trimpath -ldflags "-s -w" ./cmd/client
@@ -48,8 +62,11 @@ public/clients/homechat-%: dist/homechat-% | public/clients
 public/clients/homechat-%.gz: public/clients/homechat-% | public/clients
 	cat "$<" | gzip > "$@"
 
-bound/bound.go: $(ASSETS) $(ASSETS_GZ) $(PCLIENTS) $(PCLIENTS_GZ)
-	go run ./cmd/bindata
+dist/bindata: $(BINDATA_FILES)
+	go build -o "$@" ./cmd/bindata
+
+bound/bound.go: dist/bindata $(ASSETS) $(ASSETS_GZ) $(PCLIENTS) $(PCLIENTS_GZ)
+	./dist/bindata
 
 dist:
 	@- mkdir "$@" 2>/dev/null
@@ -69,12 +86,12 @@ testclient/%: testclient.def/%
 	cp "$<" "$@"
 
 .PHONY: serve
-serve: $(SRC) bound/bound.go testclient/server.json
+serve: $(SERVER_FILES) bound/bound.go testclient/server.json
 	go run ./cmd/server -c ./testclient/server.json
 
 .PHONY: serve-live
-serve-live: $(SRC) bound/bound.go testclient/server.json
-	go run ./cmd/server -c ./testclient/server.json -http ./public
+serve-live: $(SERVER_FILES) bound/bound.go testclient/server.json
+	go run ./cmd/server -c ./testclient/server.json serve -http ./public
 
 .PHONY: local
 local: $(NATIVE) $(TESTCLIENT)

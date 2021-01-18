@@ -4,15 +4,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/users/data"
 )
-
-// var (
-// // reMention    = regexp.MustCompile(` @([^\s]+)`)
-// // multiSpaceRE = regexp.MustCompile(`\s+`)
-// )
 
 type UsersChannel struct {
 	usersChannels []string
@@ -27,6 +21,7 @@ type UsersChannel struct {
 	err    error
 
 	channel.Limit
+	channel.NoRunClose
 }
 
 func New(channels []string, col channel.UserCollection) *UsersChannel {
@@ -39,7 +34,7 @@ func (c *UsersChannel) Register(chnl string, s channel.Sender) error {
 	return nil
 }
 
-func (c *UsersChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
+func (c *UsersChannel) HandleBIN(cl channel.Client, r channel.BinaryReader) error {
 	m, err := data.BinaryMessage(r)
 	if err != nil {
 		return err

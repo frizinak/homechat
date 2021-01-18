@@ -1,5 +1,4 @@
 {
     "Directory": "/tmp/homechat",
-    "HTTPAddr": "127.0.0.1:1200",
-    "YMDir": "/tmp/homechat/ym"
+    "HTTPAddr": "127.0.0.1:1200"
 }

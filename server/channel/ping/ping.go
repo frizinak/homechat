@@ -3,7 +3,6 @@ package ping
 import (
 	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/ping/data"
 )
@@ -14,6 +13,7 @@ type PingChannel struct {
 
 	channel.NoSave
 	channel.Limit
+	channel.NoRunClose
 }
 
 func New() *PingChannel {
@@ -26,12 +26,25 @@ func (c *PingChannel) Register(chnl string, s channel.Sender) error {
 	return nil
 }
 
-func (c *PingChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
+func (c *PingChannel) HandleBIN(cl channel.Client, r channel.BinaryReader) error {
 	_, err := data.BinaryMessage(r)
-	return err
+	if err != nil {
+		return err
+	}
+	return c.handle(cl)
 }
 
 func (c *PingChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader, error) {
 	_, nr, err := data.JSONMessage(r)
-	return nr, err
+	if err != nil {
+		return nr, err
+	}
+	return nr, c.handle(cl)
+}
+
+func (c *PingChannel) handle(cl channel.Client) error {
+	return c.sender.Broadcast(
+		channel.ClientFilter{Channel: c.channel, Client: cl},
+		data.Message{},
+	)
 }

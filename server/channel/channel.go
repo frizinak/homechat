@@ -1,41 +1,24 @@
 package channel
 
 import (
-	"errors"
 	"io"
 	"net/url"
-
-	"github.com/frizinak/binary"
 )
 
 type Channel interface {
 	Register(name string, s Sender) error
+
 	NeedsSave() bool
 	Save(string) error
 	Load(file string) error
 
+	Run() error
+	Close() error
+
 	LimitReader() int64
 
-	HandleBIN(Client, *binary.Reader) error
+	HandleBIN(Client, BinaryReader) error
 	HandleJSON(Client, io.Reader) (io.Reader, error)
-}
-
-type Limit struct {
-	max int64
-}
-
-func (l Limit) LimitReader() int64 { return l.max }
-func Limiter(n int64) Limit        { return Limit{n} }
-
-type SendOnlyChannel struct{}
-
-func (s SendOnlyChannel) LimitReader() int64 { return 0 }
-func (s SendOnlyChannel) HandleBIN(cl Client, r *binary.Reader) error {
-	return errors.New("this channel can not receive messages")
-}
-
-func (s SendOnlyChannel) HandleJSON(cl Client, r io.Reader) (io.Reader, error) {
-	return r, errors.New("this channel can not receive messages")
 }
 
 type Sender interface {

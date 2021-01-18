@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ type TermUI struct {
 	status      string
 	flash       string
 	flashExpiry time.Time
+
+	latency *time.Duration
 
 	sem   sync.Mutex
 	log   []msg
@@ -62,6 +65,11 @@ func (ui *TermUI) Start() {
 
 func (ui *TermUI) Users(msg string) {
 	ui.users = strings.Split(msg, "\n")
+	ui.Flush()
+}
+
+func (ui *TermUI) Latency(n time.Duration) {
+	ui.latency = &n
 	ui.Flush()
 }
 
@@ -295,11 +303,20 @@ func (ui *TermUI) Flush() {
 	}
 	logs = logs[offset:till]
 
+	lat := "?ms"
+	if ui.latency != nil {
+		latency := int(*ui.latency / 1e6)
+		lat = strconv.Itoa(latency) + "ms"
+		if latency > 1000 {
+			lat = ">1s"
+		}
+	}
+
 	status := ui.status
 	if time.Now().Before(ui.flashExpiry) {
 		status = fmt.Sprintf("%s - %s", status, ui.flash)
 	}
-	status = pad(status, " ", w)
+	status = pad(status, " ", w-len(lat))
 	user := pad(strings.Join(ui.users, " "), " ", w)
 
 	indent := make([]byte, ui.indent)
@@ -312,6 +329,7 @@ func (ui *TermUI) Flush() {
 	s = append(s, clrStatus...)
 	s = append(s, indent...)
 	s = append(s, status...)
+	s = append(s, lat...)
 	s = append(s, clrReset...)
 	s = append(s, '\r')
 	s = append(s, '\n')

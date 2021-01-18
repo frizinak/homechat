@@ -1,6 +1,6 @@
 # homechat
 
-A (unencrypted for now) chat server only to be used on a trusted lan.
+A chat server.
 
 contains a few bots and a youtube music server [frizinak/libym](https://github.com/frizinak/libym)
 
@@ -14,13 +14,10 @@ random list of features:
 non features:
 
 - notifications: only cli since it's a pain in browsers
-- trust the server: yes, always
-- encryption: none
 
 roadmap:
 
-- host it outside of our lan over tls
-- encrypt messages
+- tls: disables internal crypto
 - add bots
 
 ## local server

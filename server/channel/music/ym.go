@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/music/data"
 	"github.com/frizinak/homechat/server/channel/status"
+	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/di"
 	"github.com/frizinak/libym/ui"
 )
@@ -27,7 +27,8 @@ const (
 type YMChannel struct {
 	sem sync.Mutex
 
-	ym ui.UI
+	ym  ui.UI
+	col *collection.Collection
 
 	state struct {
 		mode  mode
@@ -48,6 +49,7 @@ type YMChannel struct {
 
 	channel.NoSave
 	channel.Limit
+	channel.NoRunClose
 }
 
 func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChannel {
@@ -62,9 +64,10 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 
 	di := di.New(c)
 	ym.ym = di.BaseUI()
+	ym.col = di.Collection()
 	ym.stateCh = NewState(log, di.Player())
 	ym.songCh = NewSong(log, di.Queue())
-	ym.playlistCh = NewPlaylist(log, di.Collection())
+	ym.playlistCh = NewPlaylist(log, ym.col)
 
 	return ym
 }
@@ -72,6 +75,8 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 func (c *YMChannel) StateChannel() *StateChannel       { return c.stateCh }
 func (c *YMChannel) SongChannel() *SongChannel         { return c.songCh }
 func (c *YMChannel) PlaylistChannel() *PlaylistChannel { return c.playlistCh }
+
+func (c *YMChannel) SaveCollection() error { return c.col.Save() }
 
 func (c *YMChannel) Register(chnl string, s channel.Sender) error {
 	c.channel = chnl
@@ -101,7 +106,7 @@ func (c *YMChannel) PlaylistSendInterval(iv time.Duration) {
 	}
 }
 
-func (c *YMChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
+func (c *YMChannel) HandleBIN(cl channel.Client, r channel.BinaryReader) error {
 	m, err := data.BinaryMessage(r)
 	if err != nil {
 		return err

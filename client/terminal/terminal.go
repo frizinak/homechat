@@ -20,6 +20,7 @@ type Updates interface {
 	BroadcastMulti(msgs []ui.Msg, scroll bool)
 	MusicState(ui.State)
 	Users(string)
+	Latency(time.Duration)
 	Clear()
 }
 
@@ -49,6 +50,10 @@ func (h *Handler) HandleName(name string) {
 
 func (h *Handler) HandleHistory() {
 	h.log.Clear()
+}
+
+func (h *Handler) HandleLatency(l time.Duration) {
+	h.log.Latency(l)
 }
 
 func (h *Handler) HandleChatMessage(m chatdata.ServerMessage) error {
@@ -130,7 +135,7 @@ func (h *Handler) Run(notify chan ui.Msg) {
 				}
 			}
 
-			if len(m.Message) != 0 && m.Message[0] == '!' {
+			if msg.Shout {
 				m.Highlight = ui.HLActive
 			}
 

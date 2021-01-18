@@ -41,3 +41,5 @@ func New(c Config) (*Client, error) {
 func (c *Client) Connect() (client.Conn, error) {
 	return websocket.DialConfig(c.c)
 }
+
+func (c *Client) Framed() bool { return true }

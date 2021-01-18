@@ -4,18 +4,17 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 )
 
 type Message struct {
-	*channel.NilMsg
+	channel.NilMsg
 }
 
-func (m Message) FromBinary(r *binary.Reader) (channel.Msg, error)     { return BinaryMessage(r) }
-func (m Message) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) { return JSONMessage(r) }
+func (m Message) FromBinary(r channel.BinaryReader) (channel.Msg, error) { return BinaryMessage(r) }
+func (m Message) FromJSON(r io.Reader) (channel.Msg, io.Reader, error)   { return JSONMessage(r) }
 
-func BinaryMessage(r *binary.Reader) (Message, error) {
+func BinaryMessage(r channel.BinaryReader) (Message, error) {
 	n, err := channel.BinaryNilMessage(r)
 	c := Message{n}
 	return c, err
@@ -37,7 +36,7 @@ type ServerMessage struct {
 	Users   []User `json:"users"`
 }
 
-func (m ServerMessage) Binary(w *binary.Writer) error {
+func (m ServerMessage) Binary(w channel.BinaryWriter) error {
 	w.WriteString(m.Channel, 8)
 	w.WriteUint16(uint16(len(m.Users)))
 	for _, u := range m.Users {
@@ -51,7 +50,7 @@ func (m ServerMessage) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(m)
 }
 
-func (m ServerMessage) FromBinary(r *binary.Reader) (channel.Msg, error) {
+func (m ServerMessage) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
 	return BinaryServerMessage(r)
 }
 
@@ -75,7 +74,7 @@ func (m ServerMessage) Equal(msg channel.Msg) bool {
 	return true
 }
 
-func BinaryServerMessage(r *binary.Reader) (msg ServerMessage, err error) {
+func BinaryServerMessage(r channel.BinaryReader) (msg ServerMessage, err error) {
 	msg.Channel = r.ReadString(8)
 	msg.Users = make([]User, r.ReadUint16())
 	for i := range msg.Users {

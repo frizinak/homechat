@@ -1,12 +1,10 @@
 package upload
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
 
-	"github.com/frizinak/binary"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/chat"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
@@ -22,6 +20,7 @@ type UploadChannel struct {
 
 	channel.NoSave
 	channel.Limit
+	channel.NoRunClose
 }
 
 func New(max int64, broadcastChannel *chat.ChatChannel, uploader channel.Uploader) *UploadChannel {
@@ -38,13 +37,13 @@ func (c *UploadChannel) Register(chnl string, s channel.Sender) error {
 	return nil
 }
 
-func (c *UploadChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
+func (c *UploadChannel) HandleBIN(cl channel.Client, r channel.BinaryReader) error {
 	m, err := data.BinaryMessage(r)
 	if err != nil {
 		return err
 	}
 
-	u, err := c.uploader.Upload(m.Filename, m.Reader())
+	u, err := c.uploader.Upload(m.Filename, m.Upload())
 	if err != nil {
 		return err
 	}
@@ -54,16 +53,7 @@ func (c *UploadChannel) HandleBIN(cl channel.Client, r *binary.Reader) error {
 		msg = fmt.Sprintf("%s %s", m.Message, msg)
 	}
 
-	buf := bytes.NewBuffer(nil)
-	cm := chatdata.Message{
-		Data: msg,
-	}
-	w := binary.NewWriter(buf)
-	if err := cm.Binary(w); err != nil {
-		return err
-	}
-	r = binary.NewReader(buf)
-	return c.broadcast.HandleBIN(cl, r)
+	return c.broadcast.Handle(cl, chatdata.Message{Data: msg})
 }
 
 func (c *UploadChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader, error) {

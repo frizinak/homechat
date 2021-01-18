@@ -9,7 +9,8 @@ type StatusChannel struct {
 	channel string
 
 	channel.NoSave
-	channel.SendOnlyChannel
+	channel.SendOnly
+	channel.NoRunClose
 }
 
 func New() *StatusChannel {
