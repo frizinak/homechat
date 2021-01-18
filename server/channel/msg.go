@@ -164,6 +164,25 @@ func JSONChannelMsg(r io.Reader) (ChannelMsg, io.Reader, error) {
 	return msg, nr, err
 }
 
+type EOF struct {
+	NilMsg
+}
+
+func (m EOF) FromBinary(r BinaryReader) (Msg, error)       { return BinaryMessage(r) }
+func (m EOF) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONMessage(r) }
+
+func BinaryMessage(r BinaryReader) (EOF, error) {
+	n, err := BinaryNilMessage(r)
+	c := EOF{n}
+	return c, err
+}
+
+func JSONMessage(r io.Reader) (EOF, io.Reader, error) {
+	n, nr, err := JSONNilMessage(r)
+	c := EOF{n}
+	return c, nr, err
+}
+
 func JSON(r io.Reader, data interface{}) (io.Reader, error) {
 	d := json.NewDecoder(r)
 	err := d.Decode(data)

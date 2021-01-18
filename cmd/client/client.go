@@ -82,25 +82,47 @@ func main() {
 	// exit(err)
 
 	if f.All.Mode == ModeUpload {
+		if f.Upload.File == "" && interactive {
+			exit(errors.New("no file specified"))
+		}
+
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
 		cl := client.New(backend, handler, log, f.ClientConf)
-		var r io.ReadCloser = os.Stdin
-		if f.Upload.File != "" {
-			var err error
-			r, err = os.Open(f.Upload.File)
+		defer cl.Close()
+
+		if f.Upload.File == "" {
+			// broken atm as os.Stdin is not seekable: todo: copy to temp file
+			err := cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, os.Stdin)
+			exit(err)
+			return
+		}
+
+		r, err := os.Open(f.Upload.File)
+		if err != nil {
 			exit(err)
 		}
-		err := cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, r)
-		r.Close()
-		exit(err)
-		os.Exit(0)
+		defer r.Close()
+
+		var size int64
+		if stat, err := r.Stat(); err == nil {
+			size = stat.Size()
+		}
+
+		if size != 0 {
+			exit(cl.UploadSize(vars.UploadChannel, f.Upload.File, f.Upload.Msg, size, r))
+			return
+		}
+
+		exit(cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, r))
+		return
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
 		log := ui.Plain(ioutil.Discard)
 		handler := terminal.New(log)
 		cl := client.New(backend, handler, log, f.ClientConf)
+		defer cl.Close()
 		if f.All.OneOff == "" {
 			r := io.LimitReader(os.Stdin, 1024*1024)
 			if f.All.Linemode {
@@ -110,7 +132,7 @@ func main() {
 					exit(cl.Chat(s.Text()))
 				}
 				exit(s.Err())
-				os.Exit(0)
+				return
 			}
 
 			d, err := ioutil.ReadAll(r)
@@ -120,10 +142,10 @@ func main() {
 
 		if f.All.Mode == ModeMusic {
 			exit(cl.Music(f.All.OneOff))
-			os.Exit(0)
+			return
 		}
 		exit(cl.Chat(f.All.OneOff))
-		os.Exit(0)
+		return
 	}
 
 	indent := 1
@@ -143,6 +165,7 @@ func main() {
 	)
 	handler := terminal.New(tui)
 	cl := client.New(backend, handler, tui, f.ClientConf)
+	closing := false
 	send := cl.Chat
 	if f.All.Mode == ModeMusic {
 		send = cl.Music
@@ -183,6 +206,11 @@ func main() {
 				return false
 			},
 			Quit: func() bool {
+				if closing {
+					return false
+				}
+				closing = true
+				cl.Close()
 				resetTTY()
 				os.Exit(0)
 				return false

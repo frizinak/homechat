@@ -27,6 +27,7 @@ import (
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/client"
+	"github.com/frizinak/homechat/vars"
 	"golang.org/x/net/websocket"
 )
 
@@ -589,9 +590,7 @@ func (s *Server) newClient(
 
 func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, frameWriter bool) error {
 	read := func(r io.Reader, typ channel.Msg) (channel.Msg, io.Reader, error) {
-		fmt.Printf("%T\n", typ)
 		m, err := typ.FromBinary(s.c.RWFactory.BinaryReader(r))
-		fmt.Printf("%T %v\n", m, m)
 		return m, r, err
 	}
 	do := func(r io.Reader, cl *client.Client, h channel.Channel) (io.Reader, error) {
@@ -721,7 +720,6 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 	defer s.unsetClient(c)
 
 	var chnl channel.ChannelMsg
-	fmt.Println("-------------NEW-----------")
 	for {
 		if s.closing {
 			return nil
@@ -731,19 +729,19 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 			return err
 		}
 
-		fmt.Println("--READ CHANNEL--")
 		limited.N = 255
 		msg, reader, err = read(reader, channel.ChannelMsg{})
-		fmt.Println("--/READ CHANNEL--")
 		if err == io.EOF {
-			fmt.Println("clean exit")
 			return nil
 		}
 		if err != nil {
-			panic(err)
 			return fmt.Errorf("channel specify: %w", err)
 		}
 		chnl = msg.(channel.ChannelMsg)
+
+		if chnl.Data == vars.EOFChannel {
+			return nil
+		}
 
 		h, ok := s.channels[chnl.Data]
 		if !ok {
@@ -754,9 +752,8 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 		if proto != channel.ProtoBinary && limited.N > jsonMax {
 			limited.N = jsonMax
 		}
-		fmt.Println("--DO CHANNEL--")
+
 		reader, err = do(reader, c, h)
-		fmt.Println("--/DO CHANNEL--")
 		if err != nil {
 			panic(err)
 			return fmt.Errorf("channel %s: %w", chnl.Data, err)

@@ -16,5 +16,7 @@ const (
 	MusicPlaylistChannel = "-"  // r
 	MusicErrorChannel    = "mr" // r
 
+	EOFChannel = "eof"
+
 	UserChannel = "u" // r
 )

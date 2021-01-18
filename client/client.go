@@ -147,6 +147,10 @@ func (c *Client) Send(chnl string, msg channel.Msg) error {
 		return err
 	}
 
+	return c.send(w, chnl, msg)
+}
+
+func (c *Client) send(w channel.WriteFlusher, chnl string, msg channel.Msg) error {
 	c.sem.Lock()
 	if err := c.writeMulti(w, channel.ChannelMsg{Data: chnl}, msg); err != nil {
 		c.sem.Unlock()
@@ -168,11 +172,26 @@ func (c *Client) Connect() error {
 }
 
 func (c *Client) Close() {
+	var w channel.WriteFlusher
+	c.sem.Lock()
+	if c.conn != nil {
+		w = c.conn.w
+	}
+	c.sem.Unlock()
+
+	if w != nil {
+		c.send(w, vars.EOFChannel, channel.EOF{})
+	}
+
 	c.disconnect()
 }
 
-func (c *Client) Upload(chnl, filename, msg string, r io.Reader) error {
+func (c *Client) Upload(chnl, filename, msg string, r io.ReadSeeker) error {
 	return c.Send(chnl, uploaddata.NewMessage(filename, msg, r))
+}
+
+func (c *Client) UploadSize(chnl, filename, msg string, size int64, r io.Reader) error {
+	return c.Send(chnl, uploaddata.NewSizedMessage(filename, msg, size, r))
 }
 
 func (c *Client) disconnect() {
