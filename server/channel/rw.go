@@ -159,9 +159,6 @@ type BufferedWriteFlusher struct {
 }
 
 func NewBuffered(w io.Writer) WriteFlusher {
-	// todo
-	//b := binary.NewWriter(w)
-	//b.Err
 	return &BufferedWriteFlusher{w, bytes.NewBuffer(nil)}
 }
 
