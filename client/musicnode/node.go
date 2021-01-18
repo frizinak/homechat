@@ -1,24 +1,15 @@
-package main
+package musicnode
 
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/frizinak/homechat/client"
-	"github.com/frizinak/homechat/client/tcp"
-	"github.com/frizinak/homechat/server/channel"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
 	usersdata "github.com/frizinak/homechat/server/channel/users/data"
-	"github.com/frizinak/homechat/ui"
-	"github.com/frizinak/homechat/vars"
 	"github.com/frizinak/libym/collection"
-	"github.com/frizinak/libym/di"
 	"github.com/frizinak/libym/player"
 	"github.com/frizinak/libym/youtube"
 )
@@ -29,6 +20,10 @@ type Handler struct {
 	p   *player.Player
 
 	lastS collection.Song
+}
+
+func New(col *collection.Collection, q *collection.Queue, p *player.Player) *Handler {
+	return &Handler{col: col, q: q, p: p}
 }
 
 func (h *Handler) song(state client.MusicState) (collection.Song, bool, error) {
@@ -88,8 +83,9 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	return nil
 }
 
-func (h *Handler) HandleName(name string) {}
-func (h *Handler) HandleHistory()         {}
+func (h *Handler) HandleName(name string)        {}
+func (h *Handler) HandleHistory()                {}
+func (h *Handler) HandleLatency(d time.Duration) {}
 
 func (h *Handler) HandleChatMessage(chatdata.ServerMessage) error {
 	return nil
@@ -101,43 +97,4 @@ func (h *Handler) HandleMusicMessage(musicdata.ServerMessage) error {
 
 func (h *Handler) HandleUsersMessage(usersdata.ServerMessage, client.Users) error {
 	return nil
-}
-
-func main() {
-	log := log.New(os.Stdout, "", 0)
-	// todo
-	server := "127.0.0.1:1200"
-	tcpConf := tcp.Config{Domain: strings.TrimSpace(server)}
-	clientConf := client.Config{}
-	clientConf.Name = strings.TrimSpace("music-node")
-	clientConf.Framed = false
-	clientConf.Proto = channel.ProtoBinary
-	clientConf.ServerURL = "http://" + tcpConf.Domain
-	clientConf.History = 0
-	clientConf.Channels = []string{
-		vars.MusicChannel,
-		vars.MusicStateChannel,
-		vars.MusicSongChannel,
-		vars.MusicPlaylistChannel,
-	}
-
-	// todo
-	storePath := "./tmp-music-node"
-	musicConfig := di.Config{
-		Log:          log,
-		StorePath:    storePath,
-		MPVLogger:    ioutil.Discard,
-		AutoSave:     true,
-		SimpleOutput: ioutil.Discard,
-	}
-	di := di.New(musicConfig)
-
-	handler := &Handler{col: di.Collection(), q: di.Queue(), p: di.Player()}
-	tcp, err := tcp.New(tcpConf)
-	if err != nil {
-		panic(err)
-	}
-
-	client := client.New(tcp, handler, ui.Plain(os.Stdout), clientConf)
-	panic(client.Run())
 }

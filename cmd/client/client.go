@@ -14,9 +14,11 @@ import (
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/backend/tcp"
+	"github.com/frizinak/homechat/client/musicnode"
 	"github.com/frizinak/homechat/client/terminal"
 	"github.com/frizinak/homechat/ui"
 	"github.com/frizinak/homechat/vars"
+	"github.com/frizinak/libym/di"
 
 	"github.com/containerd/console"
 )
@@ -27,6 +29,13 @@ func exit(err error) {
 	}
 	fmt.Fprintln(os.Stderr, err)
 	os.Exit(1)
+}
+
+func musicNode(f *Flags, backend client.Backend) error {
+	di := di.New(f.MusicNodeConfig)
+	handler := musicnode.New(di.Collection(), di.Queue(), di.Player())
+	cl := client.New(backend, handler, ui.Plain(os.Stdout), f.ClientConf)
+	return cl.Run()
 }
 
 func fingerprint(f *Flags, remoteAddress string) error {
@@ -67,19 +76,21 @@ func main() {
 	f.Flags()
 	exit(f.Parse())
 
+	backend := tcp.New(f.TCPConf)
 	remoteAddress := f.TCPConf.TCPAddr
 	// remoteAddress := f.WSConf.Domain
+	// backend, err := ws.New(f.WSConf)
+	// exit(err)
 
 	var err error
 	switch f.All.Mode {
 	case ModeFingerprint:
 		exit(fingerprint(f, remoteAddress))
 		os.Exit(0)
+	case ModeMusicNode:
+		exit(musicNode(f, backend))
+		os.Exit(0)
 	}
-
-	backend := tcp.New(f.TCPConf)
-	// backend, err := ws.New(f.WSConf)
-	// exit(err)
 
 	if f.All.Mode == ModeUpload {
 		if f.Upload.File == "" {

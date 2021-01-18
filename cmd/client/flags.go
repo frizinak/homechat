@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +18,7 @@ import (
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
+	"github.com/frizinak/libym/di"
 	"github.com/google/shlex"
 )
 
@@ -26,6 +29,7 @@ const (
 	ModeMusic
 	ModeUpload
 	ModeFingerprint
+	ModeMusicNode
 )
 
 type Flags struct {
@@ -50,6 +54,8 @@ type Flags struct {
 		Msg  string
 		File string
 	}
+	MusicNode struct {
+	}
 
 	flags struct {
 		chat        *flag.FlagSet
@@ -57,12 +63,14 @@ type Flags struct {
 		upload      *flag.FlagSet
 		config      *flag.FlagSet
 		fingerprint *flag.FlagSet
+		musicnode   *flag.FlagSet
 	}
 
-	AppConf    *Config
-	ClientConf client.Config
-	TCPConf    tcp.Config
-	WSConf     ws.Config
+	AppConf         *Config
+	ClientConf      client.Config
+	TCPConf         tcp.Config
+	WSConf          ws.Config
+	MusicNodeConfig di.Config
 
 	Keymap Keymap
 }
@@ -100,6 +108,9 @@ func (f *Flags) Flags() {
 
 	f.flags.fingerprint = flag.NewFlagSet("fingerprint", flag.ExitOnError)
 	f.flags.fingerprint.SetOutput(f.out)
+
+	f.flags.musicnode = flag.NewFlagSet("musicnode", flag.ExitOnError)
+	f.flags.musicnode.SetOutput(f.out)
 
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
@@ -148,6 +159,10 @@ func (f *Flags) Flags() {
 	f.flags.fingerprint.Usage = func() {
 		fmt.Fprintln(f.out, "Show your and the server's trusted publickey fingerprint")
 		f.flags.fingerprint.PrintDefaults()
+	}
+	f.flags.musicnode.Usage = func() {
+		f.flags.upload.PrintDefaults()
+		fmt.Fprintln(f.out, "Run a music node")
 	}
 }
 
@@ -228,6 +243,14 @@ func (f *Flags) Parse() error {
 		vars.ChatChannel,
 	}
 
+	f.MusicNodeConfig = di.Config{
+		Log:          log.New(os.Stdout, "", 0),
+		StorePath:    "./tmp-music-node",
+		MPVLogger:    ioutil.Discard,
+		AutoSave:     true,
+		SimpleOutput: ioutil.Discard,
+	}
+
 	switch f.All.Mode {
 	case ModeDefault:
 	case ModeMusic:
@@ -248,6 +271,16 @@ func (f *Flags) Parse() error {
 	case ModeUpload:
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{}
+	case ModeMusicNode:
+		f.ClientConf.Name += "-music-node"
+		f.ClientConf.History = 0
+		f.ClientConf.Channels = []string{
+			vars.MusicChannel,
+			vars.MusicStateChannel,
+			vars.MusicSongChannel,
+			vars.MusicPlaylistChannel,
+		}
+
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
@@ -376,6 +409,11 @@ func (f *Flags) parseCommand() error {
 	case "fingerprint":
 		f.All.Mode = ModeFingerprint
 		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
+			return err
+		}
+	case "musicnode":
+		f.All.Mode = ModeMusicNode
+		if err := f.flags.musicnode.Parse(args[1:]); err != nil {
 			return err
 		}
 	case "version":
