@@ -38,8 +38,9 @@ client: $(NATIVE)
 clients: $(CLIENTS)
 
 .PHONY: install
-install: $(NATIVE)
-	cp -f $< "$$GOBIN/homechat"
+install: $(NATIVE) dist/homechat-server
+	cp -f dist/homechat-server "$$GOBIN/homechat-server"
+	cp -f "$(NATIVE)" "$$GOBIN/homechat"
 
 dist/homechat-server: $(SERVER_FILES) bound/bound.go | dist
 	go build -o "$@" ./cmd/server
