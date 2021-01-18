@@ -82,20 +82,8 @@ func main() {
 	// exit(err)
 
 	if f.All.Mode == ModeUpload {
-		if f.Upload.File == "" && interactive {
-			exit(errors.New("no file specified"))
-		}
-
-		log := ui.Plain(ioutil.Discard)
-		handler := terminal.New(log)
-		cl := client.New(backend, handler, log, f.ClientConf)
-		defer cl.Close()
-
 		if f.Upload.File == "" {
-			// broken atm as os.Stdin is not seekable: todo: copy to temp file
-			err := cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, os.Stdin)
-			exit(err)
-			return
+			exit(errors.New("no file specified. (reading stdin disabled for now)"))
 		}
 
 		r, err := os.Open(f.Upload.File)
@@ -104,17 +92,14 @@ func main() {
 		}
 		defer r.Close()
 
-		var size int64
-		if stat, err := r.Stat(); err == nil {
-			size = stat.Size()
-		}
+		stat, err := r.Stat()
+		exit(err)
+		log := ui.Plain(ioutil.Discard)
+		handler := terminal.New(log)
+		cl := client.New(backend, handler, log, f.ClientConf)
+		defer cl.Close()
 
-		if size != 0 {
-			exit(cl.UploadSize(vars.UploadChannel, f.Upload.File, f.Upload.Msg, size, r))
-			return
-		}
-
-		exit(cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, r))
+		exit(cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, stat.Size(), r))
 		return
 	}
 

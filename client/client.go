@@ -186,12 +186,8 @@ func (c *Client) Close() {
 	c.disconnect()
 }
 
-func (c *Client) Upload(chnl, filename, msg string, r io.ReadSeeker) error {
-	return c.Send(chnl, uploaddata.NewMessage(filename, msg, r))
-}
-
-func (c *Client) UploadSize(chnl, filename, msg string, size int64, r io.Reader) error {
-	return c.Send(chnl, uploaddata.NewSizedMessage(filename, msg, size, r))
+func (c *Client) Upload(chnl, filename, msg string, size int64, r io.Reader) error {
+	return c.Send(chnl, uploaddata.NewMessage(filename, msg, size, r))
 }
 
 func (c *Client) disconnect() {
