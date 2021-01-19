@@ -45,6 +45,7 @@ type YMChannel struct {
 	stateCh    *StateChannel
 	songCh     *SongChannel
 	playlistCh *PlaylistChannel
+	musicNode  *MusicNodeChannel
 	statusCh   *status.StatusChannel
 
 	channel.NoSave
@@ -68,6 +69,7 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 	ym.stateCh = NewState(log, di.Player())
 	ym.songCh = NewSong(log, di.Queue())
 	ym.playlistCh = NewPlaylist(log, ym.col)
+	ym.musicNode = NewMusicNode(log, ym.col)
 
 	return ym
 }
@@ -75,6 +77,7 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 func (c *YMChannel) StateChannel() *StateChannel       { return c.stateCh }
 func (c *YMChannel) SongChannel() *SongChannel         { return c.songCh }
 func (c *YMChannel) PlaylistChannel() *PlaylistChannel { return c.playlistCh }
+func (c *YMChannel) NodeChannel() *MusicNodeChannel    { return c.musicNode }
 
 func (c *YMChannel) SaveCollection() error { return c.col.Save() }
 

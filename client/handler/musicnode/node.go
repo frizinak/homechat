@@ -3,6 +3,8 @@ package musicnode
 import (
 	"fmt"
 	"io"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/frizinak/homechat/client"
@@ -15,6 +17,11 @@ import (
 )
 
 type Handler struct {
+	sem         sync.Mutex
+	downloading bool
+
+	cl *client.Client
+
 	col *collection.Collection
 	q   *collection.Queue
 	p   *player.Player
@@ -22,8 +29,8 @@ type Handler struct {
 	lastS collection.Song
 }
 
-func New(col *collection.Collection, q *collection.Queue, p *player.Player) *Handler {
-	return &Handler{col: col, q: q, p: p}
+func New(cl *client.Client, col *collection.Collection, q *collection.Queue, p *player.Player) *Handler {
+	return &Handler{cl: cl, col: col, q: q, p: p}
 }
 
 func (h *Handler) song(state client.MusicState) (collection.Song, bool, error) {
@@ -50,6 +57,18 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	s, inQueue, err := h.song(state)
 	if err != nil {
 		return err
+	}
+
+	if !s.Local() {
+		h.p.Pause()
+		h.sem.Lock()
+		defer h.sem.Unlock()
+		if !h.downloading {
+			h.downloading = true
+			return h.cl.MusicDownload(state.NS, state.ID)
+		}
+
+		return nil
 	}
 
 	if !inQueue {
@@ -83,18 +102,40 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	return nil
 }
 
-func (h *Handler) HandleName(name string)        {}
-func (h *Handler) HandleHistory()                {}
-func (h *Handler) HandleLatency(d time.Duration) {}
+func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
+	defer func() {
+		h.sem.Lock()
+		h.downloading = false
+		h.sem.Unlock()
+	}()
 
-func (h *Handler) HandleChatMessage(chatdata.ServerMessage) error {
-	return nil
+	if !m.Available {
+		return nil
+	}
+
+	path := h.col.SongPath(m.Song())
+	tmp := collection.TempFile(path)
+	err := func() error {
+		f, err := os.Create(tmp)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(f, m.Upload())
+		return err
+	}()
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("Downloaded", path)
+	return os.Rename(tmp, path)
 }
 
-func (h *Handler) HandleMusicMessage(musicdata.ServerMessage) error {
-	return nil
-}
-
-func (h *Handler) HandleUsersMessage(usersdata.ServerMessage, client.Users) error {
-	return nil
-}
+func (h *Handler) HandleName(name string)                                         {}
+func (h *Handler) HandleHistory()                                                 {}
+func (h *Handler) HandleLatency(d time.Duration)                                  {}
+func (h *Handler) HandleChatMessage(chatdata.ServerMessage) error                 { return nil }
+func (h *Handler) HandleMusicMessage(musicdata.ServerMessage) error               { return nil }
+func (h *Handler) HandleUsersMessage(usersdata.ServerMessage, client.Users) error { return nil }

@@ -109,6 +109,10 @@ func (j *jsHandler) HandleMusicStateMessage(m client.MusicState) error {
 	return j.on(OnMusicStateMessage, m)
 }
 
+func (h *jsHandler) HandleMusicNodeMessage(musicdata.SongDataMessage) error {
+	return nil
+}
+
 func (j *jsHandler) HandleUsersMessage(m usersdata.ServerMessage, users client.Users) error {
 	list := make([]interface{}, len(users))
 	for i, u := range users {

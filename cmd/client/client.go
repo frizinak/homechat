@@ -36,8 +36,10 @@ func musicNode(f *Flags, backend client.Backend) error {
 	if di.PlayerAvailable() != nil {
 		return fmt.Errorf("player not available")
 	}
-	handler := musicnode.New(di.Collection(), di.Queue(), di.Player())
-	cl := client.New(backend, handler, ui.Plain(os.Stdout), f.ClientConf)
+
+	cl := &client.Client{}
+	handler := musicnode.New(cl, di.Collection(), di.Queue(), di.Player())
+	*cl = *client.New(backend, handler, ui.Plain(os.Stdout), f.ClientConf)
 	return cl.Run()
 }
 
@@ -131,7 +133,12 @@ func main() {
 		defaultDir = filepath.Join(userConfDir, "homechat")
 	}
 
-	f := NewFlags(os.Stdout, defaultDir, interactive)
+	var defaultCacheDir string
+	if userCacheDir, err := os.UserCacheDir(); err == nil {
+		defaultCacheDir = filepath.Join(userCacheDir, "homechat")
+	}
+
+	f := NewFlags(os.Stdout, defaultDir, defaultCacheDir, interactive)
 	f.Flags()
 	exit(f.Parse())
 

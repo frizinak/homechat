@@ -38,6 +38,7 @@ type Flags struct {
 	All struct {
 		Key        *crypto.Key
 		ConfigDir  string
+		CacheDir   string
 		ConfigFile string
 		KeymapFile string
 		Linemode   bool
@@ -55,6 +56,7 @@ type Flags struct {
 		File string
 	}
 	MusicNode struct {
+		CacheDir string
 	}
 
 	flags struct {
@@ -75,12 +77,13 @@ type Flags struct {
 	Keymap Keymap
 }
 
-func NewFlags(output io.Writer, defaultConfigDir string, interactive bool) *Flags {
+func NewFlags(output io.Writer, defaultConfigDir, defaultCacheDir string, interactive bool) *Flags {
 	f := &Flags{
 		out:     output,
 		AppConf: &Config{},
 	}
 	f.All.ConfigDir = defaultConfigDir
+	f.All.CacheDir = defaultCacheDir
 	f.All.Interactive = interactive
 
 	return f
@@ -244,9 +247,10 @@ func (f *Flags) Parse() error {
 		vars.ChatChannel,
 	}
 
+	f.MusicNode.CacheDir = filepath.Join(f.All.CacheDir, "musicnode")
 	f.MusicNodeConfig = di.Config{
 		Log:          log.New(os.Stdout, "", 0),
-		StorePath:    "./tmp-music-node",
+		StorePath:    f.MusicNode.CacheDir,
 		MPVLogger:    ioutil.Discard,
 		AutoSave:     true,
 		SimpleOutput: ioutil.Discard,
@@ -280,6 +284,7 @@ func (f *Flags) Parse() error {
 			vars.MusicStateChannel,
 			vars.MusicSongChannel,
 			vars.MusicPlaylistChannel,
+			vars.MusicNodeChannel,
 		}
 
 	}
