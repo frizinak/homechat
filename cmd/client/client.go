@@ -14,8 +14,8 @@ import (
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/backend/tcp"
-	"github.com/frizinak/homechat/client/musicnode"
-	"github.com/frizinak/homechat/client/terminal"
+	"github.com/frizinak/homechat/client/handler/musicnode"
+	"github.com/frizinak/homechat/client/handler/terminal"
 	"github.com/frizinak/homechat/ui"
 	"github.com/frizinak/homechat/vars"
 	"github.com/frizinak/libym/di"
@@ -33,9 +33,68 @@ func exit(err error) {
 
 func musicNode(f *Flags, backend client.Backend) error {
 	di := di.New(f.MusicNodeConfig)
+	if di.PlayerAvailable() != nil {
+		return fmt.Errorf("player not available")
+	}
 	handler := musicnode.New(di.Collection(), di.Queue(), di.Player())
 	cl := client.New(backend, handler, ui.Plain(os.Stdout), f.ClientConf)
 	return cl.Run()
+}
+
+func upload(f *Flags, backend client.Backend) error {
+	if f.Upload.File == "" {
+		return errors.New("no file specified. (reading stdin disabled for now)")
+	}
+
+	r, err := os.Open(f.Upload.File)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	stat, err := r.Stat()
+	if err != nil {
+		return err
+	}
+
+	log := ui.Plain(ioutil.Discard)
+	handler := terminal.New(log)
+	cl := client.New(backend, handler, log, f.ClientConf)
+	defer cl.Close()
+
+	return cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, stat.Size(), r)
+}
+
+func oneoff(f *Flags, backend client.Backend) error {
+	log := ui.Plain(ioutil.Discard)
+	handler := terminal.New(log)
+	cl := client.New(backend, handler, log, f.ClientConf)
+	defer cl.Close()
+	if f.All.OneOff == "" {
+		r := io.LimitReader(os.Stdin, 1024*1024)
+		if f.All.Linemode {
+			s := bufio.NewScanner(r)
+			s.Split(bufio.ScanLines)
+			for s.Scan() {
+				if err := cl.Chat(s.Text()); err != nil {
+					return err
+				}
+			}
+			return s.Err()
+		}
+
+		d, err := ioutil.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		f.All.OneOff = string(d)
+	}
+
+	if f.All.Mode == ModeMusic {
+		return cl.Music(f.All.OneOff)
+	}
+
+	return cl.Chat(f.All.OneOff)
 }
 
 func fingerprint(f *Flags, remoteAddress string) error {
@@ -90,66 +149,20 @@ func main() {
 	case ModeMusicNode:
 		exit(musicNode(f, backend))
 		os.Exit(0)
-	}
-
-	if f.All.Mode == ModeUpload {
-		if f.Upload.File == "" {
-			exit(errors.New("no file specified. (reading stdin disabled for now)"))
-		}
-
-		r, err := os.Open(f.Upload.File)
-		if err != nil {
-			exit(err)
-		}
-		defer r.Close()
-
-		stat, err := r.Stat()
-		exit(err)
-		log := ui.Plain(ioutil.Discard)
-		handler := terminal.New(log)
-		cl := client.New(backend, handler, log, f.ClientConf)
-		defer cl.Close()
-
-		exit(cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, stat.Size(), r))
-		return
+	case ModeUpload:
+		exit(upload(f, backend))
+		os.Exit(0)
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
-		log := ui.Plain(ioutil.Discard)
-		handler := terminal.New(log)
-		cl := client.New(backend, handler, log, f.ClientConf)
-		defer cl.Close()
-		if f.All.OneOff == "" {
-			r := io.LimitReader(os.Stdin, 1024*1024)
-			if f.All.Linemode {
-				s := bufio.NewScanner(r)
-				s.Split(bufio.ScanLines)
-				for s.Scan() {
-					exit(cl.Chat(s.Text()))
-				}
-				exit(s.Err())
-				return
-			}
-
-			d, err := ioutil.ReadAll(r)
-			exit(err)
-			f.All.OneOff = string(d)
-		}
-
-		if f.All.Mode == ModeMusic {
-			exit(cl.Music(f.All.OneOff))
-			return
-		}
-		exit(cl.Chat(f.All.OneOff))
-		return
+		exit(oneoff(f, backend))
+		os.Exit(0)
 	}
 
 	indent := 1
-	if f.All.Mode == ModeMusic {
-		indent = 2
-	}
 	max := f.AppConf.MaxMessages
 	if f.All.Mode == ModeMusic {
+		indent = 2
 		max = 1e9
 	}
 
@@ -159,6 +172,7 @@ func main() {
 		indent,
 		f.All.Mode == ModeMusic,
 	)
+
 	handler := terminal.New(tui)
 	cl := client.New(backend, handler, tui, f.ClientConf)
 	closing := false
@@ -216,15 +230,14 @@ func main() {
 				return false
 			},
 			Submit: func() bool {
-				s := tui.ResetInput()
-				cmd := strings.TrimSpace(string(s))
+				s := string(tui.ResetInput())
 				inputs = append(inputs, "")
 				const max = 30
 				if len(inputs) > max {
 					inputs = inputs[len(inputs)-max:]
 				}
 				current = len(inputs) - 1
-				send(cmd)
+				send(s)
 				return false
 			},
 			InputDown: func() bool {

@@ -124,6 +124,7 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "  - upload:         Upload a file from stdin or commandline to chat")
 		fmt.Fprintln(f.out, "  - config:         Config options explained")
 		fmt.Fprintln(f.out, "  - fingerprint:    Show your and the server's trusted publickey fingerprint")
+		fmt.Fprintln(f.out, "  - musicnode:      Run a music node")
 		fmt.Fprintln(f.out, "  - version:        Print version and exit")
 	}
 	f.flags.chat.Usage = func() {
