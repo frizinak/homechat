@@ -30,7 +30,7 @@ var onExits []func()
 func musicNode(f *Flags, backend client.Backend) error {
 	di := di.New(f.MusicNodeConfig)
 	if _, err := di.BackendAvailable(); err != nil {
-		return fmt.Errorf("player not available")
+		return fmt.Errorf("player not available: %w", err)
 	}
 
 	player := di.Player()

@@ -277,6 +277,7 @@ func (f *Flags) Parse() error {
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{}
 	case ModeMusicNode:
+		os.MkdirAll(f.MusicNode.CacheDir, 0o755)
 		f.ClientConf.Name += "-music-node"
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{
