@@ -10,11 +10,12 @@ random list of features:
 - wasm: because that's obviously a feature
 - [wttr.in](http://wttr.in/)
 - hue lights control using [amimof/huego](https://github.com/amimof/huego) and simple wrapper [frizinak/hue](https://github.com/frizinak/hue)
-- homechat musicnode [-low-latency] run a replicated music player in sync with the server
+- homechat musicnode [-low-latency]: run a replicated music player in sync with the server
 
 non features:
 
 - notifications: only cli since it's a pain in browsers
+- homechat musicnode [-low-latency]: run a replicated music player not really in sync with the server
 
 roadmap:
 
