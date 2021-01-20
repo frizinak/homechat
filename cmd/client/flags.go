@@ -249,11 +249,11 @@ func (f *Flags) Parse() error {
 
 	f.MusicNode.CacheDir = filepath.Join(f.All.CacheDir, "musicnode")
 	f.MusicNodeConfig = di.Config{
-		Log:          log.New(os.Stdout, "", 0),
-		StorePath:    f.MusicNode.CacheDir,
-		MPVLogger:    ioutil.Discard,
-		AutoSave:     true,
-		SimpleOutput: ioutil.Discard,
+		Log:           log.New(os.Stdout, "", 0),
+		StorePath:     f.MusicNode.CacheDir,
+		BackendLogger: ioutil.Discard,
+		AutoSave:      true,
+		SimpleOutput:  ioutil.Discard,
 	}
 
 	switch f.All.Mode {
@@ -280,6 +280,7 @@ func (f *Flags) Parse() error {
 		f.ClientConf.Name += "-music-node"
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{
+			vars.PingChannel,
 			vars.MusicChannel,
 			vars.MusicStateChannel,
 			vars.MusicSongChannel,

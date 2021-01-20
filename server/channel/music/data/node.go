@@ -117,6 +117,7 @@ func (m SongDataMessage) Binary(w channel.BinaryWriter) error {
 func (m SongDataMessage) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
 	return BinarySongDataMessage(r)
 }
+
 func (m SongDataMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 	return JSONSongDataMessage(r)
 }

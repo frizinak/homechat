@@ -8,8 +8,10 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/frizinak/homechat/client"
@@ -23,22 +25,21 @@ import (
 	"github.com/containerd/console"
 )
 
-func exit(err error) {
-	if err == nil {
-		return
-	}
-	fmt.Fprintln(os.Stderr, err)
-	os.Exit(1)
-}
+var onExits []func()
 
 func musicNode(f *Flags, backend client.Backend) error {
 	di := di.New(f.MusicNodeConfig)
-	if di.PlayerAvailable() != nil {
+	if _, err := di.BackendAvailable(); err != nil {
 		return fmt.Errorf("player not available")
 	}
 
+	player := di.Player()
+	onExits = append(onExits, func() {
+		player.Close()
+	})
+
 	cl := &client.Client{}
-	handler := musicnode.New(cl, di.Collection(), di.Queue(), di.Player())
+	handler := musicnode.New(cl, di.Collection(), di.Queue(), player)
 	*cl = *client.New(backend, handler, ui.Plain(os.Stdout), f.ClientConf)
 	return cl.Run()
 }
@@ -122,6 +123,45 @@ func fingerprint(f *Flags, remoteAddress string) error {
 }
 
 func main() {
+	sig := make(chan os.Signal, 1)
+	fatals := make(chan error)
+	exit := func(err error) {
+		if err != nil {
+			fatals <- err
+			<-make(chan struct{})
+		}
+	}
+	exitClean := func() {
+		for _, onExit := range onExits {
+			onExit()
+		}
+		os.Exit(0)
+	}
+	defer exitClean()
+
+	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	go func() {
+		var err error
+		select {
+		case err = <-fatals:
+		case <-sig:
+		}
+
+		msg := "quitting..."
+		ex := 0
+		if err != nil {
+			ex = 1
+			msg = err.Error()
+		}
+
+		fmt.Fprintln(os.Stderr, msg)
+		for _, onExit := range onExits {
+			onExit()
+		}
+		fmt.Println("bye")
+		os.Exit(ex)
+	}()
+
 	interactive := true
 	stat, _ := os.Stdin.Stat()
 	if stat != nil && (stat.Mode()&os.ModeCharDevice) == 0 {
@@ -152,18 +192,18 @@ func main() {
 	switch f.All.Mode {
 	case ModeFingerprint:
 		exit(fingerprint(f, remoteAddress))
-		os.Exit(0)
+		exitClean()
 	case ModeMusicNode:
 		exit(musicNode(f, backend))
-		os.Exit(0)
+		exitClean()
 	case ModeUpload:
 		exit(upload(f, backend))
-		os.Exit(0)
+		exitClean()
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
 		exit(oneoff(f, backend))
-		os.Exit(0)
+		exitClean()
 	}
 
 	indent := 1
@@ -227,9 +267,7 @@ func main() {
 					return false
 				}
 				closing = true
-				cl.Close()
-				resetTTY()
-				os.Exit(0)
+				exitClean()
 				return false
 			},
 			ClearInput: func() bool {
@@ -347,8 +385,7 @@ func main() {
 		var answer string
 		fmt.Scanln(&answer)
 		if answer != "y" && answer != "Y" {
-			fmt.Fprintln(os.Stderr, "Not connecting, smart choice!")
-			os.Exit(1)
+			exit(errors.New("Not connecting, smart choice!"))
 		}
 
 		f.AppConf.ServerFingerprint = newFP
@@ -364,6 +401,11 @@ func main() {
 	tui.Start()
 
 	exit(currentConsole.SetRaw())
+	onExits = append(onExits, func() {
+		cl.Close()
+		resetTTY()
+	})
+
 	input := bufio.NewReader(os.Stdin)
 	go func() {
 		for {
@@ -430,7 +472,5 @@ func main() {
 	}()
 
 	go handler.Run(msgs)
-	err = cl.Run()
-	resetTTY()
-	exit(err)
+	exit(cl.Run())
 }

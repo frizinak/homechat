@@ -25,9 +25,7 @@ const (
 	ClientKeySize    = 256
 )
 
-var (
-	ErrKeyExchange = errors.New("invalid key exchange")
-)
+var ErrKeyExchange = errors.New("invalid key exchange")
 
 type (
 	StringEncoder interface{ EncodeToString([]byte) string }
@@ -392,8 +390,10 @@ func JSONPubKeyMessage(r io.Reader) (PubKeyMessage, io.Reader, error) {
 	return p, nr, err
 }
 
-type DeriveSecret func(label CryptoLabel) []byte
-type DeriveSecret32 func(label CryptoLabel) [32]byte
+type (
+	DeriveSecret   func(label CryptoLabel) []byte
+	DeriveSecret32 func(label CryptoLabel) [32]byte
+)
 
 type CryptoLabel string
 

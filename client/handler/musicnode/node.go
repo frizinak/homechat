@@ -26,7 +26,8 @@ type Handler struct {
 	q   *collection.Queue
 	p   *player.Player
 
-	lastS collection.Song
+	lastS   collection.Song
+	latency time.Duration
 }
 
 func New(cl *client.Client, col *collection.Collection, q *collection.Queue, p *player.Player) *Handler {
@@ -77,10 +78,12 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	}
 
 	pos := h.p.Position()
-	if state.Position/time.Second != pos/time.Second {
+	state.Position += h.latency
+	diff := time.Millisecond * 50
+	if state.Position/diff != pos/diff {
 		if pos > state.Position {
 			h.p.Seek(state.Position, io.SeekStart)
-		} else if state.Position-pos > time.Second {
+		} else if state.Position-pos > diff {
 			h.p.Seek(state.Position, io.SeekStart)
 			fmt.Println("out of sync, seeking", state.Position.Seconds(), h.p.Position().Seconds())
 		}
@@ -124,7 +127,6 @@ func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
 		_, err = io.Copy(f, m.Upload())
 		return err
 	}()
-
 	if err != nil {
 		return err
 	}
@@ -135,7 +137,7 @@ func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
 
 func (h *Handler) HandleName(name string)                                         {}
 func (h *Handler) HandleHistory()                                                 {}
-func (h *Handler) HandleLatency(d time.Duration)                                  {}
+func (h *Handler) HandleLatency(d time.Duration)                                  { h.latency = d }
 func (h *Handler) HandleChatMessage(chatdata.ServerMessage) error                 { return nil }
 func (h *Handler) HandleMusicMessage(musicdata.ServerMessage) error               { return nil }
 func (h *Handler) HandleUsersMessage(usersdata.ServerMessage, client.Users) error { return nil }

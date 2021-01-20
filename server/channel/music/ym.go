@@ -13,6 +13,7 @@ import (
 	"github.com/frizinak/homechat/server/channel/status"
 	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/di"
+	"github.com/frizinak/libym/player"
 	"github.com/frizinak/libym/ui"
 )
 
@@ -29,6 +30,7 @@ type YMChannel struct {
 
 	ym  ui.UI
 	col *collection.Collection
+	p   *player.Player
 
 	state struct {
 		mode  mode
@@ -50,7 +52,7 @@ type YMChannel struct {
 
 	channel.NoSave
 	channel.Limit
-	channel.NoRunClose
+	channel.NoRun
 }
 
 func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChannel {
@@ -66,12 +68,17 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 	di := di.New(c)
 	ym.ym = di.BaseUI()
 	ym.col = di.Collection()
-	ym.stateCh = NewState(log, di.Player())
+	ym.p = di.Player()
+	ym.stateCh = NewState(log, ym.p)
 	ym.songCh = NewSong(log, di.Queue())
 	ym.playlistCh = NewPlaylist(log, ym.col)
 	ym.musicNode = NewMusicNode(log, ym.col)
 
 	return ym
+}
+
+func (c *YMChannel) Close() error {
+	return c.p.Close()
 }
 
 func (c *YMChannel) StateChannel() *StateChannel       { return c.stateCh }
