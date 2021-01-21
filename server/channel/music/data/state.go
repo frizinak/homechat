@@ -13,14 +13,6 @@ type ServerStateMessage struct {
 	Position time.Duration `json:"position"`
 	Duration time.Duration `json:"duration"`
 	Volume   float64       `json:"volume"`
-	Delay    time.Duration `json:"delay"`
-
-	start time.Time
-}
-
-func (m ServerStateMessage) Prepare() ServerStateMessage {
-	m.start = time.Now()
-	return m
 }
 
 func (m ServerStateMessage) Equal(msg channel.Msg) bool {
@@ -44,13 +36,11 @@ func (m ServerStateMessage) Binary(w channel.BinaryWriter) error {
 	w.WriteUint8(pause)
 	w.WriteUint32(uint32(m.Position / time.Millisecond))
 	w.WriteUint32(uint32(m.Duration / time.Millisecond))
-	w.WriteUint32(uint32(time.Since(m.start) / time.Millisecond))
 	w.WriteUint8(vol)
 	return w.Err()
 }
 
 func (m ServerStateMessage) JSON(w io.Writer) error {
-	m.Delay = time.Since(m.start)
 	return json.NewEncoder(w).Encode(m)
 }
 
@@ -67,7 +57,6 @@ func BinaryServerStateMessage(r channel.BinaryReader) (ServerStateMessage, error
 	c.Paused = r.ReadUint8() == 1
 	c.Position = time.Millisecond * time.Duration(r.ReadUint32())
 	c.Duration = time.Millisecond * time.Duration(r.ReadUint32())
-	c.Delay = time.Millisecond * time.Duration(r.ReadUint32())
 	c.Volume = float64(r.ReadUint8()) / 255
 	return c, r.Err()
 }
