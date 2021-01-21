@@ -15,6 +15,8 @@ import (
 	"github.com/frizinak/libym/youtube"
 )
 
+const bigdiff = time.Second * 2
+
 type Handler struct {
 	client.Handler
 	log client.Logger
@@ -30,10 +32,11 @@ type Handler struct {
 
 	maxDelay time.Duration
 
-	lastS     collection.Song
-	lastPos   time.Duration
-	lastState client.MusicState
-	volume    float64
+	seek           chan struct{}
+	lastS          collection.Song
+	lastStateStamp time.Time
+	lastState      client.MusicState
+	volume         float64
 
 	paused    bool
 	latencies latencies
@@ -89,10 +92,12 @@ func New(
 		q:         q,
 		p:         p,
 		maxDelay:  maxDelay,
+		seek:      make(chan struct{}, 1024),
 		latencies: latencies{max: 10, l: make([]time.Duration, 0, 30)},
 	}
 
 	h.volume = p.Volume()
+	go h.ContinuousSeek()
 	return h
 }
 
@@ -105,8 +110,42 @@ func (h *Handler) IncreaseVolume(v float64) {
 	}
 }
 
+func (h *Handler) ContinuousSeek() {
+	var lastPos time.Duration
+	var lastStamp time.Time
+	for range h.seek {
+		state, now := h.lastState, h.lastStateStamp
+		if now == lastStamp || state.Position == lastPos {
+			continue
+		}
+		lastStamp = now
+		lastPos = state.Position
+
+		pos := h.p.Position()
+		actual := state.Position + h.latencies.latency/2 //+ time.Since(now)
+		d := actual - pos
+
+		if d > bigdiff || d < -bigdiff {
+			h.p.Seek(actual, io.SeekStart)
+			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
+		} else if d > h.maxDelay || d < -h.maxDelay {
+			go func() {
+				add := -time.Second
+				if d > h.maxDelay {
+					add = time.Second
+				}
+				actualS := (actual / time.Second) * time.Second
+				for time.Second-(actual-actualS+time.Since(now)) > time.Millisecond {
+					time.Sleep(time.Millisecond)
+				}
+				h.p.Seek(actualS+add, io.SeekStart)
+				h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
+			}()
+		}
+	}
+}
+
 func (h *Handler) song(state client.MusicState) (collection.Song, bool, error) {
-	h.lastState = state
 	var s collection.Song
 	c := h.q.Current()
 	if c != nil && c.Song != nil {
@@ -126,10 +165,8 @@ func (h *Handler) song(state client.MusicState) (collection.Song, bool, error) {
 	}
 }
 
-const bigdiff = time.Second * 2
-
 func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
-	now := time.Now()
+	h.lastState, h.lastStateStamp = state, time.Now()
 	state.Volume = h.volume
 	if err := h.Handler.HandleMusicStateMessage(state); err != nil {
 		return err
@@ -159,36 +196,15 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 		return nil
 	}
 
-	if !inQueue {
-		h.q.Reset()
-		h.col.QueueSong(s)
-	}
+	h.seek <- struct{}{}
 
 	if state.Paused && h.paused {
 		return nil
 	}
 
-	if state.Position != h.lastPos {
-		h.lastPos = state.Position
-		pos := h.p.Position()
-		actual := state.Position + state.Delay + h.latencies.latency/2 //+ time.Since(now)
-		d := actual - pos
-
-		if d > bigdiff || d < -bigdiff {
-			h.p.Seek(actual, io.SeekStart)
-			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
-		} else if d > h.maxDelay || d < -h.maxDelay {
-			add := -time.Second
-			if d > h.maxDelay {
-				add = time.Second
-			}
-			actualS := (actual / time.Second) * time.Second
-			for time.Second-(actual-actualS+time.Since(now)) > time.Millisecond {
-				time.Sleep(time.Millisecond)
-			}
-			h.p.Seek(actualS+add, io.SeekStart)
-			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
-		}
+	if !inQueue {
+		h.q.Reset()
+		h.col.QueueSong(s)
 	}
 
 	if state.Paused && !h.paused {
