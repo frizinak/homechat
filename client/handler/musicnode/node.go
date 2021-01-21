@@ -145,15 +145,6 @@ func (h *Handler) ContinuousSeek() {
 		lastSong = name
 		n = iv
 
-		h.log.Flash(
-			fmt.Sprintf(
-				"d:%s b:%s",
-				d.Round(time.Millisecond),
-				(d+since).Round(time.Millisecond),
-			),
-			time.Second,
-		)
-
 		if d+since > h.maxDelay || d+since < -h.maxDelay {
 			iv = defaultIV
 			add := time.Second
