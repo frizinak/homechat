@@ -171,7 +171,7 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	if state.Position != h.lastPos {
 		h.lastPos = state.Position
 		pos := h.p.Position()
-		actual := state.Position + h.latencies.latency/2 //+ time.Since(now)
+		actual := state.Position + state.Delay + h.latencies.latency/2 //+ time.Since(now)
 		d := actual - pos
 
 		if d > bigdiff || d < -bigdiff {

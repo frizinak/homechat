@@ -37,7 +37,7 @@ func (c *StateChannel) Send() {
 	state.Duration = c.p.Duration()
 	state.Position = c.p.Position()
 	state.Volume = c.p.Volume()
-	if err := c.sender.Broadcast(f, state); err != nil {
+	if err := c.sender.Broadcast(f, state.Prepare()); err != nil {
 		c.log.Println(err)
 	}
 }
