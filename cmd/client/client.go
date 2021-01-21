@@ -230,7 +230,7 @@ func main() {
 
 		delay := time.Second * 2
 		if f.MusicNode.LowLatency {
-			delay = time.Millisecond * 25
+			delay = time.Millisecond * 50
 		}
 
 		musicNodeHandler = musicnode.New(

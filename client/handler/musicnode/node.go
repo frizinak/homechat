@@ -15,7 +15,7 @@ import (
 	"github.com/frizinak/libym/youtube"
 )
 
-const bigdiff = time.Second * 2
+const bigdiff = time.Second * 3
 
 type Handler struct {
 	client.Handler
@@ -112,35 +112,65 @@ func (h *Handler) IncreaseVolume(v float64) {
 
 func (h *Handler) ContinuousSeek() {
 	var lastPos time.Duration
+	var lastSong string
 	var lastStamp time.Time
+
+	const defaultIV = 2
+	iv := defaultIV
+	n := iv
+
 	for range h.seek {
 		state, now := h.lastState, h.lastStateStamp
 		if now == lastStamp || state.Position == lastPos {
 			continue
 		}
+
 		lastStamp = now
 		lastPos = state.Position
 
 		pos := h.p.Position()
 		actual := state.Position + h.latencies.latency/2 //+ time.Since(now)
 		d := actual - pos
-
-		if d > bigdiff || d < -bigdiff {
-			h.p.Seek(actual, io.SeekStart)
+		since := time.Since(now)
+		if d+since > bigdiff || d+since < -bigdiff {
+			h.p.Seek(actual+since, io.SeekStart)
 			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
-		} else if d > h.maxDelay || d < -h.maxDelay {
-			go func() {
-				add := -time.Second
-				if d > h.maxDelay {
-					add = time.Second
-				}
-				actualS := (actual / time.Second) * time.Second
-				for time.Second-(actual-actualS+time.Since(now)) > time.Millisecond {
-					time.Sleep(time.Millisecond)
-				}
-				h.p.Seek(actualS+add, io.SeekStart)
-				h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
-			}()
+		}
+
+		n--
+		name := h.lastState.NS + h.lastState.ID
+		if n != 0 && lastSong == name {
+			continue
+		}
+		lastSong = name
+		n = iv
+
+		h.log.Flash(
+			fmt.Sprintf(
+				"d:%s b:%s",
+				d.Round(time.Millisecond),
+				(d+since).Round(time.Millisecond),
+			),
+			time.Second,
+		)
+
+		if d+since > h.maxDelay || d+since < -h.maxDelay {
+			iv = defaultIV
+			add := time.Second
+			if d > h.maxDelay {
+				add = time.Second
+			}
+			actualS := (actual / time.Second) * time.Second
+			for time.Second-(actual-actualS+time.Since(now)) > time.Millisecond {
+				time.Sleep(time.Millisecond)
+			}
+			h.p.Seek(actualS+add, io.SeekStart)
+			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
+			continue
+		}
+
+		if iv < 60 {
+			iv += defaultIV
 		}
 	}
 }
