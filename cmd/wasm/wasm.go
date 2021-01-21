@@ -131,9 +131,9 @@ func (j *jsHandler) HandleUsersMessage(m usersdata.ServerMessage, users client.U
 	return nil
 }
 
-func (j *jsHandler) Log(s string)   { j.handlers[OnLog].Invoke(s) }
-func (j *jsHandler) Err(s string)   { j.handlers[OnError].Invoke(s) }
-func (j *jsHandler) Flash(s string) { j.handlers[OnFlash].Invoke(s) }
+func (j *jsHandler) Log(s string)                      { j.handlers[OnLog].Invoke(s) }
+func (j *jsHandler) Err(s string)                      { j.handlers[OnError].Invoke(s) }
+func (j *jsHandler) Flash(s string, dur time.Duration) { j.handlers[OnFlash].Invoke(s) }
 
 func main() {
 	window := js.Global()

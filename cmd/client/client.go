@@ -27,28 +27,6 @@ import (
 
 var onExits []func()
 
-func musicNode(f *Flags, backend client.Backend) error {
-	di := di.New(f.MusicNodeConfig)
-	if _, err := di.BackendAvailable(); err != nil {
-		return fmt.Errorf("player not available: %w", err)
-	}
-
-	player := di.Player()
-	onExits = append(onExits, func() {
-		player.Close()
-	})
-
-	cl := &client.Client{}
-	delay := time.Second * 2
-	if f.MusicNode.LowLatency {
-		delay = time.Millisecond * 50
-	}
-
-	handler := musicnode.New(cl, delay, di.Collection(), di.Queue(), player)
-	*cl = *client.New(backend, handler, ui.Plain(os.Stdout), f.ClientConf)
-	return cl.Run()
-}
-
 func upload(f *Flags, backend client.Backend) error {
 	if f.Upload.File == "" {
 		return errors.New("no file specified. (reading stdin disabled for now)")
@@ -130,6 +108,7 @@ func fingerprint(f *Flags, remoteAddress string) error {
 func main() {
 	sig := make(chan os.Signal, 1)
 	fatals := make(chan error)
+	exiting := false
 	exit := func(err error) {
 		if err != nil {
 			fatals <- err
@@ -137,12 +116,15 @@ func main() {
 		}
 	}
 	exitClean := func() {
+		if exiting {
+			return
+		}
+		exiting = true
 		for _, onExit := range onExits {
 			onExit()
 		}
 		os.Exit(0)
 	}
-	defer exitClean()
 
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	go func() {
@@ -151,6 +133,11 @@ func main() {
 		case err = <-fatals:
 		case <-sig:
 		}
+
+		if exiting {
+			return
+		}
+		exiting = true
 
 		msg := "quitting..."
 		ex := 0
@@ -198,22 +185,23 @@ func main() {
 	case ModeFingerprint:
 		exit(fingerprint(f, remoteAddress))
 		exitClean()
-	case ModeMusicNode:
-		exit(musicNode(f, backend))
-		exitClean()
 	case ModeUpload:
 		exit(upload(f, backend))
 		exitClean()
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
+		if f.All.Mode != ModeDefault && f.All.Mode != ModeMusic {
+			exit(errors.New("can not be run non-interactively"))
+		}
+
 		exit(oneoff(f, backend))
 		exitClean()
 	}
 
 	indent := 1
 	max := f.AppConf.MaxMessages
-	if f.All.Mode == ModeMusic {
+	if f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode {
 		indent = 2
 		max = 1e9
 	}
@@ -222,14 +210,45 @@ func main() {
 		f.All.Mode == ModeDefault,
 		max,
 		indent,
-		f.All.Mode == ModeMusic,
+		f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode,
 	)
 
 	handler := terminal.New(tui)
-	cl := client.New(backend, handler, tui, f.ClientConf)
-	closing := false
+	var rhandler client.Handler = handler
+	var musicNodeHandler *musicnode.Handler
+	cl := &client.Client{}
+	if f.All.Mode == ModeMusicNode {
+		di := di.New(f.MusicNodeConfig)
+		if _, err := di.BackendAvailable(); err != nil {
+			exit(fmt.Errorf("player not available: %w", err))
+		}
+
+		player := di.Player()
+		onExits = append(onExits, func() {
+			player.Close()
+		})
+
+		delay := time.Second * 2
+		if f.MusicNode.LowLatency {
+			delay = time.Millisecond * 50
+		}
+
+		musicNodeHandler = musicnode.New(
+			cl,
+			handler,
+			tui,
+			delay,
+			di.Collection(),
+			di.Queue(),
+			player,
+		)
+
+		rhandler = musicNodeHandler
+	}
+
+	*cl = *client.New(backend, rhandler, tui, f.ClientConf)
 	send := cl.Chat
-	if f.All.Mode == ModeMusic {
+	if f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode {
 		send = cl.Music
 	}
 
@@ -268,10 +287,7 @@ func main() {
 				return false
 			},
 			Quit: func() bool {
-				if closing {
-					return false
-				}
-				closing = true
+				tui.Flash("quiting", time.Second*60)
 				exitClean()
 				return false
 			},
@@ -325,10 +341,18 @@ func main() {
 				return false
 			},
 			MusicVolumeUp: func() bool {
+				if musicNodeHandler != nil {
+					musicNodeHandler.IncreaseVolume(0.05)
+					return false
+				}
 				send("volume +5")
 				return false
 			},
 			MusicVolumeDown: func() bool {
+				if musicNodeHandler != nil {
+					musicNodeHandler.IncreaseVolume(-0.05)
+					return false
+				}
 				send("volume -5")
 				return false
 			},
@@ -413,6 +437,10 @@ func main() {
 
 	input := bufio.NewReader(os.Stdin)
 	go func() {
+		keymode := f.All.Mode
+		if keymode == ModeMusicNode {
+			keymode = ModeMusic
+		}
 		for {
 			n, err := input.ReadByte()
 			exit(err)
@@ -422,7 +450,7 @@ func main() {
 				inputs[len(inputs)-1] = input
 			}
 
-			if keys.Do(f.All.Mode, n) {
+			if keys.Do(keymode, n) {
 				tui.Input(n)
 			}
 		}
@@ -478,4 +506,5 @@ func main() {
 
 	go handler.Run(msgs)
 	exit(cl.Run())
+	exitClean()
 }

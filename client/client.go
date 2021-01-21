@@ -75,7 +75,7 @@ type RW struct {
 type Logger interface {
 	Log(string)
 	Err(string)
-	Flash(string)
+	Flash(string, time.Duration)
 }
 
 type Client struct {
@@ -537,7 +537,7 @@ func (c *Client) Run() error {
 			if msg.OK() {
 				return r, nil
 			}
-			c.log.Flash(msg.Err)
+			c.log.Flash(msg.Err, 0)
 		case vars.MusicNodeChannel:
 			msg, r, err = c.read(r, musicdata.SongDataMessage{})
 			if err != nil {

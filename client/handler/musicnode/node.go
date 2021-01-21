@@ -9,15 +9,16 @@ import (
 	"time"
 
 	"github.com/frizinak/homechat/client"
-	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
-	usersdata "github.com/frizinak/homechat/server/channel/users/data"
 	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/player"
 	"github.com/frizinak/libym/youtube"
 )
 
 type Handler struct {
+	client.Handler
+	log client.Logger
+
 	sem         sync.Mutex
 	downloading bool
 
@@ -31,6 +32,9 @@ type Handler struct {
 
 	lastS     collection.Song
 	lastPos   time.Duration
+	lastState client.MusicState
+	volume    float64
+
 	paused    bool
 	latencies latencies
 }
@@ -39,7 +43,6 @@ type latencies struct {
 	max int
 	l   []time.Duration
 
-	other   time.Duration
 	latency time.Duration
 }
 
@@ -71,22 +74,39 @@ func (l slatencies) Median() time.Duration {
 
 func New(
 	cl *client.Client,
+	handler client.Handler,
+	log client.Logger,
 	maxDelay time.Duration,
 	col *collection.Collection,
 	q *collection.Queue,
 	p *player.Player,
 ) *Handler {
-	return &Handler{
+	h := &Handler{
+		Handler:   handler,
+		log:       log,
 		cl:        cl,
 		col:       col,
 		q:         q,
 		p:         p,
 		maxDelay:  maxDelay,
-		latencies: latencies{max: 300, l: make([]time.Duration, 0, 30)},
+		latencies: latencies{max: 10, l: make([]time.Duration, 0, 30)},
+	}
+
+	h.volume = p.Volume()
+	return h
+}
+
+func (h *Handler) IncreaseVolume(v float64) {
+	h.p.IncreaseVolume(v)
+	h.volume = h.p.Volume()
+	h.lastState.Volume = h.volume
+	if err := h.Handler.HandleMusicStateMessage(h.lastState); err != nil {
+		h.log.Err(err.Error())
 	}
 }
 
 func (h *Handler) song(state client.MusicState) (collection.Song, bool, error) {
+	h.lastState = state
 	var s collection.Song
 	c := h.q.Current()
 	if c != nil && c.Song != nil {
@@ -109,18 +129,30 @@ func (h *Handler) song(state client.MusicState) (collection.Song, bool, error) {
 const bigdiff = time.Second * 2
 
 func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
+	now := time.Now()
+	state.Volume = h.volume
+	if err := h.Handler.HandleMusicStateMessage(state); err != nil {
+		return err
+	}
+
+	if state.NS == "" && state.ID == "" && state.Title == "" {
+		return nil
+	}
+
 	s, inQueue, err := h.song(state)
 	if err != nil {
 		return err
 	}
 
 	if !s.Local() {
+		h.log.Flash(fmt.Sprintf("Song not downloaded yet: %s", s.GlobalID()), time.Second*5)
 		h.p.Pause()
 		h.paused = true
 		h.sem.Lock()
 		defer h.sem.Unlock()
 		if !h.downloading {
 			h.downloading = true
+			h.log.Flash(fmt.Sprintf("Downloading: %s", s.GlobalID()), time.Second*5)
 			return h.cl.MusicDownload(state.NS, state.ID)
 		}
 
@@ -139,19 +171,22 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	if state.Position != h.lastPos {
 		h.lastPos = state.Position
 		pos := h.p.Position()
-		actual := state.Position + h.latencies.latency/2 - h.latencies.other
+		actual := state.Position + h.latencies.latency/2 + time.Since(now)
 		d := actual - pos
 
 		if d > bigdiff {
 			h.p.Seek(actual, io.SeekStart)
+			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
 		} else if d > h.maxDelay {
 			go func() {
 				actualS := (actual / time.Second) * time.Second
 				<-time.After(actual - actualS)
 				h.p.Seek(actualS, io.SeekStart)
 			}()
+			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
 		} else if d < -bigdiff {
 			h.p.Seek(actual, io.SeekStart)
+			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
 		}
 	}
 
@@ -174,6 +209,10 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 }
 
 func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
+	if err := h.Handler.HandleMusicNodeMessage(m); err != nil {
+		return err
+	}
+
 	defer func() {
 		h.sem.Lock()
 		h.downloading = false
@@ -181,6 +220,7 @@ func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
 	}()
 
 	if !m.Available {
+		h.log.Flash("Download not available on server", time.Second*5)
 		return nil
 	}
 
@@ -199,17 +239,12 @@ func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
 		return err
 	}
 
-	fmt.Println("Downloaded", path)
+	h.log.Flash(fmt.Sprintf("Downloaded: %s", m.Song().GlobalID()), time.Second*5)
 	return os.Rename(tmp, path)
 }
 
 func (h *Handler) HandleLatency(d time.Duration) {
+	h.Handler.HandleLatency(d)
 	h.latencies.Add(d)
 	h.latencies.Median()
 }
-
-func (h *Handler) HandleName(name string)                                         {}
-func (h *Handler) HandleHistory()                                                 {}
-func (h *Handler) HandleChatMessage(chatdata.ServerMessage) error                 { return nil }
-func (h *Handler) HandleMusicMessage(musicdata.ServerMessage) error               { return nil }
-func (h *Handler) HandleUsersMessage(usersdata.ServerMessage, client.Users) error { return nil }

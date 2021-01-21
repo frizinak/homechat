@@ -73,8 +73,11 @@ func (ui *TermUI) Latency(n time.Duration) {
 	ui.Flush()
 }
 
-func (ui *TermUI) Flash(msg string) {
-	ui.flashExpiry = time.Now().Add(time.Second * 5)
+func (ui *TermUI) Flash(msg string, dur time.Duration) {
+	if dur == 0 {
+		dur = time.Second * 5
+	}
+	ui.flashExpiry = time.Now().Add(dur)
 	ui.flash = msg
 	ui.Flush()
 }

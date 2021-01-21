@@ -261,10 +261,6 @@ func (f *Flags) Parse() error {
 	switch f.All.Mode {
 	case ModeDefault:
 	case ModeMusic:
-		if !f.All.Interactive {
-			return errors.New("music can only be used with an interactive terminal")
-		}
-
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{
 			vars.PingChannel,
@@ -284,10 +280,12 @@ func (f *Flags) Parse() error {
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{
 			vars.PingChannel,
+			vars.UserChannel,
 			vars.MusicChannel,
 			vars.MusicStateChannel,
 			vars.MusicSongChannel,
 			vars.MusicPlaylistChannel,
+			vars.MusicErrorChannel,
 			vars.MusicNodeChannel,
 		}
 
