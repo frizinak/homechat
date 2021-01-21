@@ -186,12 +186,11 @@ func (ui *TermUI) Flush() {
 
 	ui.sem.Lock()
 	defer ui.sem.Unlock()
-	size, err := console.Current().Size()
-	// todo
-	if err != nil {
-		panic(err)
+
+	w, h := 50, 10
+	if size, err := console.Current().Size(); err == nil {
+		w, h = int(size.Width), int(size.Height)
 	}
-	w, h := int(size.Width), int(size.Height)
 
 	h -= 5
 	state := ui.s
