@@ -171,21 +171,22 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	if state.Position != h.lastPos {
 		h.lastPos = state.Position
 		pos := h.p.Position()
-		actual := state.Position + h.latencies.latency/2 + time.Since(now)
+		actual := state.Position + h.latencies.latency/2 //+ time.Since(now)
 		d := actual - pos
 
-		if d > bigdiff {
+		if d > bigdiff || d < -bigdiff {
 			h.p.Seek(actual, io.SeekStart)
 			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
-		} else if d > h.maxDelay {
-			go func() {
-				actualS := (actual / time.Second) * time.Second
-				<-time.After(actual - actualS)
-				h.p.Seek(actualS, io.SeekStart)
-			}()
-			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
-		} else if d < -bigdiff {
-			h.p.Seek(actual, io.SeekStart)
+		} else if d > h.maxDelay || d < -h.maxDelay {
+			add := -time.Second
+			if d > h.maxDelay {
+				add = time.Second
+			}
+			actualS := (actual / time.Second) * time.Second
+			for time.Second-(actual-actualS+time.Since(now)) > time.Millisecond {
+				time.Sleep(time.Millisecond)
+			}
+			h.p.Seek(actualS+add, io.SeekStart)
 			h.log.Flash(fmt.Sprintf("Out of sync by %s", d.Round(time.Millisecond)), time.Second)
 		}
 	}
