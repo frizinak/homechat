@@ -254,7 +254,7 @@ func (f *Flags) Parse() error {
 		Log:           log.New(os.Stdout, "", 0),
 		StorePath:     f.MusicNode.CacheDir,
 		BackendLogger: ioutil.Discard,
-		AutoSave:      true,
+		AutoSave:      false,
 		SimpleOutput:  ioutil.Discard,
 	}
 

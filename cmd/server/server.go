@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"mime"
@@ -37,12 +38,87 @@ import (
 	"github.com/frizinak/homechat/server/channel/upload"
 	"github.com/frizinak/homechat/server/channel/users"
 	"github.com/frizinak/homechat/vars"
+	"github.com/frizinak/libym/di"
 	"github.com/nightlyone/lockfile"
 )
 
 type flock struct {
 	path  string
 	mutex lockfile.Lockfile
+}
+
+func musicFiles(f *Flags) error {
+	di := di.New(
+		di.Config{
+			Log:          log.New(os.Stderr, "", 0),
+			StorePath:    f.Music.Dir,
+			AutoSave:     false,
+			SimpleOutput: ioutil.Discard,
+		},
+	)
+	col := di.Collection()
+	var total uint64
+	convert := func(b server.Bytes) server.Bytes {
+		if f.MusicFiles.KiB {
+			return b.Convert(server.KiB)
+		}
+		return b.Human()
+	}
+
+	for _, path := range col.UnreferencedDownloads() {
+		if f.MusicFiles.Stat {
+			s, err := os.Stat(path)
+			if err != nil {
+				fmt.Printf("%10s\t%s\n", "?", path)
+				continue
+			}
+			size := s.Size()
+			v := server.NewBytes(float64(size/1024), server.KiB)
+			fmt.Printf("%10s\t%s\n", convert(v), path)
+			total += uint64(size)
+			continue
+		}
+		fmt.Println(path)
+	}
+
+	if f.MusicFiles.Stat {
+		v := server.NewBytes(float64(total/1024), server.KiB)
+		fmt.Printf("Total: %s\n", convert(v).String())
+	}
+
+	return nil
+}
+
+func musicDownloads(f *Flags) error {
+	di := di.New(
+		di.Config{
+			Log:          log.New(os.Stderr, "", 0),
+			StorePath:    f.Music.Dir,
+			AutoSave:     false,
+			SimpleOutput: ioutil.Discard,
+		},
+	)
+	col := di.Collection()
+	q := di.Queue()
+
+	all := col.Songs()
+	all = append(all, q.Slice()...)
+	uniq := make(map[string]struct{}, len(all))
+	count := 0
+	for _, s := range all {
+		gid := s.GlobalID()
+		if _, ok := uniq[gid]; ok {
+			continue
+		}
+		uniq[gid] = struct{}{}
+		if !s.Local() {
+			fmt.Printf("[%s] %s\n", gid, s.Title())
+			count++
+		}
+	}
+
+	fmt.Printf("Not downloaded: %d\n", count)
+	return nil
 }
 
 func hue(f *Flags) error {
@@ -411,6 +487,10 @@ func main() {
 		err = hue(f)
 	case ModeFingerprint:
 		err = fingerprint(f)
+	case ModeMusicFiles:
+		err = musicFiles(f)
+	case ModeMusicDownloads:
+		err = musicDownloads(f)
 	default:
 		err = errors.New("no such mode")
 	}
