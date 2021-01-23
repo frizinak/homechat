@@ -20,13 +20,13 @@ func (p *PlainUI) Log(msg string)                      {}
 func (p *PlainUI) Flash(msg string, dur time.Duration) { fmt.Fprintln(p.Writer, "FLASH", msg) }
 func (p *PlainUI) Err(err string)                      { fmt.Fprintln(p.Writer, "ERR", err) }
 func (p *PlainUI) Clear()                              {}
-func (p *PlainUI) BroadcastMulti(msgs []Msg, scroll bool) {
+func (p *PlainUI) Broadcast(msgs []Msg, scroll, toActive bool) {
 	for _, m := range msgs {
-		p.Broadcast(m, scroll)
+		p.broadcast(m)
 	}
 }
 
-func (p *PlainUI) Broadcast(msg Msg, scroll bool) {
+func (p *PlainUI) broadcast(msg Msg) {
 	fmt.Fprintf(
 		p.Writer,
 		"%s %-15s: %s\n",

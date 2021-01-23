@@ -91,8 +91,9 @@ func (ui *TermUI) Clear() {
 	ui.sem.Unlock()
 }
 
-func (ui *TermUI) BroadcastMulti(msgs []Msg, scroll bool) {
+func (ui *TermUI) Broadcast(msgs []Msg, scroll, toActive bool) {
 	ui.sem.Lock()
+	active := -1
 	for _, m := range msgs {
 		texts := strings.Split(strings.ReplaceAll(m.Message, "\r", ""), "\n")
 		for _, text := range texts {
@@ -106,6 +107,9 @@ func (ui *TermUI) BroadcastMulti(msgs []Msg, scroll bool) {
 				msg.prefix = runewidth.FillRight(msg.prefix, len(stampFormat)+15+1) + "│ "
 			}
 			ui.log = append(ui.log, msg)
+			if m.Highlight == HLActive {
+				active = len(ui.log)
+			}
 		}
 	}
 
@@ -115,12 +119,12 @@ func (ui *TermUI) BroadcastMulti(msgs []Msg, scroll bool) {
 	if ui.scrollTop && scroll {
 		ui.scroll = math.MaxInt32
 	}
+	if toActive && active != -1 {
+		ui.scroll = len(ui.log) - active
+		ui.scrollPage = -1
+	}
 	ui.sem.Unlock()
 	ui.Flush()
-}
-
-func (ui *TermUI) Broadcast(msg Msg, scroll bool) {
-	ui.BroadcastMulti([]Msg{msg}, scroll)
 }
 
 func (ui *TermUI) MusicState(s State) {

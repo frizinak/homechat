@@ -213,6 +213,7 @@ func logs(f *Flags) error {
 }
 
 func serve(flock flock, f *Flags) error {
+	fmt.Println("Claiming lock")
 	for {
 		if err := flock.mutex.TryLock(); err != nil {
 			if err != lockfile.ErrNotExist {
@@ -226,6 +227,7 @@ func serve(flock flock, f *Flags) error {
 	}
 	defer flock.mutex.Unlock()
 
+	fmt.Println("Loading assets")
 	static := make(map[string][]byte)
 	err := func() error {
 		fs := []string{
@@ -353,6 +355,7 @@ func serve(flock flock, f *Flags) error {
 		),
 	)
 
+	fmt.Println("Registering channels")
 	chat := &chatpkg.ChatChannel{}
 	history, err := history.New(c.Log, f.AppConf.MaxChatMessages, appendChatFile, chat)
 	if err != nil {
@@ -386,6 +389,7 @@ func serve(flock flock, f *Flags) error {
 	go music.PlaylistSendInterval(time.Millisecond * 5000)
 	go users.SendInterval(time.Millisecond * 500)
 
+	fmt.Println("Birthing bots")
 	quoteBots := bot.NewBotCollection("quote-bot")
 	quoteBots.AddBot("programming", bot.NewBotFunc(bot.ProgrammingQuote))
 	quoteBots.AddBot("cats", bot.NewBotFunc(bot.CatQuote))
