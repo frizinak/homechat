@@ -200,7 +200,11 @@ func (c *YMChannel) flush() {
 	case modeSongs:
 		s.Songs = make([]data.Song, len(c.state.songs))
 		for i, song := range c.state.songs {
-			s.Songs[i] = data.Song{song.Title(), song.Active()}
+			title := strings.TrimSpace(song.Title())
+			if title == "" {
+				title = fmt.Sprintf("- no title - [%s %s]", song.NS(), song.ID())
+			}
+			s.Songs[i] = data.Song{title, song.Active()}
 		}
 
 	case modeText:
