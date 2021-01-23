@@ -31,6 +31,7 @@ type TermUI struct {
 	input []byte
 	users []string
 
+	scrollMsg    int
 	scrollPage   int
 	scrollSimple int
 	scroll       int
@@ -55,6 +56,7 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool) *TermUI {
 		scrollTop:   scrollTop,
 		maxMessages: maxMessages,
 		disabled:    true,
+		scrollMsg:   -1,
 	}
 }
 
@@ -120,8 +122,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll, toActive bool) {
 		ui.scroll = math.MaxInt32
 	}
 	if toActive && active != -1 {
-		ui.scroll = len(ui.log) - active
-		ui.scrollPage = -1
+		ui.scrollMsg = active
 	}
 	ui.sem.Unlock()
 	ui.Flush()
@@ -250,6 +251,7 @@ func (ui *TermUI) Flush() {
 	}
 
 	logs := make([]string, 0, len(ui.log))
+	scrollMsg := -1
 	for i := 0; i < len(ui.log); i++ {
 		meta := ui.log[i].prefix
 		log := ui.log[i].msg
@@ -260,6 +262,11 @@ func (ui *TermUI) Flush() {
 		if p, ok := hl[ui.log[i].highlight]; ok {
 			prefix = string(p)
 			suffix = string(clrReset)
+		}
+
+		if i == ui.scrollMsg {
+			scrollMsg = len(logs) + 1
+			ui.scrollMsg = -1
 		}
 
 		if ln <= w {
@@ -297,6 +304,10 @@ func (ui *TermUI) Flush() {
 			clean := suffpref(prefix, suffix, meta+log[lastCut:])
 			logs = append(logs, clean)
 		}
+	}
+
+	if scrollMsg >= 0 {
+		ui.scroll = len(logs) - scrollMsg - h/2 + 1
 	}
 
 	offset := len(logs) - nmsgs - ui.scroll
