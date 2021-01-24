@@ -16,6 +16,7 @@ import (
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/backend/tcp"
+	"github.com/frizinak/homechat/client/handler/musicclient"
 	"github.com/frizinak/homechat/client/handler/musicnode"
 	"github.com/frizinak/homechat/client/handler/terminal"
 	"github.com/frizinak/homechat/ui"
@@ -76,7 +77,7 @@ func oneoff(f *Flags, backend client.Backend) error {
 		f.All.OneOff = string(d)
 	}
 
-	if f.All.Mode == ModeMusic {
+	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicClient {
 		return cl.Music(f.All.OneOff)
 	}
 
@@ -191,7 +192,7 @@ func main() {
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
-		if f.All.Mode != ModeDefault && f.All.Mode != ModeMusic {
+		if f.All.Mode != ModeDefault && f.All.Mode != ModeMusicRemote && f.All.Mode != ModeMusicClient {
 			exit(errors.New("can not be run non-interactively"))
 		}
 
@@ -201,7 +202,7 @@ func main() {
 
 	indent := 1
 	max := f.AppConf.MaxMessages
-	if f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode {
+	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient {
 		indent = 2
 		max = 1e9
 	}
@@ -210,12 +211,13 @@ func main() {
 		f.All.Mode == ModeDefault,
 		max,
 		indent,
-		f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode,
+		f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient,
 	)
 
 	handler := terminal.New(tui)
 	var rhandler client.Handler = handler
 	var musicNodeHandler *musicnode.Handler
+	var musicClientUI *musicclient.UI
 	cl := &client.Client{}
 	if f.All.Mode == ModeMusicNode {
 		di := di.New(f.MusicNodeConfig)
@@ -244,12 +246,29 @@ func main() {
 		)
 
 		rhandler = musicNodeHandler
+	} else if f.All.Mode == ModeMusicClient {
+		di := di.New(f.MusicNodeConfig)
+		if _, err := di.BackendAvailable(); err != nil {
+			exit(fmt.Errorf("player not available: %w", err))
+		}
+
+		player := di.Player()
+		onExits = append(onExits, func() {
+			player.Close()
+		})
+
+		musicClientUI = musicclient.NewUI(handler, tui, di)
 	}
 
 	*cl = *client.New(backend, rhandler, tui, f.ClientConf)
 	send := cl.Chat
-	if f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode {
+	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode {
 		send = cl.Music
+	} else if f.All.Mode == ModeMusicClient {
+		send = func(i string) error {
+			musicClientUI.Input(i)
+			return nil
+		}
 	}
 
 	go func() {
@@ -439,7 +458,7 @@ func main() {
 	go func() {
 		keymode := f.All.Mode
 		if keymode == ModeMusicNode {
-			keymode = ModeMusic
+			keymode = ModeMusicRemote
 		}
 		for {
 			n, err := input.ReadByte()
