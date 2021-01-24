@@ -38,6 +38,8 @@ func JSONMessage(r io.Reader) (Message, io.Reader, error) {
 }
 
 type Song struct {
+	NS     string `json:"id"`
+	ID     string `json:"id"`
 	Title  string `json:"title"`
 	Active bool   `json:"a"`
 }
@@ -58,6 +60,8 @@ func (m ServerMessage) Binary(w channel.BinaryWriter) error {
 		if s.Active {
 			a = 1
 		}
+		w.WriteString(s.NS, 8)
+		w.WriteString(s.ID, 8)
 		w.WriteString(s.Title, 8)
 		w.WriteUint8(a)
 	}
@@ -101,7 +105,12 @@ func BinaryServerMessage(r channel.BinaryReader) (ServerMessage, error) {
 	n := r.ReadUint32()
 	m.Songs = make([]Song, n)
 	for i := range m.Songs {
-		m.Songs[i] = Song{r.ReadString(8), r.ReadUint8() == 1}
+		m.Songs[i] = Song{
+			r.ReadString(8),
+			r.ReadString(8),
+			r.ReadString(8),
+			r.ReadUint8() == 1,
+		}
 	}
 	return m, r.Err()
 }

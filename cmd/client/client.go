@@ -217,6 +217,7 @@ func main() {
 	handler := terminal.New(tui)
 	var rhandler client.Handler = handler
 	var musicNodeHandler *musicnode.Handler
+	//var musicClientHandler *musicclient.Handler // todo
 	var musicClientUI *musicclient.UI
 	cl := &client.Client{}
 	if f.All.Mode == ModeMusicNode {
@@ -247,7 +248,9 @@ func main() {
 
 		rhandler = musicNodeHandler
 	} else if f.All.Mode == ModeMusicClient {
-		di := di.New(f.MusicNodeConfig)
+		conf := f.MusicNodeConfig
+		conf.AutoSave = true
+		di := di.New(conf)
 		if _, err := di.BackendAvailable(); err != nil {
 			exit(fmt.Errorf("player not available: %w", err))
 		}
@@ -255,9 +258,12 @@ func main() {
 		player := di.Player()
 		onExits = append(onExits, func() {
 			player.Close()
+			di.Collection().Save()
 		})
 
-		musicClientUI = musicclient.NewUI(handler, tui, di)
+		musicClientUI = musicclient.NewUI(handler, tui, di, cl)
+		rhandler = musicClientUI.Handler()
+		//rhandler = musicClientHandler
 	}
 
 	*cl = *client.New(backend, rhandler, tui, f.ClientConf)
@@ -457,7 +463,7 @@ func main() {
 	input := bufio.NewReader(os.Stdin)
 	go func() {
 		keymode := f.All.Mode
-		if keymode == ModeMusicNode {
+		if keymode == ModeMusicNode || keymode == ModeMusicClient {
 			keymode = ModeMusicRemote
 		}
 		for {

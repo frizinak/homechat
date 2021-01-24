@@ -204,7 +204,7 @@ func (c *YMChannel) flush() {
 			if title == "" {
 				title = fmt.Sprintf("- no title - [%s %s]", song.NS(), song.ID())
 			}
-			s.Songs[i] = data.Song{title, song.Active()}
+			s.Songs[i] = data.Song{song.NS(), song.ID(), title, song.Active()}
 		}
 
 	case modeText:

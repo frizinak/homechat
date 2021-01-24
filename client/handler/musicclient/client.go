@@ -6,11 +6,12 @@ import (
 	"sync"
 
 	"github.com/frizinak/homechat/client"
-	"github.com/frizinak/homechat/server/channel/music/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
+	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/di"
 	"github.com/frizinak/libym/ui"
 	"github.com/frizinak/libym/ui/base"
+	"github.com/frizinak/libym/youtube"
 )
 
 type mode int
@@ -71,11 +72,7 @@ func (s *output) flush() {
 	case modeSongs:
 		msg.Songs = make([]musicdata.Song, len(s.songs))
 		for i, song := range s.songs {
-			title := strings.TrimSpace(song.Title())
-			if title == "" {
-				title = fmt.Sprintf("- no title - [%s %s]", song.NS(), song.ID())
-			}
-			msg.Songs[i] = data.Song{title, song.Active()}
+			msg.Songs[i] = musicdata.Song{song.NS(), song.ID(), song.Title(), song.Active()}
 		}
 
 	case modeText:
@@ -93,20 +90,109 @@ func (s *output) Errf(f string, v ...interface{}) {
 	s.logger.Err(fmt.Sprintf(f, v...))
 }
 
-type UI struct {
-	*base.UI
+type commandParser struct {
+	ui.Parser
+	cl            *client.Client
+	localCommands map[ui.CommandType]struct{}
 }
 
-func NewUI(handler client.Handler, logger client.Logger, di *di.DI) *UI {
+func newCommandParser(parser ui.Parser, client *client.Client) *commandParser {
+	return &commandParser{
+		cl:     client,
+		Parser: parser,
+		localCommands: map[ui.CommandType]struct{}{
+			ui.CmdPlay:         {},
+			ui.CmdPause:        {},
+			ui.CmdPauseToggle:  {},
+			ui.CmdNext:         {},
+			ui.CmdPrev:         {},
+			ui.CmdSetSongIndex: {},
+			ui.CmdSongDelete:   {},
+			ui.CmdSeek:         {},
+			ui.CmdQueue:        {},
+			ui.CmdQueueClear:   {},
+			ui.CmdViewQueue:    {},
+			ui.CmdVolume:       {},
+		},
+	}
+}
+
+func (c *commandParser) Parse(s string) []ui.Command {
+	commands := c.Parser.Parse(s)
+	filtered := make([]ui.Command, 0, len(commands))
+	remote := make([]string, 0)
+	for _, command := range commands {
+		if _, local := c.localCommands[command.Type()]; !local {
+			str := fmt.Sprintf("%s %s", command.Cmd(), command.Args().String())
+			remote = append(remote, str)
+			continue
+		}
+
+		filtered = append(filtered, command)
+	}
+
+	if len(remote) != 0 {
+		// todo error
+		if err := c.cl.Music(strings.Join(remote, ";")); err != nil {
+			panic(err)
+		}
+	}
+
+	return filtered
+}
+
+type UI struct {
+	*base.UI
+	handler client.Handler
+}
+
+func NewUI(handler client.Handler, logger client.Logger, di *di.DI, cl *client.Client) *UI {
+	col := di.Collection()
+	col.Run()
 	output := newOutput(handler, logger)
-	base := base.New(
+	rhandler := newHandler(handler, col)
+	parser := newCommandParser(di.CommandParser(), cl)
+	ui := base.New(
 		output,
 		output,
-		di.CommandParser(),
+		parser,
 		di.Player(),
-		di.Collection(),
+		col,
 		di.Queue(),
 	)
 
-	return &UI{UI: base}
+	rhandler.ui = ui
+	return &UI{UI: ui, handler: rhandler}
+}
+
+func (ui *UI) Handler() client.Handler { return ui.handler }
+
+type handler struct {
+	client.Handler
+	ui  *base.UI
+	col *collection.Collection
+}
+
+func newHandler(h client.Handler, col *collection.Collection) *handler {
+	return &handler{Handler: h, col: col}
+}
+
+func (h *handler) HandleMusicMessage(m musicdata.ServerMessage) error {
+	if m.Text != "" {
+		return h.Handler.HandleMusicMessage(m)
+	}
+
+	l := make([]collection.Song, 0, len(m.Songs))
+	for _, s := range m.Songs {
+		switch s.NS {
+		case collection.NSYoutube:
+			rs := h.col.FromYoutube(youtube.NewResult(s.ID, s.Title))
+			l = append(l, rs)
+		default:
+			return fmt.Errorf("song with unknown namespace: '%s'", s.NS)
+		}
+	}
+
+	h.ui.SetExternal(m.Title, l)
+	return h.Handler.HandleMusicMessage(m)
 }
