@@ -102,5 +102,5 @@ local: $(NATIVE) $(TESTCLIENT)
 
 .PHONY: local-music
 local-music: $(NATIVE) $(TESTCLIENT)
-	$(NATIVE) -c ./testclient music
+	$(NATIVE) -c ./testclient music remote
 

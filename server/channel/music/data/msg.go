@@ -38,11 +38,14 @@ func JSONMessage(r io.Reader) (Message, io.Reader, error) {
 }
 
 type Song struct {
+	NS     string `json:"id"`
+	ID     string `json:"id"`
 	Title  string `json:"title"`
 	Active bool   `json:"a"`
 }
 
 type ServerMessage struct {
+	View  byte   `json:"view"`
 	Title string `json:"title"`
 	Text  string `json:"text"`
 	Songs []Song `json:"songs"`
@@ -50,6 +53,7 @@ type ServerMessage struct {
 
 func (m ServerMessage) Binary(w channel.BinaryWriter) error {
 	var a uint8
+	w.WriteUint8(m.View)
 	w.WriteString(m.Title, 16)
 	w.WriteString(m.Text, 32)
 	w.WriteUint32(uint32(len(m.Songs)))
@@ -58,6 +62,8 @@ func (m ServerMessage) Binary(w channel.BinaryWriter) error {
 		if s.Active {
 			a = 1
 		}
+		w.WriteString(s.NS, 8)
+		w.WriteString(s.ID, 8)
 		w.WriteString(s.Title, 8)
 		w.WriteUint8(a)
 	}
@@ -96,12 +102,18 @@ func (m ServerMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 
 func BinaryServerMessage(r channel.BinaryReader) (ServerMessage, error) {
 	m := ServerMessage{}
+	m.View = r.ReadUint8()
 	m.Title = r.ReadString(16)
 	m.Text = r.ReadString(32)
 	n := r.ReadUint32()
 	m.Songs = make([]Song, n)
 	for i := range m.Songs {
-		m.Songs[i] = Song{r.ReadString(8), r.ReadUint8() == 1}
+		m.Songs[i] = Song{
+			r.ReadString(8),
+			r.ReadString(8),
+			r.ReadString(8),
+			r.ReadUint8() == 1,
+		}
 	}
 	return m, r.Err()
 }

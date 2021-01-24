@@ -26,9 +26,10 @@ type Mode byte
 
 const (
 	ModeDefault Mode = iota
-	ModeMusic
 	ModeUpload
 	ModeFingerprint
+	ModeMusicRemote
+	ModeMusicClient
 	ModeMusicNode
 )
 
@@ -59,14 +60,19 @@ type Flags struct {
 		CacheDir   string
 		LowLatency bool
 	}
+	MusicClient struct {
+		Offline bool
+	}
 
 	flags struct {
 		chat        *flag.FlagSet
 		music       *flag.FlagSet
+		musicRemote *flag.FlagSet
+		musicNode   *flag.FlagSet
+		musicClient *flag.FlagSet
 		upload      *flag.FlagSet
 		config      *flag.FlagSet
 		fingerprint *flag.FlagSet
-		musicnode   *flag.FlagSet
 	}
 
 	AppConf         *Config
@@ -100,9 +106,6 @@ func (f *Flags) Flags() {
 		"when piping treat every line as a new message, thus streaming line by line",
 	)
 
-	f.flags.music = flag.NewFlagSet("music", flag.ExitOnError)
-	f.flags.music.SetOutput(f.out)
-
 	f.flags.upload = flag.NewFlagSet("upload", flag.ExitOnError)
 	f.flags.upload.SetOutput(f.out)
 	f.flags.upload.StringVar(&f.Upload.Msg, "m", "Download: ", "prefix upload url with this message")
@@ -113,9 +116,19 @@ func (f *Flags) Flags() {
 	f.flags.fingerprint = flag.NewFlagSet("fingerprint", flag.ExitOnError)
 	f.flags.fingerprint.SetOutput(f.out)
 
-	f.flags.musicnode = flag.NewFlagSet("musicnode", flag.ExitOnError)
-	f.flags.musicnode.BoolVar(&f.MusicNode.LowLatency, "low-latency", false, "Enable low latency mode")
-	f.flags.musicnode.SetOutput(f.out)
+	f.flags.music = flag.NewFlagSet("music", flag.ExitOnError)
+	f.flags.music.SetOutput(f.out)
+
+	f.flags.musicRemote = flag.NewFlagSet("music remote", flag.ExitOnError)
+	f.flags.musicRemote.SetOutput(f.out)
+
+	f.flags.musicNode = flag.NewFlagSet("music node", flag.ExitOnError)
+	f.flags.musicNode.BoolVar(&f.MusicNode.LowLatency, "low-latency", false, "Enable low latency mode")
+	f.flags.musicNode.SetOutput(f.out)
+
+	f.flags.musicClient = flag.NewFlagSet("music client", flag.ExitOnError)
+	f.flags.musicClient.BoolVar(&f.MusicClient.Offline, "offline", false, "Dont connect to server")
+	f.flags.musicClient.SetOutput(f.out)
 
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
@@ -125,11 +138,10 @@ func (f *Flags) Flags() {
 		flag.PrintDefaults()
 		fmt.Fprint(f.out, "\nCommands:\n")
 		fmt.Fprintln(f.out, "  - chat | <empty>: Chat client")
-		fmt.Fprintln(f.out, "  - music:          Music client")
+		fmt.Fprintln(f.out, "  - music:          Music commands")
 		fmt.Fprintln(f.out, "  - upload:         Upload a file from stdin or commandline to chat")
 		fmt.Fprintln(f.out, "  - config:         Config options explained")
 		fmt.Fprintln(f.out, "  - fingerprint:    Show your and the server's trusted publickey fingerprint")
-		fmt.Fprintln(f.out, "  - musicnode:      Run a music node")
 		fmt.Fprintln(f.out, "  - version:        Print version and exit")
 	}
 	f.flags.chat.Usage = func() {
@@ -142,13 +154,29 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, " - command | homechat chat")
 	}
 	f.flags.music.Usage = func() {
+		fmt.Fprintln(f.out, "music")
 		f.flags.music.PrintDefaults()
+		fmt.Fprint(f.out, "\nCommands:\n")
+		fmt.Fprintln(f.out, "  - remote:  control server music player")
+		fmt.Fprintln(f.out, "  - node:    run a music node in sync with the server")
+		fmt.Fprintln(f.out, "  - client:  start a local music player with local queue but playlists on server")
+	}
+	f.flags.musicRemote.Usage = func() {
+		f.flags.musicRemote.PrintDefaults()
 		fmt.Fprintln(f.out, "Run interactively")
-		fmt.Fprintln(f.out, " - homechat music")
+		fmt.Fprintln(f.out, " - homechat music remote")
 		fmt.Fprintln(f.out, "")
 		fmt.Fprintln(f.out, "Send command and exit")
-		fmt.Fprintln(f.out, " - homechat music <command to send>")
-		fmt.Fprintln(f.out, " - command | homechat music")
+		fmt.Fprintln(f.out, " - homechat music remote <command to send>")
+		fmt.Fprintln(f.out, " - command | homechat music remote")
+	}
+	f.flags.musicNode.Usage = func() {
+		f.flags.musicNode.PrintDefaults()
+		fmt.Fprintln(f.out, "Run a music node")
+	}
+	f.flags.musicClient.Usage = func() {
+		f.flags.musicClient.PrintDefaults()
+		fmt.Fprintln(f.out, "Run a music client")
 	}
 	f.flags.upload.Usage = func() {
 		f.flags.upload.PrintDefaults()
@@ -165,10 +193,6 @@ func (f *Flags) Flags() {
 	f.flags.fingerprint.Usage = func() {
 		fmt.Fprintln(f.out, "Show your and the server's trusted publickey fingerprint")
 		f.flags.fingerprint.PrintDefaults()
-	}
-	f.flags.musicnode.Usage = func() {
-		f.flags.musicnode.PrintDefaults()
-		fmt.Fprintln(f.out, "Run a music node")
 	}
 }
 
@@ -260,7 +284,10 @@ func (f *Flags) Parse() error {
 
 	switch f.All.Mode {
 	case ModeDefault:
-	case ModeMusic:
+	case ModeUpload:
+		f.ClientConf.History = 0
+		f.ClientConf.Channels = []string{}
+	case ModeMusicRemote:
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{
 			vars.PingChannel,
@@ -271,9 +298,6 @@ func (f *Flags) Parse() error {
 			vars.MusicPlaylistChannel,
 			vars.MusicErrorChannel,
 		}
-	case ModeUpload:
-		f.ClientConf.History = 0
-		f.ClientConf.Channels = []string{}
 	case ModeMusicNode:
 		os.MkdirAll(f.MusicNode.CacheDir, 0o755)
 		f.ClientConf.Name += "-music-node"
@@ -289,6 +313,17 @@ func (f *Flags) Parse() error {
 			vars.MusicNodeChannel,
 		}
 
+	case ModeMusicClient:
+		os.MkdirAll(f.MusicNode.CacheDir, 0o755)
+		f.ClientConf.Name += "-music-client"
+		f.ClientConf.History = 0
+		f.ClientConf.Channels = []string{
+			vars.PingChannel,
+			vars.UserChannel,
+			vars.MusicChannel,
+			vars.MusicPlaylistChannel,
+			vars.MusicErrorChannel,
+		}
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
@@ -401,11 +436,32 @@ func (f *Flags) parseCommand() error {
 		}
 		f.All.OneOff = strings.Join(f.flags.chat.Args(), " ")
 	case "music":
-		f.All.Mode = ModeMusic
-		if err := f.flags.music.Parse(args[1:]); err != nil {
-			return err
+		if len(args) <= 1 {
+			f.flags.music.Usage()
+			os.Exit(1)
 		}
-		f.All.OneOff = strings.Join(f.flags.music.Args(), " ")
+		switch args[1] {
+		case "remote":
+			f.All.Mode = ModeMusicRemote
+			if err := f.flags.musicRemote.Parse(args[2:]); err != nil {
+				return err
+			}
+			f.All.OneOff = strings.Join(f.flags.musicRemote.Args(), " ")
+		case "node":
+			f.All.Mode = ModeMusicNode
+			if err := f.flags.musicNode.Parse(args[2:]); err != nil {
+				return err
+			}
+		case "client":
+			f.All.Mode = ModeMusicClient
+			if err := f.flags.musicClient.Parse(args[2:]); err != nil {
+				return err
+			}
+			f.All.OneOff = strings.Join(f.flags.musicClient.Args(), " ")
+		default:
+			f.flags.music.Usage()
+			os.Exit(1)
+		}
 	case "upload":
 		f.All.Mode = ModeUpload
 		if err := f.flags.upload.Parse(args[1:]); err != nil {
@@ -418,11 +474,6 @@ func (f *Flags) parseCommand() error {
 	case "fingerprint":
 		f.All.Mode = ModeFingerprint
 		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
-			return err
-		}
-	case "musicnode":
-		f.All.Mode = ModeMusicNode
-		if err := f.flags.musicnode.Parse(args[1:]); err != nil {
 			return err
 		}
 	case "version":

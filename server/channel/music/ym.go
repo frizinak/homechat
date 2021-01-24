@@ -34,6 +34,7 @@ type YMChannel struct {
 
 	state struct {
 		mode  mode
+		view  ui.View
 		title string
 		text  string
 		songs []ui.Song
@@ -141,9 +142,8 @@ func (c *YMChannel) handle(cl channel.Client, m data.Message) error {
 	return nil
 }
 
-func (c *YMChannel) SetTitle(title string) {
-	c.state.title = title
-}
+func (c *YMChannel) SetView(view ui.View)  { c.state.view = view }
+func (c *YMChannel) SetTitle(title string) { c.state.title = title }
 
 func (c *YMChannel) SetSongs(songs []ui.Song) {
 	c.state.mode = modeSongs
@@ -155,10 +155,10 @@ func (c *YMChannel) SetText(text string) {
 	c.state.text = text
 }
 
-func (c *YMChannel) AtomicFlush(cb func()) {
+func (c *YMChannel) AtomicFlush(cb func(ui.AtomicOutput)) {
 	c.sem.Lock()
 	if cb != nil {
-		cb()
+		cb(c)
 	}
 	c.flush()
 	c.sem.Unlock()
@@ -194,7 +194,7 @@ func (c *YMChannel) flush() {
 		return
 	}
 
-	s := data.ServerMessage{Title: c.state.title}
+	s := data.ServerMessage{View: byte(c.state.view), Title: c.state.title}
 
 	switch c.state.mode {
 	case modeSongs:
@@ -204,7 +204,7 @@ func (c *YMChannel) flush() {
 			if title == "" {
 				title = fmt.Sprintf("- no title - [%s %s]", song.NS(), song.ID())
 			}
-			s.Songs[i] = data.Song{title, song.Active()}
+			s.Songs[i] = data.Song{song.NS(), song.ID(), title, song.Active()}
 		}
 
 	case modeText:

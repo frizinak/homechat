@@ -11,7 +11,7 @@ type Action string
 
 func (a Action) Mode() Mode {
 	if strings.HasPrefix(string(a), "music-") {
-		return ModeMusic
+		return ModeMusicRemote
 	}
 	return ModeDefault
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/backend/tcp"
+	"github.com/frizinak/homechat/client/handler/musicclient"
 	"github.com/frizinak/homechat/client/handler/musicnode"
 	"github.com/frizinak/homechat/client/handler/terminal"
 	"github.com/frizinak/homechat/ui"
@@ -76,7 +78,7 @@ func oneoff(f *Flags, backend client.Backend) error {
 		f.All.OneOff = string(d)
 	}
 
-	if f.All.Mode == ModeMusic {
+	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicClient {
 		return cl.Music(f.All.OneOff)
 	}
 
@@ -191,7 +193,7 @@ func main() {
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
-		if f.All.Mode != ModeDefault && f.All.Mode != ModeMusic {
+		if f.All.Mode != ModeDefault && f.All.Mode != ModeMusicRemote && f.All.Mode != ModeMusicClient {
 			exit(errors.New("can not be run non-interactively"))
 		}
 
@@ -201,7 +203,7 @@ func main() {
 
 	indent := 1
 	max := f.AppConf.MaxMessages
-	if f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode {
+	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient {
 		indent = 2
 		max = 1e9
 	}
@@ -210,15 +212,19 @@ func main() {
 		f.All.Mode == ModeDefault,
 		max,
 		indent,
-		f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode,
+		f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient,
 	)
 
 	handler := terminal.New(tui)
 	var rhandler client.Handler = handler
 	var musicNodeHandler *musicnode.Handler
+	//var musicClientHandler *musicclient.Handler // todo
+	var musicClientUI *musicclient.UI
 	cl := &client.Client{}
 	if f.All.Mode == ModeMusicNode {
-		di := di.New(f.MusicNodeConfig)
+		conf := f.MusicNodeConfig
+		conf.Log = log.New(ioutil.Discard, "", 0)
+		di := di.New(conf)
 		if _, err := di.BackendAvailable(); err != nil {
 			exit(fmt.Errorf("player not available: %w", err))
 		}
@@ -244,12 +250,42 @@ func main() {
 		)
 
 		rhandler = musicNodeHandler
+	} else if f.All.Mode == ModeMusicClient {
+		conf := f.MusicNodeConfig
+		conf.AutoSave = true
+		conf.Log = log.New(ioutil.Discard, "", 0)
+		di := di.New(conf)
+		if _, err := di.BackendAvailable(); err != nil {
+			exit(fmt.Errorf("player not available: %w", err))
+		}
+
+		musicClientUI = musicclient.NewUI(f.MusicClient.Offline, handler, tui, di, cl)
+		rhandler = musicClientUI.Handler()
+
+		onExits = append(onExits, func() {
+			musicClientUI.Close()
+		})
 	}
 
 	*cl = *client.New(backend, rhandler, tui, f.ClientConf)
 	send := cl.Chat
-	if f.All.Mode == ModeMusic || f.All.Mode == ModeMusicNode {
+	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode {
 		send = cl.Music
+	} else if f.All.Mode == ModeMusicClient {
+		musicClientUI.Input("q")
+		send = func(i string) error {
+			musicClientUI.Input(i)
+			return nil
+		}
+	}
+
+	if musicClientUI != nil {
+		go func() {
+			for {
+				musicClientUI.Flush()
+				time.Sleep(time.Millisecond * 60)
+			}
+		}()
 	}
 
 	go func() {
@@ -391,42 +427,45 @@ func main() {
 	)
 	exit(err)
 
-	fmt.Printf("Shaking hands with %s\n", remoteAddress)
-	err = cl.Connect()
-	if err == client.ErrFingerPrint {
-		trust := f.AppConf.ServerFingerprint
-		newFP := cl.ServerFingerprint()
-		if newFP == "" {
-			exit(errors.New("Something went wrong during authentication"))
-		}
-		msg := "Server fingerprint changed!\nDo not blindly accept as something malicious might be going on."
-		if trust == "" {
-			msg = "Connecting to new server for first time.\nAsk the administrator of the server if the following key is correct:"
-		}
-
-		fmt.Fprintf(
-			os.Stderr,
-			"%s\n%s\nAccept new fingerprint for %s? [y/N]: ",
-			msg,
-			newFP,
-			remoteAddress,
-		)
-		var answer string
-		fmt.Scanln(&answer)
-		if answer != "y" && answer != "Y" {
-			exit(errors.New("Not connecting, smart choice!"))
-		}
-
-		f.AppConf.ServerFingerprint = newFP
-		exit(f.SaveConfig())
-		cl.SetTrustedFingerprint(newFP)
+	if !f.MusicClient.Offline {
+		fmt.Printf("Shaking hands with %s\n", remoteAddress)
 		err = cl.Connect()
 		if err == client.ErrFingerPrint {
-			fmt.Fprintln(os.Stderr, "Server fingerprint changed AGAIN!")
-			fmt.Fprintln(os.Stderr, "Not connecting, try again.")
+			trust := f.AppConf.ServerFingerprint
+			newFP := cl.ServerFingerprint()
+			if newFP == "" {
+				exit(errors.New("Something went wrong during authentication"))
+			}
+			msg := "Server fingerprint changed!\nDo not blindly accept as something malicious might be going on."
+			if trust == "" {
+				msg = "Connecting to new server for first time.\nAsk the administrator of the server if the following key is correct:"
+			}
+
+			fmt.Fprintf(
+				os.Stderr,
+				"%s\n%s\nAccept new fingerprint for %s? [y/N]: ",
+				msg,
+				newFP,
+				remoteAddress,
+			)
+			var answer string
+			fmt.Scanln(&answer)
+			if answer != "y" && answer != "Y" {
+				exit(errors.New("Not connecting, smart choice!"))
+			}
+
+			f.AppConf.ServerFingerprint = newFP
+			exit(f.SaveConfig())
+			cl.SetTrustedFingerprint(newFP)
+			err = cl.Connect()
+			if err == client.ErrFingerPrint {
+				fmt.Fprintln(os.Stderr, "Server fingerprint changed AGAIN!")
+				fmt.Fprintln(os.Stderr, "Not connecting, try again.")
+			}
 		}
+		exit(err)
 	}
-	exit(err)
+
 	tui.Start()
 
 	exit(currentConsole.SetRaw())
@@ -438,8 +477,8 @@ func main() {
 	input := bufio.NewReader(os.Stdin)
 	go func() {
 		keymode := f.All.Mode
-		if keymode == ModeMusicNode {
-			keymode = ModeMusic
+		if keymode == ModeMusicNode || keymode == ModeMusicClient {
+			keymode = ModeMusicRemote
 		}
 		for {
 			n, err := input.ReadByte()
@@ -505,6 +544,11 @@ func main() {
 	}()
 
 	go handler.Run(msgs)
+	if f.MusicClient.Offline {
+		tui.Log("offline")
+		<-make(chan struct{}, 0)
+	}
+
 	exit(cl.Run())
 	exitClean()
 }
