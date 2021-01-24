@@ -1,7 +1,9 @@
 package vars
 
+var GitVersion string
+
 const (
-	Version         = "0.2.8"
+	Version         = "v0.2.8"
 	ProtocolVersion = "1019"
 
 	ChatChannel    = "c"  // rw

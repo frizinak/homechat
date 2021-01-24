@@ -426,7 +426,11 @@ func (f *Flags) parseCommand() error {
 			return err
 		}
 	case "version":
-		fmt.Fprintf(f.out, "%s (protocol: %s)\n", vars.Version, vars.ProtocolVersion)
+		version := vars.GitVersion
+		if version == "" {
+			version = vars.Version
+		}
+		fmt.Fprintf(f.out, "%s (protocol: %s)\n", version, vars.ProtocolVersion)
 		os.Exit(0)
 	default:
 		flag.Usage()

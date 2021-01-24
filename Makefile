@@ -25,6 +25,9 @@ NATIVE := dist/homechat-$(shell go env GOOS)-$(shell go env GOARCH)
 
 TESTCLIENT := $(patsubst testclient.def/%, testclient/%, $(wildcard testclient.def/*))
 
+VERSION=$(shell git describe)
+LDFLAGS=-s -w -X github.com/frizinak/homechat/vars.GitVersion=$(VERSION)
+
 .PHONY: all
 all: clients server
 
@@ -46,7 +49,7 @@ dist/homechat-server: $(SERVER_FILES) bound/bound.go | dist
 	go build -o "$@" ./cmd/server
 
 public/app.wasm: $(WASM_FILES)
-	GOARCH=wasm GOOS=js go build -o $@ -trimpath -ldflags "-s -w" ./cmd/wasm
+	GOARCH=wasm GOOS=js go build -o $@ -trimpath -ldflags "$(LDFLAGS)" ./cmd/wasm
 
 public/%.gz: public/%
 	cat "$<" | gzip > "$@"
@@ -54,7 +57,7 @@ public/%.gz: public/%
 dist/homechat-%: $(CLIENT_FILES) | dist
 	GOOS=$$(echo $* | cut -d- -f1) \
 		 GOARCH=$$(echo $* | cut -d- -f2 | cut -d. -f1) \
-		 go build -o "$@" -trimpath -ldflags "-s -w" ./cmd/client
+		 go build -o "$@" -trimpath -ldflags "$(LDFLAGS)" ./cmd/client
 
 public/clients/homechat-%: dist/homechat-% | public/clients
 	cp "$<" "$@"
