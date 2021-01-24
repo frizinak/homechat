@@ -23,6 +23,7 @@ type Config struct {
 	ServerFingerprint string
 	Username          string
 	MaxMessages       int
+	MusicDownloads    string
 }
 
 func (c *Config) Help(w io.Writer) error {
@@ -44,6 +45,8 @@ func (c *Config) Help(w io.Writer) error {
 	buf.WriteString("Username:         your desired username\n")
 	buf.WriteString("\n")
 	buf.WriteString("MaxMessages:      maximum amount of messages shown\n")
+	buf.WriteString("\n")
+	buf.WriteString("MusicDownloads:   path where music download will be stored\n")
 	buf.WriteString("\n")
 	_, err := io.Copy(w, buf)
 	return err
@@ -104,6 +107,10 @@ func (c *Config) Merge(def *Config) bool {
 	if c.MaxMessages <= 0 {
 		resave = true
 		c.MaxMessages = def.MaxMessages
+	}
+	if c.MusicDownloads == "" {
+		resave = true
+		c.MusicDownloads = def.MusicDownloads
 	}
 	return resave
 }

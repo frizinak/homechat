@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -265,6 +266,9 @@ func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
 	path := h.col.SongPath(m.Song())
 	tmp := collection.TempFile(path)
 	err := func() error {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
 		f, err := os.Create(tmp)
 		if err != nil {
 			return err

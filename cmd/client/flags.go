@@ -249,7 +249,7 @@ func (f *Flags) Parse() error {
 		vars.ChatChannel,
 	}
 
-	f.MusicNode.CacheDir = filepath.Join(f.All.CacheDir, "musicnode")
+	f.MusicNode.CacheDir = f.AppConf.MusicDownloads
 	f.MusicNodeConfig = di.Config{
 		Log:           log.New(os.Stdout, "", 0),
 		StorePath:     f.MusicNode.CacheDir,
@@ -327,6 +327,7 @@ func (f *Flags) validateAppConf() error {
 		ServerTCPAddress: fmt.Sprintf("%s:%d", addr[0], port+1),
 		Username:         "",
 		MaxMessages:      250,
+		MusicDownloads:   filepath.Join(f.All.CacheDir, "client-ym"),
 	})
 
 	if !resave {
