@@ -86,11 +86,11 @@ func (s *output) flush() {
 }
 
 func (s *output) Err(e error) {
-	s.logger.Err(e.Error())
+	s.logger.Flash(e.Error(), 0)
 }
 
 func (s *output) Errf(f string, v ...interface{}) {
-	s.logger.Err(fmt.Sprintf(f, v...))
+	s.logger.Flash(fmt.Sprintf(f, v...), 0)
 }
 
 type commandParser struct {
