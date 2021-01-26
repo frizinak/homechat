@@ -46,7 +46,7 @@ install: $(NATIVE) dist/homechat-server
 	cp -f "$(NATIVE)" "$$GOBIN/homechat"
 
 dist/homechat-server: $(SERVER_FILES) bound/bound.go | dist
-	go build -o "$@" ./cmd/server
+	go build -o "$@" -trimpath -ldflags "$(LDFLAGS)" ./cmd/server
 
 public/app.wasm: $(WASM_FILES)
 	GOARCH=wasm GOOS=js go build -o $@ -trimpath -ldflags "$(LDFLAGS)" ./cmd/wasm
