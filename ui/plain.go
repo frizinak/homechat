@@ -20,7 +20,8 @@ func (p *PlainUI) Log(msg string)                      {}
 func (p *PlainUI) Flash(msg string, dur time.Duration) { fmt.Fprintln(p.Writer, "FLASH", msg) }
 func (p *PlainUI) Err(err error)                       { fmt.Fprintln(p.Writer, "ERR", err) }
 func (p *PlainUI) Clear()                              {}
-func (p *PlainUI) Broadcast(msgs []Msg, scroll, toActive bool) {
+func (p *PlainUI) JumpToActive()                       {}
+func (p *PlainUI) Broadcast(msgs []Msg, scroll bool) {
 	for _, m := range msgs {
 		p.broadcast(m)
 	}

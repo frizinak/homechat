@@ -406,6 +406,7 @@ func (f *Flags) validateKeymap() error {
 		MusicPause:              "space",
 		MusicSeekForward:        "]",
 		MusicSeekBackward:       "[",
+		MusicJumpActive:         "ctrl-a",
 	}
 
 	if resave := f.Keymap.Merge(defaultKeymap); resave {

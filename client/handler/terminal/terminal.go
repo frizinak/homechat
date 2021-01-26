@@ -16,7 +16,8 @@ import (
 
 type Updates interface {
 	client.Logger
-	Broadcast(msg []ui.Msg, scroll, toActive bool)
+	Broadcast(msg []ui.Msg, scroll bool)
+	JumpToActive()
 	MusicState(ui.State)
 	Users(string)
 	Latency(time.Duration)
@@ -105,7 +106,7 @@ func (h *Handler) Run(notify chan ui.Msg) {
 		after := newAfter()
 		do := func() {
 			if len(msgs) != 0 {
-				h.log.Broadcast(msgs, true, false)
+				h.log.Broadcast(msgs, true)
 				msgs = msgs[:0]
 			}
 		}
@@ -189,7 +190,7 @@ func (h *Handler) Run(notify chan ui.Msg) {
 			lastMusicTitle = msg.Title
 
 			h.log.Clear()
-			h.log.Broadcast(msgs, change, change)
+			h.log.Broadcast(msgs, change)
 		}
 	}()
 }

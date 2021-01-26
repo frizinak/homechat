@@ -424,6 +424,14 @@ func main() {
 
 				return true
 			},
+			MusicJumpActive: func() bool {
+				tui.JumpToActive()
+				tui.Flush()
+				tui.JumpToActive()
+				send("q")
+
+				return false
+			},
 		},
 	)
 	exit(err)

@@ -37,6 +37,7 @@ const (
 	MusicPause              Action = "music-pause"
 	MusicSeekForward        Action = "music-seek-forward"
 	MusicSeekBackward       Action = "music-seek-backward"
+	MusicJumpActive         Action = "music-jump-to-active"
 )
 
 type key struct {

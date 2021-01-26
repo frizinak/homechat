@@ -31,10 +31,10 @@ type TermUI struct {
 	input []byte
 	users []string
 
-	scrollMsg    int
 	scrollPage   int
 	scrollSimple int
 	scroll       int
+	jumpToActive bool
 
 	maxMessages int
 
@@ -56,7 +56,6 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool) *TermUI {
 		scrollTop:   scrollTop,
 		maxMessages: maxMessages,
 		disabled:    true,
-		scrollMsg:   -1,
 	}
 }
 
@@ -94,9 +93,10 @@ func (ui *TermUI) Clear() {
 	ui.sem.Unlock()
 }
 
-func (ui *TermUI) Broadcast(msgs []Msg, scroll, toActive bool) {
+func (ui *TermUI) JumpToActive() { ui.jumpToActive = true }
+
+func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 	ui.sem.Lock()
-	active := -1
 	for _, m := range msgs {
 		texts := strings.Split(strings.ReplaceAll(m.Message, "\r", ""), "\n")
 		for _, text := range texts {
@@ -110,9 +110,6 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll, toActive bool) {
 				msg.prefix = runewidth.FillRight(msg.prefix, len(stampFormat)+15+1) + "│ "
 			}
 			ui.log = append(ui.log, msg)
-			if m.Highlight == HLActive {
-				active = len(ui.log)
-			}
 		}
 	}
 
@@ -121,9 +118,6 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll, toActive bool) {
 	}
 	if ui.scrollTop && scroll {
 		ui.scroll = math.MaxInt32
-	}
-	if toActive && active != -1 {
-		ui.scrollMsg = active
 	}
 	ui.sem.Unlock()
 	ui.Flush()
@@ -160,13 +154,11 @@ func (ui *TermUI) Scroll(amount int) {
 }
 
 var (
-	clear     = []byte("\033[H\033[J")
-	clrLine   = []byte("\033[1m")
-	clrStatus = []byte("\033[40;37m")
-	clrUser   = []byte("\033[40;37m")
-	clrReset  = []byte("\033[0m")
-	// clrBot    = []byte("\033[40;37m")
-	// clrBot       = []byte("\033[40;37m")
+	clear        = []byte("\033[H\033[J")
+	clrLine      = []byte("\033[1m")
+	clrStatus    = []byte("\033[40;37m")
+	clrUser      = []byte("\033[40;37m")
+	clrReset     = []byte("\033[0m")
 	clrMusicSeek = []byte("\033[1;32m")
 	clrMusicIcon = []byte("\033[1;32m")
 )
@@ -266,9 +258,9 @@ func (ui *TermUI) Flush() {
 			suffix = string(clrReset)
 		}
 
-		if i == ui.scrollMsg {
+		if ui.jumpToActive && ui.log[i].highlight == HLActive {
+			ui.jumpToActive = false
 			scrollMsg = len(logs) + 1
-			ui.scrollMsg = -1
 		}
 
 		if ln <= w {
