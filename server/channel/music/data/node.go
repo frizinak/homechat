@@ -6,24 +6,15 @@ import (
 	"io"
 
 	"github.com/frizinak/homechat/server/channel"
-	"github.com/frizinak/libym/collection"
 )
 
 type SongID struct {
-	ns  string
-	id  string
-	gid string
+	ns string
+	id string
 }
 
 func (s *SongID) NS() string { return s.ns }
 func (s *SongID) ID() string { return s.id }
-func (s *SongID) GlobalID() string {
-	if s.gid == "" {
-		s.gid = collection.GlobalID(s)
-	}
-
-	return s.gid
-}
 
 type NodeMessage struct {
 	NS string

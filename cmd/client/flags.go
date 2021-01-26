@@ -275,7 +275,7 @@ func (f *Flags) Parse() error {
 
 	f.MusicNode.CacheDir = f.AppConf.MusicDownloads
 	f.MusicNodeConfig = di.Config{
-		Log:           log.New(os.Stdout, "", 0),
+		Log:           log.New(ioutil.Discard, "", 0),
 		StorePath:     f.MusicNode.CacheDir,
 		BackendLogger: ioutil.Discard,
 		AutoSave:      false,

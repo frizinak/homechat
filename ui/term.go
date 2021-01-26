@@ -84,8 +84,9 @@ func (ui *TermUI) Flash(msg string, dur time.Duration) {
 	ui.Flush()
 }
 
-func (ui *TermUI) Log(msg string) { ui.status = msg; ui.Flush() }
-func (ui *TermUI) Err(err string) { ui.status = err; ui.Flush() }
+func (ui *TermUI) Log(msg string)    { ui.status = msg; ui.Flush() }
+func (ui *TermUI) ErrStr(err string) { ui.status = err; ui.Flush() }
+func (ui *TermUI) Err(err error)     { ui.ErrStr(err.Error()) }
 
 func (ui *TermUI) Clear() {
 	ui.sem.Lock()
@@ -171,10 +172,11 @@ var (
 )
 
 var hl = map[Highlight][]byte{
-	HLTitle:  []byte("\033[1m"),
-	HLActive: []byte("\033[1;37;41m"),
-	HLMuted:  []byte("\033[40;37m"),
-	HLSlight: []byte("\033[1m"),
+	HLTitle:   []byte("\033[1m"),
+	HLActive:  []byte("\033[1;37;41m"),
+	HLMuted:   []byte("\033[40;37m"),
+	HLSlight:  []byte("\033[1m"),
+	HLProblem: []byte("\033[1;31m"),
 }
 
 const (

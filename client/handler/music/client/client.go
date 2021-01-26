@@ -1,4 +1,4 @@
-package musicclient
+package client
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/frizinak/homechat/client"
+	"github.com/frizinak/homechat/client/handler/music"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
 	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/di"
@@ -24,8 +25,8 @@ const (
 )
 
 type output struct {
+	*music.ErrorFlasher
 	sem     sync.Mutex
-	logger  client.Logger
 	handler client.Handler
 
 	view  ui.View
@@ -33,11 +34,18 @@ type output struct {
 	songs []ui.Song
 	text  string
 
+	problematics *collection.Problematics
+
 	mode mode
 }
 
-func newOutput(handler client.Handler, logger client.Logger) *output {
-	return &output{logger: logger, handler: handler, mode: modeNone}
+func newOutput(handler client.Handler, logger client.Logger, problems *collection.Problematics) *output {
+	return &output{
+		ErrorFlasher: music.NewErrorFlasher(logger),
+		handler:      handler,
+		mode:         modeNone,
+		problematics: problems,
+	}
 }
 
 func (s *output) SetView(view ui.View)  { s.view = view }
@@ -75,7 +83,13 @@ func (s *output) flush() {
 	case modeSongs:
 		msg.Songs = make([]musicdata.Song, len(s.songs))
 		for i, song := range s.songs {
-			msg.Songs[i] = musicdata.Song{song.NS(), song.ID(), song.Title(), song.Active()}
+			msg.Songs[i] = musicdata.Song{
+				song.NS(),
+				song.ID(),
+				song.Title(),
+				song.Active(),
+				s.problematics.Reason(song),
+			}
 		}
 
 	case modeText:
@@ -83,14 +97,6 @@ func (s *output) flush() {
 	}
 
 	s.handler.HandleMusicMessage(msg)
-}
-
-func (s *output) Err(e error) {
-	s.logger.Flash(e.Error(), 0)
-}
-
-func (s *output) Errf(f string, v ...interface{}) {
-	s.logger.Flash(fmt.Sprintf(f, v...), 0)
 }
 
 type commandParser struct {
@@ -149,7 +155,7 @@ func (c *commandParser) Parse(s string) []ui.Command {
 			c.handler.HandleMusicMessage(*last)
 		}
 		if err := c.cl.Music(strings.Join(remote, ";")); err != nil {
-			c.logger.Err(err.Error())
+			c.logger.Err(err)
 		}
 	}
 
@@ -167,7 +173,7 @@ type UI struct {
 func NewUI(offline bool, handler client.Handler, logger client.Logger, di *di.DI, cl *client.Client) *UI {
 	col := di.Collection()
 	col.Run()
-	output := newOutput(handler, logger)
+	output := newOutput(handler, logger, col.Problematics())
 	rhandler := newHandler(handler, col)
 	parser := newCommandParser(offline, rhandler, logger, di.CommandParser(), cl)
 	p := di.Player()

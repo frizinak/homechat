@@ -38,6 +38,7 @@ import (
 	"github.com/frizinak/homechat/server/channel/upload"
 	"github.com/frizinak/homechat/server/channel/users"
 	"github.com/frizinak/homechat/vars"
+	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/di"
 	"github.com/nightlyone/lockfile"
 )
@@ -106,7 +107,7 @@ func musicDownloads(f *Flags) error {
 	uniq := make(map[string]struct{}, len(all))
 	count := 0
 	for _, s := range all {
-		gid := s.GlobalID()
+		gid := collection.GlobalID(s)
 		if _, ok := uniq[gid]; ok {
 			continue
 		}

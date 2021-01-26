@@ -1,4 +1,4 @@
-package musicnode
+package node
 
 import (
 	"fmt"
@@ -107,7 +107,7 @@ func (h *Handler) IncreaseVolume(v float64) {
 	h.volume = h.p.Volume()
 	h.lastState.Volume = h.volume
 	if err := h.Handler.HandleMusicStateMessage(h.lastState); err != nil {
-		h.log.Err(err.Error())
+		h.log.Err(err)
 	}
 }
 
@@ -204,14 +204,14 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	}
 
 	if !s.Local() {
-		h.log.Flash(fmt.Sprintf("Song not downloaded yet: %s", s.GlobalID()), time.Second*5)
+		h.log.Flash(fmt.Sprintf("Song not downloaded yet: %s", collection.GlobalID(s)), time.Second*5)
 		h.p.Pause()
 		h.paused = true
 		h.sem.Lock()
 		defer h.sem.Unlock()
 		if !h.downloading {
 			h.downloading = true
-			h.log.Flash(fmt.Sprintf("Downloading: %s", s.GlobalID()), time.Second*5)
+			h.log.Flash(fmt.Sprintf("Downloading: %s", collection.GlobalID(s)), time.Second*5)
 			return h.cl.MusicDownload(state.NS, state.ID)
 		}
 
@@ -281,7 +281,7 @@ func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
 		return err
 	}
 
-	h.log.Flash(fmt.Sprintf("Downloaded: %s", m.Song().GlobalID()), time.Second*5)
+	h.log.Flash(fmt.Sprintf("Downloaded: %s", collection.GlobalID(m.Song())), time.Second*5)
 	return os.Rename(tmp, path)
 }
 

@@ -38,10 +38,11 @@ func JSONMessage(r io.Reader) (Message, io.Reader, error) {
 }
 
 type Song struct {
-	NS     string `json:"id"`
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Active bool   `json:"a"`
+	NS      string `json:"ns"`
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Active  bool   `json:"a"`
+	Problem string `json:"problem"`
 }
 
 type ServerMessage struct {
@@ -66,6 +67,7 @@ func (m ServerMessage) Binary(w channel.BinaryWriter) error {
 		w.WriteString(s.ID, 8)
 		w.WriteString(s.Title, 8)
 		w.WriteUint8(a)
+		w.WriteString(s.Problem, 8)
 	}
 	return w.Err()
 }
@@ -113,6 +115,7 @@ func BinaryServerMessage(r channel.BinaryReader) (ServerMessage, error) {
 			r.ReadString(8),
 			r.ReadString(8),
 			r.ReadUint8() == 1,
+			r.ReadString(8),
 		}
 	}
 	return m, r.Err()

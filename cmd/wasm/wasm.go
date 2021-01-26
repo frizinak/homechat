@@ -132,7 +132,7 @@ func (j *jsHandler) HandleUsersMessage(m usersdata.ServerMessage, users client.U
 }
 
 func (j *jsHandler) Log(s string)                      { j.handlers[OnLog].Invoke(s) }
-func (j *jsHandler) Err(s string)                      { j.handlers[OnError].Invoke(s) }
+func (j *jsHandler) Err(s error)                       { j.handlers[OnError].Invoke(s.Error()) }
 func (j *jsHandler) Flash(s string, dur time.Duration) { j.handlers[OnFlash].Invoke(s) }
 
 func main() {

@@ -14,6 +14,7 @@ const (
 	HLActive
 	HLMuted
 	HLSlight
+	HLProblem
 )
 
 type Msg struct {

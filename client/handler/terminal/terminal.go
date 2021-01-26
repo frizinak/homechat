@@ -16,7 +16,7 @@ import (
 
 type Updates interface {
 	client.Logger
-	Broadcast(msg []ui.Msg, scroll bool, toActive bool)
+	Broadcast(msg []ui.Msg, scroll, toActive bool)
 	MusicState(ui.State)
 	Users(string)
 	Latency(time.Duration)
@@ -170,6 +170,10 @@ func (h *Handler) Run(notify chan ui.Msg) {
 				hl := ui.HLNone
 				if song.Active {
 					hl = ui.HLActive
+				}
+
+				if song.Problem != "" {
+					hl = ui.HLProblem
 				}
 
 				msgs = append(

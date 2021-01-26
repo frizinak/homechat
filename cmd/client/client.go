@@ -17,8 +17,9 @@ import (
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/backend/tcp"
-	"github.com/frizinak/homechat/client/handler/musicclient"
-	"github.com/frizinak/homechat/client/handler/musicnode"
+	"github.com/frizinak/homechat/client/handler/music"
+	musicclient "github.com/frizinak/homechat/client/handler/music/client"
+	musicnode "github.com/frizinak/homechat/client/handler/music/node"
 	"github.com/frizinak/homechat/client/handler/terminal"
 	"github.com/frizinak/homechat/ui"
 	"github.com/frizinak/homechat/vars"
@@ -218,12 +219,11 @@ func main() {
 	handler := terminal.New(tui)
 	var rhandler client.Handler = handler
 	var musicNodeHandler *musicnode.Handler
-	//var musicClientHandler *musicclient.Handler // todo
 	var musicClientUI *musicclient.UI
 	cl := &client.Client{}
 	if f.All.Mode == ModeMusicNode {
 		conf := f.MusicNodeConfig
-		conf.Log = log.New(ioutil.Discard, "", 0)
+		conf.CustomError = music.NewErrorFlasher(tui)
 		di := di.New(conf)
 		if _, err := di.BackendAvailable(); err != nil {
 			exit(fmt.Errorf("player not available: %w", err))
@@ -253,6 +253,7 @@ func main() {
 	} else if f.All.Mode == ModeMusicClient {
 		conf := f.MusicNodeConfig
 		conf.AutoSave = true
+		conf.CustomError = music.NewErrorFlasher(tui)
 		conf.Log = log.New(ioutil.Discard, "", 0)
 		di := di.New(conf)
 		if _, err := di.BackendAvailable(); err != nil {

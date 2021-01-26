@@ -3,8 +3,8 @@ package vars
 var GitVersion string
 
 const (
-	Version         = "0.3.0"
-	ProtocolVersion = "1020"
+	Version         = "custom"
+	ProtocolVersion = "1021"
 
 	ChatChannel    = "c"  // rw
 	HistoryChannel = "h"  // rw

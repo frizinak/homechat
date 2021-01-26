@@ -28,9 +28,10 @@ const (
 type YMChannel struct {
 	sem sync.Mutex
 
-	ym  ui.UI
-	col *collection.Collection
-	p   *player.Player
+	ym           ui.UI
+	col          *collection.Collection
+	problematics *collection.Problematics
+	p            *player.Player
 
 	state struct {
 		mode  mode
@@ -69,6 +70,7 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 	di := di.New(c)
 	ym.ym = di.BaseUI()
 	ym.col = di.Collection()
+	ym.problematics = ym.col.Problematics()
 	ym.p = di.Player()
 	ym.stateCh = NewState(log, ym.p)
 	ym.songCh = NewSong(log, di.Queue())
@@ -174,11 +176,6 @@ func (c *YMChannel) Err(err error) {
 	}
 }
 
-func (c *YMChannel) Errf(n string, i ...interface{}) {
-	err := fmt.Errorf(n, i...)
-	c.Err(err)
-}
-
 func (c *YMChannel) flushState() {
 	c.songCh.Send()
 	c.stateCh.Send()
@@ -204,7 +201,13 @@ func (c *YMChannel) flush() {
 			if title == "" {
 				title = fmt.Sprintf("- no title - [%s %s]", song.NS(), song.ID())
 			}
-			s.Songs[i] = data.Song{song.NS(), song.ID(), title, song.Active()}
+			s.Songs[i] = data.Song{
+				song.NS(),
+				song.ID(),
+				title,
+				song.Active(),
+				c.problematics.Reason(song),
+			}
 		}
 
 	case modeText:

@@ -74,7 +74,7 @@ type RW struct {
 
 type Logger interface {
 	Log(string)
-	Err(string)
+	Err(error)
 	Flash(string, time.Duration)
 }
 
@@ -424,7 +424,7 @@ func (c *Client) Run() error {
 				}
 			}
 			if err := c.Send(vars.PingChannel, pingdata.Message{}); err != nil {
-				c.log.Err(err.Error())
+				c.log.Err(err)
 			}
 			select {
 			case <-done:
@@ -570,13 +570,13 @@ func (c *Client) Run() error {
 				break
 			}
 			c.disconnect()
-			c.log.Err(err.Error())
+			c.log.Err(err)
 			continue
 		}
 
 		if err := do(r); err != nil {
 			c.disconnect()
-			c.log.Err(err.Error())
+			c.log.Err(err)
 			continue
 		}
 	}
