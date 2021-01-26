@@ -67,7 +67,6 @@ func (h *DownloadHandler) DownloadSong(ns, id string, to time.Duration) error {
 
 func (h *DownloadHandler) DownloadPlaylist(playlist string, to time.Duration) error {
 	if h.newdl(to) {
-		fmt.Printf("send %s\n", playlist)
 		return h.cl.MusicPlaylistDownload(playlist)
 	}
 	return nil
