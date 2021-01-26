@@ -38,7 +38,7 @@ var (
 )
 
 const (
-	clientJobBuf = 50
+	clientJobBuf = 100000
 	clientErrBuf = 8
 	outgoingBuf  = 50
 	saveInterval = time.Second * 5

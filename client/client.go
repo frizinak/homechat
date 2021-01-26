@@ -409,24 +409,11 @@ func (c *Client) read(r io.Reader, msg channel.Msg) (channel.Msg, io.Reader, err
 }
 
 func (c *Client) Run() error {
-	hasPing := false
-	for _, c := range c.c.Channels {
-		if c == vars.PingChannel {
-			hasPing = true
-			break
-		}
-	}
-
-	pings := make(chan time.Time, 1)
+	var pingSent time.Time
 	done := make(chan struct{}, 1)
 	go func() {
 		for {
-			if hasPing {
-				select {
-				case pings <- time.Now():
-				default:
-				}
-			}
+			pingSent = time.Now()
 			if err := c.Send(vars.PingChannel, pingdata.Message{}); err != nil {
 				c.log.Err(err)
 			}
@@ -452,7 +439,8 @@ func (c *Client) Run() error {
 
 		switch chnl.Data {
 		case vars.PingChannel:
-			c.latency = time.Since(<-pings)
+			c.latency = time.Since(pingSent)
+			//c.log.Flash(time.Since(p).String(), 0)
 			c.handler.HandleLatency(c.latency)
 		case vars.HistoryChannel:
 			_, r, err = c.read(r, historydata.ServerMessage{})
