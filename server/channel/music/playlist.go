@@ -33,7 +33,7 @@ func (c *PlaylistChannel) Register(chnl string, s channel.Sender) error {
 
 func (c *PlaylistChannel) Send() {
 	f := channel.ClientFilter{Channel: c.channel}
-	ps := data.ServerPlaylistMessage{c.col.List()}
+	ps := data.ServerPlaylistMessage{List: c.col.List()}
 	sort.Strings(ps.List)
 	if err := c.sender.Broadcast(f, ps); err != nil {
 		c.log.Println(err)

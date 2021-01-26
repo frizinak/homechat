@@ -15,6 +15,7 @@ type Message struct {
 	r io.Reader
 
 	channel.NeverEqual
+	channel.NoClose
 }
 
 func NewMessage(filename, msg string, size int64, r io.Reader) Message {

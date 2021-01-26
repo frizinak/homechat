@@ -181,7 +181,6 @@ func (s *Server) Init() error {
 	go func() {
 		for err := range s.clientErrs {
 			s.c.Log.Printf("ERR send to '%s': %s", err.Client.Name(), err.Err)
-			break
 		}
 	}()
 
@@ -218,11 +217,11 @@ func (s *Server) jobs(b channel.Batch) ([]writeJob, error) {
 	}
 
 	if len(clients) == 0 {
-		return j, nil
+		return nil, nil
 	}
 
 	for _, c := range clients {
-		j = append(j, writeJob{c, client.Job{f.Channel, []channel.Msg{msg}}})
+		j = append(j, writeJob{c, client.Job{Channel: f.Channel, Msgs: []channel.Msg{msg}}})
 	}
 
 	return j, nil
@@ -232,9 +231,12 @@ func (s *Server) BroadcastBatch(b []channel.Batch) error {
 	s.clientsMutex.RLock()
 	defer s.clientsMutex.RUnlock()
 
+	closes := make([]func() error, 0)
+
 	var gerr error
 	jobs := make([]writeJob, 0)
 	for _, bat := range b {
+		closes = append(closes, bat.Msg.Close)
 		j, err := s.jobs(bat)
 		if err != nil {
 			gerr = err
@@ -254,12 +256,30 @@ func (s *Server) BroadcastBatch(b []channel.Batch) error {
 		}
 	}
 
+	var _wg sync.WaitGroup
+	wg := &_wg
+
+	clean := make([]writeJob, 0, len(jobs))
 	for i, j := range jobs {
 		if _, ok := not[i]; ok {
 			continue
 		}
+
+		wg.Add(len(j.Job.Msgs))
+		clean = append(clean, j)
+	}
+
+	for _, j := range clean {
+		j.Job.WG = wg
 		s.outgoing <- j
 	}
+
+	go func() {
+		wg.Wait()
+		for _, c := range closes {
+			c()
+		}
+	}()
 
 	return gerr
 }

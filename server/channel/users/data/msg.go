@@ -34,6 +34,8 @@ type User struct {
 type ServerMessage struct {
 	Channel string `json:"channel"`
 	Users   []User `json:"users"`
+
+	channel.NoClose
 }
 
 func (m ServerMessage) Binary(w channel.BinaryWriter) error {

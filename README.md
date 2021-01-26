@@ -28,6 +28,7 @@ server and `homechat music {node,client}`:
 
 - mpv
 - youtube-dl
+- ffmpeg
 
 ## local server
 

@@ -11,6 +11,7 @@ type Message struct {
 	Amount uint16 `json:"n"`
 
 	channel.NeverEqual
+	channel.NoClose
 }
 
 func New(amount uint16) Message { return Message{Amount: amount} }

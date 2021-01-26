@@ -9,6 +9,8 @@ import (
 
 type ServerPlaylistMessage struct {
 	List []string `json:"list"`
+
+	channel.NoClose
 }
 
 func (m ServerPlaylistMessage) Equal(msg channel.Msg) bool {

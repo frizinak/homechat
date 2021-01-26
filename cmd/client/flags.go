@@ -31,6 +31,7 @@ const (
 	ModeMusicRemote
 	ModeMusicClient
 	ModeMusicNode
+	ModeMusicDownload
 )
 
 type Flags struct {
@@ -65,14 +66,15 @@ type Flags struct {
 	}
 
 	flags struct {
-		chat        *flag.FlagSet
-		music       *flag.FlagSet
-		musicRemote *flag.FlagSet
-		musicNode   *flag.FlagSet
-		musicClient *flag.FlagSet
-		upload      *flag.FlagSet
-		config      *flag.FlagSet
-		fingerprint *flag.FlagSet
+		chat          *flag.FlagSet
+		music         *flag.FlagSet
+		musicRemote   *flag.FlagSet
+		musicNode     *flag.FlagSet
+		musicClient   *flag.FlagSet
+		musicDownload *flag.FlagSet
+		upload        *flag.FlagSet
+		config        *flag.FlagSet
+		fingerprint   *flag.FlagSet
 	}
 
 	AppConf         *Config
@@ -130,6 +132,9 @@ func (f *Flags) Flags() {
 	f.flags.musicClient.BoolVar(&f.MusicClient.Offline, "offline", false, "Dont connect to server")
 	f.flags.musicClient.SetOutput(f.out)
 
+	f.flags.musicDownload = flag.NewFlagSet("music download", flag.ExitOnError)
+	f.flags.musicDownload.SetOutput(f.out)
+
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
 
@@ -157,9 +162,10 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "music")
 		f.flags.music.PrintDefaults()
 		fmt.Fprint(f.out, "\nCommands:\n")
-		fmt.Fprintln(f.out, "  - remote:  control server music player")
-		fmt.Fprintln(f.out, "  - node:    run a music node in sync with the server")
-		fmt.Fprintln(f.out, "  - client:  start a local music player with local queue but playlists on server")
+		fmt.Fprintln(f.out, "  - remote:   control server music player")
+		fmt.Fprintln(f.out, "  - node:     run a music node in sync with the server")
+		fmt.Fprintln(f.out, "  - client:   start a local music player with local queue but playlists on server")
+		fmt.Fprintln(f.out, "  - download: download music from server")
 	}
 	f.flags.musicRemote.Usage = func() {
 		f.flags.musicRemote.PrintDefaults()
@@ -177,6 +183,10 @@ func (f *Flags) Flags() {
 	f.flags.musicClient.Usage = func() {
 		f.flags.musicClient.PrintDefaults()
 		fmt.Fprintln(f.out, "Run a music client")
+	}
+	f.flags.musicDownload.Usage = func() {
+		f.flags.musicDownload.PrintDefaults()
+		fmt.Fprintln(f.out, "Download the given playlist")
 	}
 	f.flags.upload.Usage = func() {
 		f.flags.upload.PrintDefaults()
@@ -324,6 +334,15 @@ func (f *Flags) Parse() error {
 			vars.MusicPlaylistChannel,
 			vars.MusicErrorChannel,
 		}
+	case ModeMusicDownload:
+		os.MkdirAll(f.MusicNode.CacheDir, 0o755)
+		f.ClientConf.Name += "-music-download"
+		f.ClientConf.History = 0
+		f.ClientConf.Channels = []string{
+			vars.PingChannel,
+			vars.MusicErrorChannel,
+			vars.MusicNodeChannel,
+		}
 	}
 
 	if f.All.OneOff != "" || !f.All.Interactive {
@@ -458,7 +477,11 @@ func (f *Flags) parseCommand() error {
 			if err := f.flags.musicClient.Parse(args[2:]); err != nil {
 				return err
 			}
-			f.All.OneOff = strings.Join(f.flags.musicClient.Args(), " ")
+		case "download":
+			f.All.Mode = ModeMusicDownload
+			if err := f.flags.musicDownload.Parse(args[2:]); err != nil {
+				return err
+			}
 		default:
 			f.flags.music.Usage()
 			os.Exit(1)

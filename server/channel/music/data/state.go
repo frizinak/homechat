@@ -13,6 +13,8 @@ type ServerStateMessage struct {
 	Position time.Duration `json:"position"`
 	Duration time.Duration `json:"duration"`
 	Volume   float64       `json:"volume"`
+
+	channel.NoClose
 }
 
 func (m ServerStateMessage) Equal(msg channel.Msg) bool {
@@ -68,19 +70,11 @@ func JSONServerStateMessage(r io.Reader) (ServerStateMessage, io.Reader, error) 
 }
 
 type ServerSongMessage struct {
-	NS    string `json:"ns"`
-	ID    string `json:"id"`
-	Title string `json:"title"`
+	Song
+	channel.NoClose
 }
 
 func (m ServerSongMessage) Equal(msg channel.Msg) bool { return m == msg }
-
-func (m ServerSongMessage) Binary(w channel.BinaryWriter) error {
-	w.WriteString(m.NS, 8)
-	w.WriteString(m.ID, 8)
-	w.WriteString(m.Title, 8)
-	return w.Err()
-}
 
 func (m ServerSongMessage) JSON(w io.Writer) error {
 	return json.NewEncoder(w).Encode(m)
@@ -96,10 +90,9 @@ func (m ServerSongMessage) FromJSON(r io.Reader) (channel.Msg, io.Reader, error)
 
 func BinaryServerSongMessage(r channel.BinaryReader) (ServerSongMessage, error) {
 	c := ServerSongMessage{}
-	c.NS = r.ReadString(8)
-	c.ID = r.ReadString(8)
-	c.Title = r.ReadString(8)
-	return c, r.Err()
+	s, err := BinarySong(r)
+	c.Song = s
+	return c, err
 }
 
 func JSONServerSongMessage(r io.Reader) (ServerSongMessage, io.Reader, error) {

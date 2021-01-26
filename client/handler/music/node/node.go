@@ -3,14 +3,12 @@ package node
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/frizinak/homechat/client"
-	musicdata "github.com/frizinak/homechat/server/channel/music/data"
+	"github.com/frizinak/homechat/client/handler/music"
 	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/player"
 	"github.com/frizinak/libym/youtube"
@@ -19,11 +17,10 @@ import (
 const bigdiff = time.Second * 3
 
 type Handler struct {
-	client.Handler
+	*music.DownloadHandler
 	log client.Logger
 
-	sem         sync.Mutex
-	downloading bool
+	sem sync.Mutex
 
 	cl *client.Client
 
@@ -86,15 +83,15 @@ func New(
 	p *player.Player,
 ) *Handler {
 	h := &Handler{
-		Handler:   handler,
-		log:       log,
-		cl:        cl,
-		col:       col,
-		q:         q,
-		p:         p,
-		maxDelay:  maxDelay,
-		seek:      make(chan struct{}, 1024),
-		latencies: latencies{max: 10, l: make([]time.Duration, 0, 30)},
+		DownloadHandler: music.NewDownloadHandler(handler, log, col, cl),
+		log:             log,
+		cl:              cl,
+		col:             col,
+		q:               q,
+		p:               p,
+		maxDelay:        maxDelay,
+		seek:            make(chan struct{}, 1024),
+		latencies:       latencies{max: 10, l: make([]time.Duration, 0, 30)},
 	}
 
 	h.volume = p.Volume()
@@ -139,7 +136,7 @@ func (h *Handler) ContinuousSeek() {
 		}
 
 		n--
-		name := h.lastState.NS + h.lastState.ID
+		name := collection.GlobalID(h.lastState)
 		if n != 0 && lastSong == name {
 			continue
 		}
@@ -173,17 +170,17 @@ func (h *Handler) song(state client.MusicState) (collection.Song, bool, error) {
 	if c != nil && c.Song != nil {
 		s = c.Song
 	}
-	if s != nil && s.NS() == state.NS && s.ID() == state.ID {
+	if s != nil && s.NS() == state.NS() && s.ID() == state.ID() {
 		return s, true, nil
 	}
 
-	switch state.NS {
+	switch state.NS() {
 	case collection.NSYoutube:
-		r := youtube.NewResult(state.ID, state.Title)
+		r := youtube.NewResult(state.ID(), state.Title())
 		s = h.col.FromYoutube(r)
 		return s, false, nil
 	default:
-		return s, false, fmt.Errorf("unsupported song ns %s", state.NS)
+		return s, false, fmt.Errorf("unsupported song ns %s", state.NS())
 	}
 }
 
@@ -194,7 +191,7 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 		return err
 	}
 
-	if state.NS == "" && state.ID == "" && state.Title == "" {
+	if state.NS() == "" && state.ID() == "" && state.Title() == "" {
 		return nil
 	}
 
@@ -207,15 +204,7 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 		h.log.Flash(fmt.Sprintf("Song not downloaded yet: %s", collection.GlobalID(s)), time.Second*5)
 		h.p.Pause()
 		h.paused = true
-		h.sem.Lock()
-		defer h.sem.Unlock()
-		if !h.downloading {
-			h.downloading = true
-			h.log.Flash(fmt.Sprintf("Downloading: %s", collection.GlobalID(s)), time.Second*5)
-			return h.cl.MusicDownload(state.NS, state.ID)
-		}
-
-		return nil
+		return h.DownloadHandler.DownloadSong(state.NS(), state.ID(), 0)
 	}
 
 	h.seek <- struct{}{}
@@ -245,44 +234,6 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 	h.p.ForcePlay()
 	h.lastS = s
 	return nil
-}
-
-func (h *Handler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
-	if err := h.Handler.HandleMusicNodeMessage(m); err != nil {
-		return err
-	}
-
-	defer func() {
-		h.sem.Lock()
-		h.downloading = false
-		h.sem.Unlock()
-	}()
-
-	if !m.Available {
-		h.log.Flash("Download not available on server", time.Second*5)
-		return nil
-	}
-
-	path := h.col.SongPath(m.Song())
-	tmp := collection.TempFile(path)
-	err := func() error {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return err
-		}
-		f, err := os.Create(tmp)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		_, err = io.Copy(f, m.Upload())
-		return err
-	}()
-	if err != nil {
-		return err
-	}
-
-	h.log.Flash(fmt.Sprintf("Downloaded: %s", collection.GlobalID(m.Song())), time.Second*5)
-	return os.Rename(tmp, path)
 }
 
 func (h *Handler) HandleLatency(d time.Duration) {

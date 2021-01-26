@@ -15,6 +15,7 @@ type Log struct {
 	Stamp time.Time
 	Msg   channel.Msg
 	channel.NeverEqual
+	channel.NoClose
 }
 
 func (l Log) Binary(w channel.BinaryWriter) error {

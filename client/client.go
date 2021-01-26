@@ -141,8 +141,12 @@ func (c *Client) Music(msg string) error {
 	return c.Send(vars.MusicChannel, musicdata.Message{Command: msg})
 }
 
-func (c *Client) MusicDownload(ns, id string) error {
-	return c.Send(vars.MusicNodeChannel, musicdata.NodeMessage{ns, id})
+func (c *Client) MusicSongDownload(ns, id string) error {
+	return c.Send(vars.MusicNodeChannel, musicdata.NodeMessage{NS: ns, ID: id})
+}
+
+func (c *Client) MusicPlaylistDownload(playlist string) error {
+	return c.Send(vars.MusicNodeChannel, musicdata.NodeMessage{Playlist: playlist})
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {

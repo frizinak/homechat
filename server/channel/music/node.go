@@ -52,12 +52,15 @@ func (c *MusicNodeChannel) HandleJSON(cl channel.Client, r io.Reader) (io.Reader
 	return nr, c.handle(cl, m)
 }
 
-func (c *MusicNodeChannel) handle(cl channel.Client, m data.NodeMessage) error {
-	filter := channel.ClientFilter{Client: cl, Channel: c.channel}
-	path := c.col.SongPath(m.Song())
+func (c *MusicNodeChannel) sendSong(f channel.ClientFilter, s collection.Song) error {
+	path, err := s.File()
+	if err != nil {
+		return err
+	}
+
 	fh, err := os.Open(path)
 	if os.IsNotExist(err) {
-		return c.sender.Broadcast(filter, data.NewNoSongDataMessage())
+		return c.sender.Broadcast(f, data.NewNoSongDataMessage())
 	}
 
 	if err != nil {
@@ -70,14 +73,40 @@ func (c *MusicNodeChannel) handle(cl channel.Client, m data.NodeMessage) error {
 		return err
 	}
 
+	song := data.Song{P_NS: s.NS(), P_ID: s.ID(), P_Title: s.Title()}
+
 	// sending is async, .Binary will take care of closing
 	return c.sender.Broadcast(
-		filter,
-		data.NewSongDataMessage(
-			m.NS,
-			m.ID,
-			stat.Size(),
-			fh,
-		),
+		f,
+		data.NewSongDataMessage(song, stat.Size(), fh),
 	)
+}
+
+func (c *MusicNodeChannel) handle(cl channel.Client, m data.NodeMessage) error {
+	filter := channel.ClientFilter{Client: cl, Channel: c.channel}
+	if m.NS == "" && m.ID == "" {
+		songs, err := c.col.PlaylistSongs(m.Playlist)
+		if err == collection.ErrNotExists {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		for _, s := range songs {
+			if err := c.sendSong(filter, s); err != nil {
+				return err
+			}
+		}
+	}
+
+	song, err := c.col.Find(m.NS, m.ID)
+	if err == collection.ErrSongNotExists {
+		return c.sender.Broadcast(filter, data.NewNoSongDataMessage())
+	}
+	if err != nil {
+		return err
+	}
+
+	return c.sendSong(filter, song)
 }

@@ -48,6 +48,8 @@ type Msg interface {
 
 	FromBinary(BinaryReader) (Msg, error)
 	FromJSON(io.Reader) (Msg, io.Reader, error)
+
+	Close() error
 }
 
 type StatusCode byte
@@ -63,6 +65,7 @@ type StatusMsg struct {
 	Err  string     `json:"err"`
 
 	NeverEqual
+	NoClose
 }
 
 func (m StatusMsg) Is(s StatusCode) bool { return m.Code == s }
@@ -100,6 +103,7 @@ type IdentifyMsg struct {
 	Version  string   `json:"v"`
 
 	NeverEqual
+	NoClose
 }
 
 func (h IdentifyMsg) Binary(w BinaryWriter) error {
@@ -138,6 +142,7 @@ func JSONIdentifyMsg(r io.Reader) (IdentifyMsg, io.Reader, error) {
 
 type ChannelMsg struct {
 	Data string `json:"d"`
+	NoClose
 }
 
 func (h ChannelMsg) Binary(w BinaryWriter) error {
@@ -155,7 +160,7 @@ func (m ChannelMsg) Equal(Msg) bool                               { return false
 
 func BinaryChannelMsg(r BinaryReader) (ChannelMsg, error) {
 	n := StripUnprintable(r.ReadString(8))
-	return ChannelMsg{n}, r.Err()
+	return ChannelMsg{Data: n}, r.Err()
 }
 
 func JSONChannelMsg(r io.Reader) (ChannelMsg, io.Reader, error) {

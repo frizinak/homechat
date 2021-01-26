@@ -2,11 +2,13 @@ package client
 
 import (
 	"errors"
+	"sync"
 
 	"github.com/frizinak/homechat/server/channel"
 )
 
 type Job struct {
+	WG      *sync.WaitGroup
 	Channel string
 	Msgs    []channel.Msg
 }
@@ -17,6 +19,7 @@ type Error struct {
 }
 
 type Client struct {
+	wg          sync.WaitGroup
 	proto       channel.Proto
 	frameWriter bool
 
@@ -63,6 +66,7 @@ func (c *Client) Run() {
 				if err := c.send(j.Channel, m); err != nil {
 					c.errs <- Error{c, err}
 				}
+				j.WG.Done()
 			}
 		}
 	}()
@@ -70,15 +74,20 @@ func (c *Client) Run() {
 
 func (c *Client) Stop() {
 	c.stopped = true
+	c.wg.Wait()
 	close(c.jobs)
 }
 
 func (c *Client) Queue(job Job) {
 	if c.stopped {
+		job.WG.Add(-len(job.Msgs))
 		c.errs <- Error{c, errors.New("client was stopped but still received a message")}
 		return
 	}
+
+	c.wg.Add(1)
 	c.jobs <- job
+	c.wg.Done()
 }
 
 func (c *Client) send(chnl string, msg channel.Msg) error {

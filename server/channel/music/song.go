@@ -36,8 +36,7 @@ func (c *SongChannel) Send() {
 	cur := c.q.Current()
 	s := cur.Song
 	if s != nil {
-		song.NS, song.ID = s.NS(), s.ID()
-		song.Title = s.Title()
+		song.Song = data.Song{P_NS: s.NS(), P_ID: s.ID(), P_Title: s.Title()}
 	}
 	if err := c.sender.Broadcast(f, song); err != nil {
 		c.log.Println(err)

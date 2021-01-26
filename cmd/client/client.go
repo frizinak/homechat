@@ -54,6 +54,27 @@ func upload(f *Flags, backend client.Backend) error {
 	return cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, stat.Size(), r)
 }
 
+func musicDownload(f *Flags, backend client.Backend) error {
+	log := ui.Plain(os.Stdout)
+	conf := f.MusicNodeConfig
+	conf.CustomError = music.NewErrorFlasher(log)
+	di := di.New(conf)
+	handler := terminal.New(log)
+	cl := &client.Client{}
+	downloadHandler := music.NewDownloadHandler(handler, log, di.Collection(), cl)
+	*cl = *client.New(backend, downloadHandler, log, f.ClientConf)
+	go handler.Run(nil)
+	go cl.Run()
+	defer cl.Close()
+	args := strings.Join(f.flags.musicDownload.Args(), " ")
+	if err := downloadHandler.DownloadPlaylist(args, time.Second*200); err != nil {
+		return err
+	}
+	time.Sleep(time.Second * 2)
+	downloadHandler.Wait()
+	return nil
+}
+
 func oneoff(f *Flags, backend client.Backend) error {
 	log := ui.Plain(ioutil.Discard)
 	handler := terminal.New(log)
@@ -190,6 +211,9 @@ func main() {
 		exitClean()
 	case ModeUpload:
 		exit(upload(f, backend))
+		exitClean()
+	case ModeMusicDownload:
+		exit(musicDownload(f, backend))
 		exitClean()
 	}
 

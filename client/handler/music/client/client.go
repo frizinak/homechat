@@ -194,8 +194,7 @@ func (ui *UI) Flush() {
 	cur := ui.q.Current()
 	s := cur.Song
 	if s != nil {
-		song.NS, song.ID = s.NS(), s.ID()
-		song.Title = s.Title()
+		song.Song = musicdata.Song{P_NS: s.NS(), P_ID: s.ID(), P_Title: s.Title()}
 	}
 	state.Paused = ui.p.Paused()
 	state.Duration = ui.p.Duration()
@@ -238,12 +237,12 @@ func (h *handler) HandleMusicMessage(m musicdata.ServerMessage) error {
 
 	l := make([]collection.Song, 0, len(m.Songs))
 	for _, s := range m.Songs {
-		switch s.NS {
+		switch s.NS() {
 		case collection.NSYoutube:
-			rs := h.col.FromYoutube(youtube.NewResult(s.ID, s.Title))
+			rs := h.col.FromYoutube(youtube.NewResult(s.ID(), s.Title()))
 			l = append(l, rs)
 		default:
-			return fmt.Errorf("song with unknown namespace: '%s'", s.NS)
+			return fmt.Errorf("song with unknown namespace: '%s'", s.NS())
 		}
 	}
 

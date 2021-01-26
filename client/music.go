@@ -25,6 +25,7 @@ func (m MusicState) JSON(w io.Writer) error {
 }
 
 func (m MusicState) Equal(msg channel.Msg) bool { return m == msg }
+func (m MusicState) Close() error               { return nil }
 
 func (m MusicState) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
 	msg, err := m.ServerSongMessage.FromBinary(r)

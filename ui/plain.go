@@ -16,9 +16,9 @@ func Plain(w io.Writer) *PlainUI {
 
 func (p *PlainUI) Users(msg string)                    {}
 func (p *PlainUI) Latency(latency time.Duration)       {}
-func (p *PlainUI) Log(msg string)                      {}
-func (p *PlainUI) Flash(msg string, dur time.Duration) { fmt.Fprintln(p.Writer, "FLASH", msg) }
-func (p *PlainUI) Err(err error)                       { fmt.Fprintln(p.Writer, "ERR", err) }
+func (p *PlainUI) Log(msg string)                      { fmt.Fprintln(p.Writer, "[log]", msg) }
+func (p *PlainUI) Flash(msg string, dur time.Duration) { fmt.Fprintln(p.Writer, "[notice]", msg) }
+func (p *PlainUI) Err(err error)                       { fmt.Fprintln(p.Writer, "[err]", err) }
 func (p *PlainUI) Clear()                              {}
 func (p *PlainUI) JumpToActive()                       {}
 func (p *PlainUI) Broadcast(msgs []Msg, scroll bool) {

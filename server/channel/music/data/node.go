@@ -8,24 +8,18 @@ import (
 	"github.com/frizinak/homechat/server/channel"
 )
 
-type SongID struct {
-	ns string
-	id string
-}
-
-func (s *SongID) NS() string { return s.ns }
-func (s *SongID) ID() string { return s.id }
-
 type NodeMessage struct {
-	NS string
-	ID string
-}
+	NS       string
+	ID       string
+	Playlist string
 
-func (m NodeMessage) Song() *SongID { return &SongID{ns: m.NS, id: m.ID} }
+	channel.NoClose
+}
 
 func (m NodeMessage) Binary(r channel.BinaryWriter) error {
 	r.WriteString(m.NS, 8)
 	r.WriteString(m.ID, 8)
+	r.WriteString(m.Playlist, 16)
 	return r.Err()
 }
 
@@ -47,6 +41,7 @@ func BinaryNodeMessage(r channel.BinaryReader) (NodeMessage, error) {
 	m := NodeMessage{}
 	m.NS = r.ReadString(8)
 	m.ID = r.ReadString(8)
+	m.Playlist = r.ReadString(16)
 	return m, r.Err()
 }
 
@@ -58,8 +53,7 @@ func JSONNodeMessage(r io.Reader) (NodeMessage, io.Reader, error) {
 
 type SongDataMessage struct {
 	Available bool
-	NS        string
-	ID        string
+	Song      Song
 	Size      int64
 
 	r io.Reader
@@ -67,16 +61,12 @@ type SongDataMessage struct {
 	channel.NeverEqual
 }
 
-func NewSongDataMessage(ns, id string, size int64, r io.Reader) SongDataMessage {
-	return SongDataMessage{Available: true, NS: ns, ID: id, Size: size, r: r}
+func NewSongDataMessage(song Song, size int64, r io.Reader) SongDataMessage {
+	return SongDataMessage{Available: true, Song: song, Size: size, r: r}
 }
 
 func NewNoSongDataMessage() SongDataMessage {
 	return SongDataMessage{Available: false}
-}
-
-func (m SongDataMessage) Song() *SongID {
-	return &SongID{ns: m.NS, id: m.ID}
 }
 
 func (m SongDataMessage) Upload() io.Reader {
@@ -89,8 +79,9 @@ func (m SongDataMessage) Binary(w channel.BinaryWriter) error {
 		return w.Err()
 	}
 	w.WriteUint8(1)
-	w.WriteString(m.NS, 8)
-	w.WriteString(m.ID, 8)
+	if err := m.Song.Binary(w); err != nil {
+		return err
+	}
 	w.WriteUint64(uint64(m.Size))
 	if err := w.Err(); err != nil {
 		return err
@@ -98,11 +89,16 @@ func (m SongDataMessage) Binary(w channel.BinaryWriter) error {
 
 	conn := w.Writer()
 	_, err := io.Copy(conn, m.r)
-	if rc, ok := m.r.(io.ReadCloser); ok {
-		rc.Close()
-	}
 
 	return err
+}
+
+func (m SongDataMessage) Close() error {
+	if rc, ok := m.r.(io.ReadCloser); ok {
+		return rc.Close()
+	}
+
+	return nil
 }
 
 func (m SongDataMessage) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
@@ -124,8 +120,11 @@ func BinarySongDataMessage(r channel.BinaryReader) (SongDataMessage, error) {
 		return m, r.Err()
 	}
 
-	m.NS = r.ReadString(8)
-	m.ID = r.ReadString(8)
+	s, err := BinarySong(r)
+	if err != nil {
+		return m, err
+	}
+	m.Song = s
 	m.Size = int64(r.ReadUint64())
 	m.r = io.LimitReader(r.Reader(), m.Size)
 	return m, r.Err()

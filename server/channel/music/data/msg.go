@@ -11,6 +11,7 @@ type Message struct {
 	Command string `json:"cmd"`
 
 	channel.NeverEqual
+	channel.NoClose
 }
 
 func (m Message) Binary(w channel.BinaryWriter) error {
@@ -38,11 +39,38 @@ func JSONMessage(r io.Reader) (Message, io.Reader, error) {
 }
 
 type Song struct {
-	NS      string `json:"ns"`
-	ID      string `json:"id"`
-	Title   string `json:"title"`
+	P_NS    string `json:"ns"`
+	P_ID    string `json:"id"`
+	P_Title string `json:"title"`
 	Active  bool   `json:"a"`
 	Problem string `json:"problem"`
+}
+
+func (s Song) NS() string    { return s.P_NS }
+func (s Song) ID() string    { return s.P_ID }
+func (s Song) Title() string { return s.P_Title }
+
+func (s Song) Binary(w channel.BinaryWriter) error {
+	var a uint8 = 0
+	if s.Active {
+		a = 1
+	}
+	w.WriteString(s.P_NS, 8)
+	w.WriteString(s.P_ID, 8)
+	w.WriteString(s.P_Title, 8)
+	w.WriteUint8(a)
+	w.WriteString(s.Problem, 8)
+	return w.Err()
+}
+
+func BinarySong(r channel.BinaryReader) (Song, error) {
+	return Song{
+		r.ReadString(8),
+		r.ReadString(8),
+		r.ReadString(8),
+		r.ReadUint8() == 1,
+		r.ReadString(8),
+	}, r.Err()
 }
 
 type ServerMessage struct {
@@ -50,24 +78,19 @@ type ServerMessage struct {
 	Title string `json:"title"`
 	Text  string `json:"text"`
 	Songs []Song `json:"songs"`
+
+	channel.NoClose
 }
 
 func (m ServerMessage) Binary(w channel.BinaryWriter) error {
-	var a uint8
 	w.WriteUint8(m.View)
 	w.WriteString(m.Title, 16)
 	w.WriteString(m.Text, 32)
 	w.WriteUint32(uint32(len(m.Songs)))
 	for _, s := range m.Songs {
-		a = 0
-		if s.Active {
-			a = 1
+		if err := s.Binary(w); err != nil {
+			return err
 		}
-		w.WriteString(s.NS, 8)
-		w.WriteString(s.ID, 8)
-		w.WriteString(s.Title, 8)
-		w.WriteUint8(a)
-		w.WriteString(s.Problem, 8)
 	}
 	return w.Err()
 }
@@ -110,13 +133,11 @@ func BinaryServerMessage(r channel.BinaryReader) (ServerMessage, error) {
 	n := r.ReadUint32()
 	m.Songs = make([]Song, n)
 	for i := range m.Songs {
-		m.Songs[i] = Song{
-			r.ReadString(8),
-			r.ReadString(8),
-			r.ReadString(8),
-			r.ReadUint8() == 1,
-			r.ReadString(8),
+		s, err := BinarySong(r)
+		if err != nil {
+			return m, err
 		}
+		m.Songs[i] = s
 	}
 	return m, r.Err()
 }

@@ -12,6 +12,7 @@ type Message struct {
 	Data string `json:"d"`
 
 	channel.NeverEqual
+	channel.NoClose
 }
 
 func (m Message) Binary(w channel.BinaryWriter) error {
@@ -61,6 +62,7 @@ type ServerMessage struct {
 	Shout  bool      `json:"shout"`
 
 	channel.NeverEqual
+	channel.NoClose
 }
 
 func (m ServerMessage) Binary(w channel.BinaryWriter) error {

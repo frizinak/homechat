@@ -72,7 +72,7 @@ func (h *Handler) HandleMusicNodeMessage(musicdata.SongDataMessage) error {
 
 func (h *Handler) HandleMusicStateMessage(m client.MusicState) error {
 	h.musicState <- ui.State{
-		Song:     m.Title,
+		Song:     m.Title(),
 		Paused:   m.Paused,
 		Position: m.Position,
 		Duration: m.Duration,
@@ -180,7 +180,7 @@ func (h *Handler) Run(notify chan ui.Msg) {
 				msgs = append(
 					msgs,
 					ui.Msg{
-						Message:   fmt.Sprintf(format, i+1, song.Title),
+						Message:   fmt.Sprintf(format, i+1, song.Title()),
 						Highlight: hl,
 					},
 				)

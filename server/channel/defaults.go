@@ -45,7 +45,10 @@ type NeverEqual struct{}
 
 func (n NeverEqual) Equal(Msg) bool { return false }
 
-type NilMsg struct{ NeverEqual }
+type NilMsg struct {
+	NeverEqual
+	NoClose
+}
 
 func (m NilMsg) Binary(w BinaryWriter) error                  { return w.Err() }
 func (m NilMsg) JSON(w io.Writer) error                       { return nil }
