@@ -330,11 +330,13 @@ func main() {
 	keys, err := NewKeys(
 		f.Keymap,
 		map[Action]KeyHandler{
-			PageDown:   Simple(tui.ScrollPageDown),
-			PageUp:     Simple(tui.ScrollPageUp),
-			ScrollDown: func() bool { tui.Scroll(-1); return false },
-			ScrollUp:   func() bool { tui.Scroll(1); return false },
-			Backspace:  Simple(tui.BackspaceInput),
+			PageDown:    Simple(tui.ScrollPageDown),
+			PageUp:      Simple(tui.ScrollPageUp),
+			ScrollDown:  func() bool { tui.Scroll(-1); return false },
+			ScrollUp:    func() bool { tui.Scroll(1); return false },
+			ScrollBegin: func() bool { tui.Scroll(1<<31 - 1); return false },
+			ScrollEnd:   func() bool { tui.Scroll(-1 << 31); return false },
+			Backspace:   Simple(tui.BackspaceInput),
 			Completion: func() bool {
 				n := complete(
 					tui.GetInput(),

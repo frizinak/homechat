@@ -404,10 +404,12 @@ func (f *Flags) validateKeymap() error {
 	}
 
 	defaultKeymap := Keymap{
-		PageDown:   "ctrl-d",
-		PageUp:     "ctrl-u",
-		ScrollDown: "ctrl-j",
-		ScrollUp:   "ctrl-k",
+		PageDown:    "ctrl-d",
+		PageUp:      "ctrl-u",
+		ScrollDown:  "ctrl-j",
+		ScrollUp:    "ctrl-k",
+		ScrollBegin: "ctrl-b",
+		ScrollEnd:   "ctrl-e",
 
 		Backspace:  "backspace",
 		Completion: "tab",
