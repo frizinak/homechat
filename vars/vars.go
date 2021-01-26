@@ -4,7 +4,7 @@ var GitVersion string
 
 const (
 	Version         = "custom"
-	ProtocolVersion = "1021"
+	ProtocolVersion = "1022"
 
 	ChatChannel    = "c"  // rw
 	HistoryChannel = "h"  // rw
