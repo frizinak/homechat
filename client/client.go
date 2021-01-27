@@ -440,7 +440,6 @@ func (c *Client) Run() error {
 		switch chnl.Data {
 		case vars.PingChannel:
 			c.latency = time.Since(pingSent)
-			//c.log.Flash(time.Since(p).String(), 0)
 			c.handler.HandleLatency(c.latency)
 		case vars.HistoryChannel:
 			_, r, err = c.read(r, historydata.ServerMessage{})

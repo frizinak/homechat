@@ -172,7 +172,8 @@ type UI struct {
 
 func NewUI(offline bool, handler client.Handler, logger client.Logger, di *di.DI, cl *client.Client) *UI {
 	col := di.Collection()
-	col.Run()
+	rate1, rate2 := di.Rates()
+	col.Run(rate1, rate2)
 	output := newOutput(handler, logger, col.Problematics())
 	rhandler := newHandler(handler, col)
 	parser := newCommandParser(offline, rhandler, logger, di.CommandParser(), cl)

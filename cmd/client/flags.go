@@ -32,6 +32,9 @@ const (
 	ModeMusicClient
 	ModeMusicNode
 	ModeMusicDownload
+	ModeMusicInfoFiles
+	ModeMusicInfoDownloads
+	ModeMusicInfoSongs
 )
 
 type Flags struct {
@@ -64,17 +67,32 @@ type Flags struct {
 	MusicClient struct {
 		Offline bool
 	}
+	MusicInfo struct {
+		Dir string
+	}
+	MusicInfoFiles struct {
+		Stat bool
+		KiB  bool
+	}
+	MusicInfoSongs struct {
+		Stat bool
+		KiB  bool
+	}
 
 	flags struct {
-		chat          *flag.FlagSet
-		music         *flag.FlagSet
-		musicRemote   *flag.FlagSet
-		musicNode     *flag.FlagSet
-		musicClient   *flag.FlagSet
-		musicDownload *flag.FlagSet
-		upload        *flag.FlagSet
-		config        *flag.FlagSet
-		fingerprint   *flag.FlagSet
+		chat               *flag.FlagSet
+		music              *flag.FlagSet
+		musicRemote        *flag.FlagSet
+		musicNode          *flag.FlagSet
+		musicClient        *flag.FlagSet
+		musicDownload      *flag.FlagSet
+		musicInfo          *flag.FlagSet
+		musicInfoFiles     *flag.FlagSet
+		musicInfoDownloads *flag.FlagSet
+		musicInfoSongs     *flag.FlagSet
+		upload             *flag.FlagSet
+		config             *flag.FlagSet
+		fingerprint        *flag.FlagSet
 	}
 
 	AppConf         *Config
@@ -135,6 +153,25 @@ func (f *Flags) Flags() {
 	f.flags.musicDownload = flag.NewFlagSet("music download", flag.ExitOnError)
 	f.flags.musicDownload.SetOutput(f.out)
 
+	f.flags.musicInfo = flag.NewFlagSet("music info", flag.ExitOnError)
+
+	def := filepath.Join(f.All.CacheDir, "ym")
+	f.flags.musicInfo.StringVar(&f.MusicInfo.Dir, "d", def, "libym directory")
+	f.flags.musicInfo.SetOutput(f.out)
+
+	f.flags.musicInfoFiles = flag.NewFlagSet("music info files", flag.ExitOnError)
+	f.flags.musicInfoFiles.BoolVar(&f.MusicInfoFiles.Stat, "s", false, "stat files and print disk usage")
+	f.flags.musicInfoFiles.BoolVar(&f.MusicInfoFiles.KiB, "k", false, "print size in KiB, ignored when -s is not passed")
+	f.flags.musicInfoFiles.SetOutput(f.out)
+
+	f.flags.musicInfoDownloads = flag.NewFlagSet("music info downloads", flag.ExitOnError)
+	f.flags.musicInfoDownloads.SetOutput(f.out)
+
+	f.flags.musicInfoSongs = flag.NewFlagSet("music info songs", flag.ExitOnError)
+	f.flags.musicInfoSongs.BoolVar(&f.MusicInfoSongs.Stat, "s", false, "stat files and print disk usage")
+	f.flags.musicInfoSongs.BoolVar(&f.MusicInfoSongs.KiB, "k", false, "print size in KiB, ignored when -s is not passed")
+	f.flags.musicInfoSongs.SetOutput(f.out)
+
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
 
@@ -162,10 +199,11 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "music")
 		f.flags.music.PrintDefaults()
 		fmt.Fprint(f.out, "\nCommands:\n")
-		fmt.Fprintln(f.out, "  - remote:   control server music player")
+		fmt.Fprintln(f.out, "  - remote:   control server music player (main intended usage)")
 		fmt.Fprintln(f.out, "  - node:     run a music node in sync with the server")
 		fmt.Fprintln(f.out, "  - client:   start a local music player with local queue but playlists on server")
 		fmt.Fprintln(f.out, "  - download: download music from server")
+		fmt.Fprintln(f.out, "  - info:     libym related commands")
 	}
 	f.flags.musicRemote.Usage = func() {
 		f.flags.musicRemote.PrintDefaults()
@@ -187,6 +225,31 @@ func (f *Flags) Flags() {
 	f.flags.musicDownload.Usage = func() {
 		f.flags.musicDownload.PrintDefaults()
 		fmt.Fprintln(f.out, "Download the given playlist")
+	}
+	f.flags.musicInfo.Usage = func() {
+		fmt.Fprintln(f.out, "music info")
+		fmt.Fprintln(f.out, "")
+		fmt.Fprintln(f.out, "Note: these commands operate on the server libym database")
+		fmt.Fprintln(f.out, "      they will work on the client equivalent as well")
+		fmt.Fprintln(f.out, "      but might hold less relevance")
+		fmt.Fprintln(f.out, "")
+		f.flags.musicInfo.PrintDefaults()
+		fmt.Fprint(f.out, "\nCommands:\n")
+		fmt.Fprintln(f.out, "  - files:     list unused files (not in a playlist)")
+		fmt.Fprintln(f.out, "  - downloads: list songs that are not (yet) downloaded")
+		fmt.Fprintln(f.out, "  - songs:     list all songs")
+	}
+	f.flags.musicInfoFiles.Usage = func() {
+		fmt.Fprintln(f.out, "List unused files")
+		f.flags.musicInfoFiles.PrintDefaults()
+	}
+	f.flags.musicInfoDownloads.Usage = func() {
+		fmt.Fprintln(f.out, "List songs that are not (yet) downloaded")
+		f.flags.musicInfoDownloads.PrintDefaults()
+	}
+	f.flags.musicInfoSongs.Usage = func() {
+		fmt.Fprintln(f.out, "List all songs")
+		f.flags.musicInfoSongs.PrintDefaults()
 	}
 	f.flags.upload.Usage = func() {
 		f.flags.upload.PrintDefaults()
@@ -447,6 +510,7 @@ func (f *Flags) validateKeymap() error {
 
 func (f *Flags) parseCommand() error {
 	args := flag.Args()
+
 	switch flag.Arg(0) {
 	case "", "chat":
 		f.All.Mode = ModeDefault
@@ -457,37 +521,77 @@ func (f *Flags) parseCommand() error {
 			return err
 		}
 		f.All.OneOff = strings.Join(f.flags.chat.Args(), " ")
+
 	case "music":
 		if len(args) <= 1 {
 			f.flags.music.Usage()
 			os.Exit(1)
 		}
-		switch args[1] {
+		f.flags.music.Parse(args[1:])
+		args = f.flags.music.Args()
+		switch f.flags.music.Arg(0) {
 		case "remote":
 			f.All.Mode = ModeMusicRemote
-			if err := f.flags.musicRemote.Parse(args[2:]); err != nil {
+			if err := f.flags.musicRemote.Parse(args[1:]); err != nil {
 				return err
 			}
 			f.All.OneOff = strings.Join(f.flags.musicRemote.Args(), " ")
+
 		case "node":
 			f.All.Mode = ModeMusicNode
-			if err := f.flags.musicNode.Parse(args[2:]); err != nil {
+			if err := f.flags.musicNode.Parse(args[1:]); err != nil {
 				return err
 			}
+
 		case "client":
 			f.All.Mode = ModeMusicClient
-			if err := f.flags.musicClient.Parse(args[2:]); err != nil {
+			if err := f.flags.musicClient.Parse(args[1:]); err != nil {
 				return err
 			}
+
 		case "download":
 			f.All.Mode = ModeMusicDownload
-			if err := f.flags.musicDownload.Parse(args[2:]); err != nil {
+			if err := f.flags.musicDownload.Parse(args[1:]); err != nil {
 				return err
 			}
+
+		case "info":
+			if len(args) <= 1 {
+				f.flags.musicInfo.Usage()
+				os.Exit(0)
+			}
+			f.flags.musicInfo.Parse(args[1:])
+			args = f.flags.musicInfo.Args()
+
+			switch f.flags.musicInfo.Arg(0) {
+			case "files":
+				f.All.Mode = ModeMusicInfoFiles
+				if err := f.flags.musicInfoFiles.Parse(args[1:]); err != nil {
+					return err
+				}
+
+			case "downloads":
+				f.All.Mode = ModeMusicInfoDownloads
+				if err := f.flags.musicInfoDownloads.Parse(args[1:]); err != nil {
+					return err
+				}
+
+			case "songs":
+				f.All.Mode = ModeMusicInfoSongs
+				if err := f.flags.musicInfoSongs.Parse(args[1:]); err != nil {
+					return err
+				}
+
+			default:
+				f.flags.musicInfo.Usage()
+				os.Exit(0)
+			}
+
 		default:
 			f.flags.music.Usage()
 			os.Exit(1)
 		}
+
 	case "upload":
 		f.All.Mode = ModeUpload
 		if err := f.flags.upload.Parse(args[1:]); err != nil {
@@ -497,11 +601,13 @@ func (f *Flags) parseCommand() error {
 		if f.Upload.File == "" && f.All.Interactive {
 			return errors.New("please provide a file")
 		}
+
 	case "fingerprint":
 		f.All.Mode = ModeFingerprint
 		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
 			return err
 		}
+
 	case "version":
 		version := vars.GitVersion
 		if version == "" {
@@ -509,6 +615,7 @@ func (f *Flags) parseCommand() error {
 		}
 		fmt.Fprintf(f.out, "%s (protocol: %s)\n", version, vars.ProtocolVersion)
 		os.Exit(0)
+
 	default:
 		flag.Usage()
 		os.Exit(1)

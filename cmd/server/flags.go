@@ -25,22 +25,17 @@ const (
 	ModeLogs
 	ModeHue
 	ModeFingerprint
-	ModeMusicFiles
-	ModeMusicDownloads
 )
 
 type Flags struct {
 	out io.Writer
 
 	flags struct {
-		serve          *flag.FlagSet
-		logs           *flag.FlagSet
-		hue            *flag.FlagSet
-		fingerprint    *flag.FlagSet
-		config         *flag.FlagSet
-		music          *flag.FlagSet
-		musicFiles     *flag.FlagSet
-		musicDownloads *flag.FlagSet
+		serve       *flag.FlagSet
+		logs        *flag.FlagSet
+		hue         *flag.FlagSet
+		fingerprint *flag.FlagSet
+		config      *flag.FlagSet
 	}
 
 	All struct {
@@ -59,15 +54,6 @@ type Flags struct {
 
 	Logs struct {
 		Dir string
-	}
-
-	Music struct {
-		Dir string
-	}
-
-	MusicFiles struct {
-		Stat bool
-		KiB  bool
 	}
 
 	AppConf    *Config
@@ -112,17 +98,6 @@ func (f *Flags) Flags() {
 	f.flags.config = flag.NewFlagSet("config", flag.ExitOnError)
 	f.flags.config.SetOutput(f.out)
 
-	f.flags.music = flag.NewFlagSet("music", flag.ExitOnError)
-	f.flags.music.SetOutput(f.out)
-
-	f.flags.musicFiles = flag.NewFlagSet("music files", flag.ExitOnError)
-	f.flags.musicFiles.BoolVar(&f.MusicFiles.Stat, "s", false, "stat files and print disk usage")
-	f.flags.musicFiles.BoolVar(&f.MusicFiles.KiB, "k", false, "print size in KiB, ignored when -s is not passed")
-	f.flags.musicFiles.SetOutput(f.out)
-
-	f.flags.musicDownloads = flag.NewFlagSet("music downloads", flag.ExitOnError)
-	f.flags.musicDownloads.SetOutput(f.out)
-
 	flag.CommandLine.SetOutput(f.out)
 	flag.StringVar(&f.All.ConfigFile, "c", f.All.ConfigFile, "config file")
 
@@ -134,7 +109,6 @@ func (f *Flags) Flags() {
 		fmt.Fprintln(f.out, "  - logs:            Append-only logfile operations")
 		fmt.Fprintln(f.out, "  - hue:             Configure Philips Hue bridge credentials")
 		fmt.Fprintln(f.out, "  - fingerprint:     Show server publickey fingerprint")
-		fmt.Fprintln(f.out, "  - music:           Music/libym related subcommands")
 		fmt.Fprintln(f.out, "  - config:          Config options explained")
 		fmt.Fprintln(f.out, "  - version:         Print version and exit")
 	}
@@ -154,21 +128,6 @@ func (f *Flags) Flags() {
 	f.flags.fingerprint.Usage = func() {
 		fmt.Fprintln(f.out, "Show server publickey fingerprint")
 		f.flags.fingerprint.PrintDefaults()
-	}
-	f.flags.music.Usage = func() {
-		fmt.Fprintln(f.out, "music")
-		f.flags.music.PrintDefaults()
-		fmt.Fprint(f.out, "\nCommands:\n")
-		fmt.Fprintln(f.out, "  - files:     list unused files (not in a playlist)")
-		fmt.Fprintln(f.out, "  - downloads: list songs that are not (yet) downloaded")
-	}
-	f.flags.musicFiles.Usage = func() {
-		fmt.Fprintln(f.out, "List unused files")
-		f.flags.musicFiles.PrintDefaults()
-	}
-	f.flags.musicDownloads.Usage = func() {
-		fmt.Fprintln(f.out, "List songs that are not (yet) downloaded")
-		f.flags.musicDownloads.PrintDefaults()
 	}
 	f.flags.config.Usage = func() {
 		fmt.Fprintf(f.out, "Config file used: '%s'\n\n", f.All.ConfigFile)
@@ -196,8 +155,6 @@ func (f *Flags) Parse() error {
 	if err := f.parseCommand(); err != nil {
 		return err
 	}
-
-	f.Music.Dir = f.AppConf.YMDir
 
 	f.All.CacheDir = f.AppConf.Directory
 	f.All.Store = filepath.Join(f.AppConf.Directory, "chat.log")
@@ -340,26 +297,6 @@ func (f *Flags) parseCommand() error {
 		f.All.Mode = ModeFingerprint
 		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
 			return err
-		}
-	case "music":
-		if len(args) <= 1 {
-			f.flags.music.Usage()
-			os.Exit(1)
-		}
-		switch args[1] {
-		case "files":
-			f.All.Mode = ModeMusicFiles
-			if err := f.flags.musicFiles.Parse(args[2:]); err != nil {
-				return err
-			}
-		case "downloads":
-			f.All.Mode = ModeMusicDownloads
-			if err := f.flags.musicDownloads.Parse(args[2:]); err != nil {
-				return err
-			}
-		default:
-			f.flags.music.Usage()
-			os.Exit(1)
 		}
 	case "version":
 		version := vars.GitVersion

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/frizinak/homechat/bytes"
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/backend/tcp"
 	"github.com/frizinak/homechat/client/handler/music"
@@ -23,6 +24,7 @@ import (
 	"github.com/frizinak/homechat/client/handler/terminal"
 	"github.com/frizinak/homechat/ui"
 	"github.com/frizinak/homechat/vars"
+	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/di"
 
 	"github.com/containerd/console"
@@ -72,6 +74,139 @@ func musicDownload(f *Flags, backend client.Backend) error {
 	}
 	time.Sleep(time.Second * 2)
 	downloadHandler.Wait()
+	return nil
+}
+
+func musicInfoFiles(f *Flags) error {
+	di := di.New(
+		di.Config{
+			Log:          log.New(os.Stderr, "", 0),
+			StorePath:    f.MusicInfo.Dir,
+			AutoSave:     false,
+			SimpleOutput: ioutil.Discard,
+		},
+	)
+	col := di.Collection()
+	var total uint64
+	convert := func(b bytes.Bytes) bytes.Bytes {
+		if f.MusicInfoFiles.KiB {
+			return b.Convert(bytes.KiB)
+		}
+		return b.Human()
+	}
+
+	for _, path := range col.UnreferencedDownloads() {
+		if f.MusicInfoFiles.Stat {
+			s, err := os.Stat(path)
+			if err != nil {
+				fmt.Printf("%10s\t%s\n", "?", path)
+				continue
+			}
+			size := s.Size()
+			v := bytes.New(float64(size/1024), bytes.KiB)
+			fmt.Printf("%10s\t%s\n", convert(v), path)
+			total += uint64(size)
+			continue
+		}
+		fmt.Println(path)
+	}
+
+	if f.MusicInfoFiles.Stat {
+		v := bytes.New(float64(total/1024), bytes.KiB)
+		fmt.Printf("Total: %s\n", convert(v).String())
+	}
+
+	return nil
+}
+
+func musicInfoDownloads(f *Flags) error {
+	di := di.New(
+		di.Config{
+			Log:          log.New(os.Stderr, "", 0),
+			StorePath:    f.MusicInfo.Dir,
+			AutoSave:     false,
+			SimpleOutput: ioutil.Discard,
+		},
+	)
+	col := di.Collection()
+	q := di.Queue()
+
+	all := col.Songs()
+	all = append(all, q.Slice()...)
+	uniq := make(map[string]struct{}, len(all))
+	count := 0
+	for _, s := range all {
+		gid := collection.GlobalID(s)
+		if _, ok := uniq[gid]; ok {
+			continue
+		}
+		uniq[gid] = struct{}{}
+		if !s.Local() {
+			fmt.Printf("[%s] %s\n", gid, s.Title())
+			count++
+		}
+	}
+
+	fmt.Printf("Not downloaded: %d\n", count)
+	return nil
+}
+
+func musicInfoSongs(f *Flags) error {
+	di := di.New(
+		di.Config{
+			Log:          log.New(os.Stderr, "", 0),
+			StorePath:    f.MusicInfo.Dir,
+			AutoSave:     false,
+			SimpleOutput: ioutil.Discard,
+		},
+	)
+
+	col := di.Collection()
+	q := di.Queue()
+	convert := func(b bytes.Bytes) bytes.Bytes {
+		if f.MusicInfoSongs.KiB {
+			return b.Convert(bytes.KiB)
+		}
+		return b.Human()
+	}
+
+	all := col.Songs()
+	all = append(all, q.Slice()...)
+	uniq := make(map[string]struct{}, len(all))
+	var total uint64
+	for _, s := range all {
+		gid := collection.GlobalID(s)
+		if _, ok := uniq[gid]; ok {
+			continue
+		}
+		uniq[gid] = struct{}{}
+
+		path, err := s.File()
+		if err != nil {
+			return fmt.Errorf("song error: %s: %s: %w", gid, s.Title(), err)
+		}
+
+		if f.MusicInfoSongs.Stat {
+			stat, err := os.Stat(path)
+			if err != nil {
+				fmt.Printf("%10s\t%-5s\t%-20s\t%s\t%s\n", "?", s.NS(), s.ID(), path, s.Title())
+				continue
+			}
+			size := stat.Size()
+			v := bytes.New(float64(size/1024), bytes.KiB)
+			fmt.Printf("%10s\t%-5s\t%-20s\t%s\t%s\n", convert(v), s.NS(), s.ID(), path, s.Title())
+			total += uint64(size)
+			continue
+		}
+
+		fmt.Printf("%-5s\t%-20s\t%s\t%s\n", s.NS(), s.ID(), path, s.Title())
+	}
+
+	if f.MusicInfoSongs.Stat {
+		v := bytes.New(float64(total/1024), bytes.KiB)
+		fmt.Printf("Total: %s\n", convert(v).String())
+	}
+
 	return nil
 }
 
@@ -205,15 +340,25 @@ func main() {
 	// exit(err)
 
 	var err error
+	simple := true
 	switch f.All.Mode {
 	case ModeFingerprint:
-		exit(fingerprint(f, remoteAddress))
-		exitClean()
+		err = fingerprint(f, remoteAddress)
 	case ModeUpload:
-		exit(upload(f, backend))
-		exitClean()
+		err = upload(f, backend)
 	case ModeMusicDownload:
-		exit(musicDownload(f, backend))
+		err = musicDownload(f, backend)
+	case ModeMusicInfoFiles:
+		err = musicInfoFiles(f)
+	case ModeMusicInfoDownloads:
+		err = musicInfoDownloads(f)
+	case ModeMusicInfoSongs:
+		err = musicInfoSongs(f)
+	default:
+		simple = false
+	}
+	exit(err)
+	if simple {
 		exitClean()
 	}
 

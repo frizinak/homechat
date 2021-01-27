@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	b "github.com/frizinak/homechat/bytes"
+
 	"github.com/frizinak/gotls/simplehttp"
 	"github.com/frizinak/homechat/bandwidth"
 	"github.com/frizinak/homechat/crypto"
@@ -165,9 +167,9 @@ func (s *Server) Init() error {
 		for {
 			time.Sleep(s.c.LogBandwidth)
 			_up, _down, _tup, _tdown := s.bw.Get()
-			up, down := NewBytes(_up, B).Human(), NewBytes(_down, B).Human()
+			up, down := b.New(_up, b.B).Human(), b.New(_down, b.B).Human()
 
-			tup, tdown := NewBytes(float64(_tup), B).Human(), NewBytes(float64(_tdown), B).Human()
+			tup, tdown := b.New(float64(_tup), b.B).Human(), b.New(float64(_tdown), b.B).Human()
 			s.c.Log.Printf("Bandwidth: up:%s [%s/s] down:%s [%s/s]", tup, up, tdown, down)
 		}
 	}()
