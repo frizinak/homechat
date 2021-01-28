@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/frizinak/homechat/server"
 )
 
 type Config struct {
 	Directory                 string
 	YMDir                     string
 	ChatMessagesAppendOnlyDir *string
+
+	ClientPolicy     server.ClientPolicy
+	ClientPolicyFile string
 
 	HTTPAddr string
 	TCPAddr  string
@@ -37,6 +42,18 @@ func (c *Config) Help(w io.Writer) error {
 	buf.WriteString("\n")
 	buf.WriteString("ChatMessagesAppendOnlyDir: Location of append only chat logs\n")
 	buf.WriteString("                           Empty to not store any logs (!)\n")
+	buf.WriteString("\n")
+	buf.WriteString("ClientPolicy:              Specify the client policy.\n")
+	buf.WriteString("                           i.e.: a policy that determines who can connect\n")
+	buf.WriteString("                           and with what username.\n")
+	buf.WriteString("                           One of:\n")
+	buf.WriteString(fmt.Sprintf("                             - %-8s: everyone can connect and pick an arbitrary username.\n", server.PolicyWorld))
+	buf.WriteString(fmt.Sprintf("                             - %-8s: only those in the fingerprint file are allowed.\n", server.PolicyAllow))
+	buf.WriteString(fmt.Sprintf("                             - %-8s: same as `fingerprint` but force name as well.\n", server.PolicyFixed))
+	buf.WriteString("\n")
+	buf.WriteString("ClientPolicyFile:          Location of the client policy file\n")
+	buf.WriteString("                           Each line should contain one client finger print and\n")
+	buf.WriteString("                           username separated by a space\n")
 	buf.WriteString("\n")
 	buf.WriteString("HTTPAddr:                  ip:port of the http server\n")
 	buf.WriteString("                           Should be an actual ip, 192.168.0.1:1200\n")
@@ -147,6 +164,14 @@ func (c *Config) Merge(def *Config) bool {
 	if c.TCPAddr == "" {
 		resave = true
 		c.TCPAddr = def.TCPAddr
+	}
+	if c.ClientPolicy == "" {
+		resave = true
+		c.ClientPolicy = def.ClientPolicy
+	}
+	if c.ClientPolicyFile == "" {
+		resave = true
+		c.ClientPolicyFile = def.ClientPolicyFile
 	}
 	return resave
 }

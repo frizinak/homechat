@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/frizinak/homechat/crypto"
@@ -17,6 +19,77 @@ import (
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
 )
+
+type PolicyLoader struct {
+	policy server.ClientPolicy
+	file   string
+
+	rw       sync.RWMutex
+	lastLoad time.Time
+	list     map[string]string
+}
+
+func (p *PolicyLoader) Policy() server.ClientPolicy { return p.policy }
+
+func (p *PolicyLoader) Exists(fp string) (string, error) {
+	if err := p.load(); err != nil {
+		return "", err
+	}
+
+	return p.list[fp], nil
+}
+
+func (p *PolicyLoader) load() error {
+	if time.Since(p.lastLoad) < time.Second*5 {
+		return nil
+	}
+
+	p.rw.Lock()
+	defer p.rw.Unlock()
+	if time.Since(p.lastLoad) < time.Second*5 {
+		return nil
+	}
+
+	p.lastLoad = time.Now()
+
+	f, err := os.Open(p.file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	scan := bufio.NewScanner(f)
+	scan.Split(bufio.ScanLines)
+	n := 0
+	list := make(map[string]string)
+	for scan.Scan() {
+		n++
+		line := strings.TrimSpace(scan.Text())
+		if line == "" {
+			continue
+		}
+
+		lp := strings.Fields(line)
+		if len(lp) < 2 {
+			return fmt.Errorf("%s: invalid line %d", p.file, n)
+		}
+
+		fp := lp[0]
+		name := strings.Join(lp[1:], " ")
+		if name == "" {
+			return fmt.Errorf("%s: invalid line (empty name) %d", p.file, n)
+		}
+
+		list[fp] = name
+	}
+
+	if err := scan.Err(); err != nil {
+		return err
+	}
+
+	p.list = list
+
+	return nil
+}
 
 type Mode byte
 
@@ -207,6 +280,11 @@ func (f *Flags) Parse() error {
 		MaxUploadSize:   *f.AppConf.MaxUploadKBytes * 1024,
 		LogBandwidth:    time.Duration(*f.AppConf.BandwidthIntervalSeconds) * time.Second,
 		RWFactory:       channel.NewRWFactory(nil),
+
+		PolicyLoader: &PolicyLoader{
+			policy: f.AppConf.ClientPolicy,
+			file:   f.AppConf.ClientPolicyFile,
+		},
 	}
 
 	return nil
@@ -240,12 +318,16 @@ func (f *Flags) validateAppConf() error {
 
 	bandwidthIntervalSeconds := 0
 	appendChatDir := filepath.Join(cache, "chatlogs")
+	policyFile := filepath.Join(filepath.Dir(f.All.ConfigFile), "client.allowlist")
 	var maxUploadKBytes int64 = 1024 * 10
 	resave := f.AppConf.Merge(&Config{
 		Directory: cache,
 		HTTPAddr:  "127.0.0.1:1200",
 		TCPAddr:   fmt.Sprintf("%s:%d", addr[0], port+1),
 		YMDir:     filepath.Join(cache, "ym"),
+
+		ClientPolicy:     server.PolicyAllow,
+		ClientPolicyFile: policyFile,
 
 		BandwidthIntervalSeconds: &bandwidthIntervalSeconds,
 		MaxUploadKBytes:          &maxUploadKBytes,

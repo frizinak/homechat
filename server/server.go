@@ -51,9 +51,25 @@ type writeJob struct {
 	client.Job
 }
 
+type ClientPolicy string
+
+const (
+	PolicyWorld ClientPolicy = "world"
+	PolicyAllow ClientPolicy = "allow"
+	PolicyFixed ClientPolicy = "fixed"
+)
+
+type PolicyLoader interface {
+	Policy() ClientPolicy
+	Exists(fingerprint string) (name string, err error)
+}
+
 type Config struct {
 	// Arbitrary string clients will need to be able to connect
 	ProtocolVersion string
+
+	// PolicyLoader should return all allowed users and their names
+	PolicyLoader PolicyLoader
 
 	Key *crypto.Key
 
@@ -718,6 +734,29 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 		return fmt.Errorf("identify: %w", err)
 	}
 	id := msg.(channel.IdentifyMsg)
+
+	if policy := s.c.PolicyLoader.Policy(); policy != PolicyWorld {
+		fp := client.Fingerprint()
+		name, err := s.c.PolicyLoader.Exists(fp)
+		if policy == PolicyFixed {
+			id.Data = name
+		}
+
+		if err != nil {
+			return fmt.Errorf("policy-loader err: %w", err)
+		} else if name == "" {
+			err := fmt.Errorf(
+				"client with fingerprint %s and requested username %s is not in allow list",
+				fp,
+				id.Data,
+			)
+			status := channel.StatusMsg{Code: channel.StatusNotAllowed}
+			if err := write(writeFlusher, status); err != nil {
+				return err
+			}
+			return err
+		}
+	}
 
 	conf, c, err := s.newClient(proto, frameWriter, id, writeFlusher, s.c.RWFactory.BinaryWriter(writeFlusher))
 	status := channel.StatusMsg{Code: channel.StatusOK}

@@ -58,6 +58,7 @@ const (
 	StatusOK StatusCode = iota
 	StatusNOK
 	StatusUpdateClient
+	StatusNotAllowed
 )
 
 type StatusMsg struct {

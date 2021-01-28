@@ -336,7 +336,10 @@ func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) (io.Reader, 
 				runtime.GOARCH,
 				suffix,
 			)
+		} else if s.Is(channel.StatusNotAllowed) {
+			err = errors.New("You are not allowed to connect to this server, send your fingerprint and desired username to the administrator.")
 		}
+
 		c.fatal = err
 		return nr, err
 	}
