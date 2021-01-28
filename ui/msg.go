@@ -9,12 +9,13 @@ import (
 type Highlight byte
 
 const (
-	HLNone Highlight = iota
+	HLNone Highlight = 1 << iota
 	HLTitle
 	HLActive
 	HLMuted
 	HLSlight
 	HLProblem
+	HLTemporary
 )
 
 type Msg struct {

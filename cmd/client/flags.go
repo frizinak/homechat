@@ -467,6 +467,26 @@ func (f *Flags) validateKeymap() error {
 	}
 
 	defaultKeymap := Keymap{
+		ViInsert: "i",
+		ViNormal: "escape",
+
+		ViPageDown:    "ctrl-d",
+		ViPageUp:      "ctrl-u",
+		ViScrollDown:  "j",
+		ViScrollUp:    "k",
+		ViQuit:        "q",
+		ViScrollBegin: "g",
+		ViScrollEnd:   "G",
+
+		ViMusicVolumeUp:     "O",
+		ViMusicVolumeDown:   "o",
+		ViMusicNext:         "n",
+		ViMusicPrevious:     "p",
+		ViMusicPause:        "space",
+		ViMusicSeekForward:  "w",
+		ViMusicSeekBackward: "b",
+		ViMusicJumpActive:   "a",
+
 		PageDown:    "ctrl-d",
 		PageUp:      "ctrl-u",
 		ScrollDown:  "ctrl-j",

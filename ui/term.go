@@ -31,12 +31,18 @@ type TermUI struct {
 	input []byte
 	users []string
 
-	scrollPage   int
-	scrollSimple int
-	scroll       int
-	jumpToActive bool
+	scrollPage           int
+	scrollSimple         int
+	scroll               int
+	jumpToActive         bool
+	jumpToQuery          string
+	jumpToQueryCount     uint16
+	jumpToQueryCountLast uint16
 
 	maxMessages int
+
+	cursorHide        bool
+	cursorHiddenState bool
 
 	s State
 
@@ -56,6 +62,8 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool) *TermUI {
 		scrollTop:   scrollTop,
 		maxMessages: maxMessages,
 		disabled:    true,
+
+		jumpToQueryCountLast: 1<<16 - 1,
 	}
 }
 
@@ -94,6 +102,19 @@ func (ui *TermUI) Clear() {
 }
 
 func (ui *TermUI) JumpToActive() { ui.jumpToActive = true }
+func (ui *TermUI) Search(qry string) {
+	qry = strings.ToLower(qry)
+	ui.sem.Lock()
+	same := ui.jumpToQuery == qry
+	ui.jumpToQuery = qry
+	ui.jumpToQueryCount++
+	if !same {
+		ui.jumpToQueryCount = 0
+	}
+
+	ui.sem.Unlock()
+	ui.Flush()
+}
 
 func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 	ui.sem.Lock()
@@ -154,6 +175,9 @@ func (ui *TermUI) Scroll(amount int) {
 }
 
 var (
+	cursorTop    = []byte("\033[H")
+	cursorHide   = []byte("\033[?25l")
+	cursorShow   = []byte("\033[?25h")
 	clear        = []byte("\033[H\033[J")
 	clrLine      = []byte("\033[1m")
 	clrStatus    = []byte("\033[40;37m")
@@ -164,11 +188,12 @@ var (
 )
 
 var hl = map[Highlight][]byte{
-	HLTitle:   []byte("\033[1m"),
-	HLActive:  []byte("\033[1;37;41m"),
-	HLMuted:   []byte("\033[40;37m"),
-	HLSlight:  []byte("\033[1m"),
-	HLProblem: []byte("\033[1;31m"),
+	HLTitle:     []byte("\033[1m"),
+	HLActive:    []byte("\033[1;37;41m"),
+	HLMuted:     []byte("\033[40;37m"),
+	HLSlight:    []byte("\033[1m"),
+	HLProblem:   []byte("\033[1;31m"),
+	HLTemporary: []byte("\033[1;32m"),
 }
 
 const (
@@ -246,21 +271,45 @@ func (ui *TermUI) Flush() {
 
 	logs := make([]string, 0, len(ui.log))
 	scrollMsg := -1
+	search := ""
+	var searchMatches uint16
+	if ui.jumpToQueryCountLast != ui.jumpToQueryCount && ui.jumpToQuery != "" {
+		search = ui.jumpToQuery
+		ui.jumpToQueryCountLast = ui.jumpToQueryCount
+	}
+
 	for i := 0; i < len(ui.log); i++ {
 		meta := ui.log[i].prefix
 		log := ui.log[i].msg
 		both := meta + log
+
 		ln := runewidth.StringWidth(both)
 
-		var prefix, suffix string
-		if p, ok := hl[ui.log[i].highlight]; ok {
-			prefix = string(p)
-			suffix = string(clrReset)
-		}
-
-		if ui.jumpToActive && ui.log[i].highlight == HLActive {
+		if ui.jumpToActive && ui.log[i].highlight&HLActive != 0 {
 			ui.jumpToActive = false
 			scrollMsg = len(logs) + 1
+		}
+
+		if search != "" {
+			ui.log[i].highlight &= ^HLTemporary
+			if strings.Contains(strings.ToLower(log), search) {
+				if searchMatches == ui.jumpToQueryCount {
+					scrollMsg = len(logs) + 1
+					search = ""
+					ui.log[i].highlight |= HLTemporary
+				}
+				searchMatches++
+			}
+		}
+
+		var prefix, suffix string
+		if ui.log[i].highlight > 0 {
+			for v := range hl {
+				if v&ui.log[i].highlight != 0 {
+					prefix += string(hl[v])
+				}
+			}
+			suffix = string(clrReset)
 		}
 
 		if ln <= w {
@@ -298,6 +347,10 @@ func (ui *TermUI) Flush() {
 			clean := suffpref(prefix, suffix, meta+log[lastCut:])
 			logs = append(logs, clean)
 		}
+	}
+
+	if searchMatches > 0 && scrollMsg < 0 {
+		ui.jumpToQueryCount = 0
 	}
 
 	if scrollMsg >= 0 {
@@ -424,6 +477,19 @@ func (ui *TermUI) Flush() {
 	s = append(s, indent...)
 	s = append(s, ui.input...)
 
+	if ui.cursorHide {
+		s = append(s, cursorTop...)
+	}
+	if ui.cursorHide != ui.cursorHiddenState {
+		switch ui.cursorHide {
+		case false:
+			s = append(s, cursorShow...)
+		case true:
+			s = append(s, cursorHide...)
+		}
+		ui.cursorHiddenState = ui.cursorHide
+	}
+
 	os.Stdout.Write(s)
 }
 
@@ -468,4 +534,9 @@ func (ui *TermUI) ResetInput() []byte {
 	ui.sem.Unlock()
 	ui.Flush()
 	return d
+}
+
+func (ui *TermUI) CursorHide(set bool) {
+	ui.cursorHide = set
+	ui.Flush()
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 type KeyHandler func() bool
@@ -17,6 +18,26 @@ func (a Action) Mode() Mode {
 }
 
 const (
+	ViInsert Action = "vi-mode-insert"
+	ViNormal Action = "vi-mode-normal"
+
+	ViPageDown    Action = "vi-page-down"
+	ViPageUp      Action = "vi-page-up"
+	ViScrollDown  Action = "vi-scroll-down"
+	ViScrollUp    Action = "vi-scroll-up"
+	ViQuit        Action = "vi-quit"
+	ViScrollBegin Action = "vi-scroll-to-top"
+	ViScrollEnd   Action = "vi-scroll-to-bottom"
+
+	ViMusicVolumeUp     Action = "vi-music-volume-up"
+	ViMusicVolumeDown   Action = "vi-music-volume-down"
+	ViMusicNext         Action = "vi-music-next"
+	ViMusicPrevious     Action = "vi-music-previous"
+	ViMusicPause        Action = "vi-music-pause"
+	ViMusicSeekForward  Action = "vi-music-seek-forward"
+	ViMusicSeekBackward Action = "vi-music-seek-backward"
+	ViMusicJumpActive   Action = "vi-music-jump-to-active"
+
 	PageDown    Action = "page-down"
 	PageUp      Action = "page-up"
 	ScrollDown  Action = "scroll-down"
@@ -45,35 +66,38 @@ const (
 type key struct {
 	v       byte
 	escaped bool
+	empty   bool
 }
 
 func newKey(k string) (keys []key, err error) {
 	p := strings.Split(k, "-")
-	add := func(v byte, escaped bool) {
-		keys = append(keys, key{v, escaped})
+	add := func(v byte, escaped, empty bool) {
+		keys = append(keys, key{v, escaped, empty})
 	}
 	switch len(p) {
 	case 1:
 		switch {
 		case len(p[0]) == 1:
-			add(p[0][0], false)
+			add(p[0][0], false, true)
 		case p[0] == "space":
-			add(' ', false)
+			add(' ', false, true)
+		case p[0] == "esc" || p[0] == "escape":
+			add(27, false, false)
 		case p[0] == "tab":
-			add(9, false)
+			add(9, false, false)
 		case p[0] == "enter" || p[0] == "return":
-			add(13, false)
+			add(13, false, false)
 		case p[0] == "backspace" || p[0] == "delete":
-			add(8, false)
-			add(127, false)
+			add(8, false, false)
+			add(127, false, false)
 		case p[0] == "up":
-			add(65, true)
+			add(65, true, false)
 		case p[0] == "down":
-			add(66, true)
+			add(66, true, false)
 		case p[0] == "right":
-			add(67, true)
+			add(67, true, false)
 		case p[0] == "left":
-			add(68, true)
+			add(68, true, false)
 		default:
 			err = fmt.Errorf("%s is an invalid key", k)
 		}
@@ -92,7 +116,7 @@ func newKey(k string) (keys []key, err error) {
 			return
 		}
 		for i := range _ks {
-			add(_ks[i].v-96, _ks[i].escaped)
+			add(_ks[i].v-96, _ks[i].escaped, false)
 		}
 	default:
 		err = fmt.Errorf("%s is an invalid key", k)
@@ -109,47 +133,135 @@ func Simple(cb func()) KeyHandler {
 }
 
 type Keys struct {
-	funcs  map[Action]KeyHandler
-	keymap map[bool]map[Mode]map[byte]Action
-	escape byte
+	vi            bool
+	insert        bool
+	funcs         map[Action]KeyHandler
+	keymap        map[bool]map[bool]map[Mode]map[byte]Action
+	onlyWhenEmpty map[bool]map[Mode]map[byte]bool
+	escape        byte
+	escapeSince   byte
 }
 
-func NewKeys(keyMap map[Action]string, actionMap map[Action]KeyHandler) (*Keys, error) {
-	keys := &Keys{funcs: actionMap, keymap: make(map[bool]map[Mode]map[byte]Action)}
+func NewKeys(keyMap map[Action]string, actionMap map[Action]KeyHandler, vi func(insertMode bool)) (*Keys, error) {
+	keys := &Keys{
+		vi:            true,
+		insert:        true,
+		funcs:         actionMap,
+		keymap:        make(map[bool]map[bool]map[Mode]map[byte]Action),
+		onlyWhenEmpty: make(map[bool]map[Mode]map[byte]bool),
+	}
 
-	keys.keymap[true] = make(map[Mode]map[byte]Action)
-	keys.keymap[false] = make(map[Mode]map[byte]Action)
+	actionMap[ViInsert] = func() bool {
+		if keys.insert {
+			return true
+		}
+
+		vi(true)
+		keys.insert = true
+		return false
+	}
+
+	actionMap[ViNormal] = func() bool {
+		if !keys.insert {
+			return true
+		}
+
+		vi(false)
+		keys.insert = false
+		return false
+	}
+
+	keys.keymap[true] = make(map[bool]map[Mode]map[byte]Action)
+	keys.keymap[false] = make(map[bool]map[Mode]map[byte]Action)
+	for k := range keys.keymap {
+		keys.keymap[k][true] = make(map[Mode]map[byte]Action)
+		keys.keymap[k][false] = make(map[Mode]map[byte]Action)
+	}
+	keys.onlyWhenEmpty[true] = make(map[Mode]map[byte]bool)
+	keys.onlyWhenEmpty[false] = make(map[Mode]map[byte]bool)
 	for a, k := range keyMap {
-		if _, ok := actionMap[a]; !ok {
-			return nil, fmt.Errorf("key mapped to missing action: %s: %s", k, a)
+		action := a
+		viModeSwitcher := action == ViNormal || action == ViInsert
+		if k == "" {
+			if viModeSwitcher {
+				keys.vi = false
+			}
+			continue
 		}
 
 		rks, err := newKey(k)
 		if err != nil {
 			return nil, err
 		}
-		mode := a.Mode()
+
+		viBinding := strings.HasPrefix(string(action), "vi-")
+		if viBinding {
+			if _, ok := actionMap[action]; ok && !viModeSwitcher {
+				return nil, fmt.Errorf("vi actions must not be mapped: %s", action)
+			}
+
+			action = a[3:]
+			if _, ok := actionMap[action]; !ok {
+				action = a
+			}
+			for i := range rks {
+				rks[i].empty = false
+			}
+		}
+
+		if action == ViNormal {
+			viBinding = false
+		} else if action == ViInsert {
+			viBinding = true
+		}
+
+		mode := action.Mode()
+		if _, ok := actionMap[action]; !ok {
+			return nil, fmt.Errorf("key mapped to missing action: %s: %s", k, action)
+		}
 
 		for _, rk := range rks {
-			if _, ok := keys.keymap[rk.escaped][mode]; !ok {
-				keys.keymap[rk.escaped][mode] = make(map[byte]Action)
+			if _, ok := keys.keymap[viBinding][rk.escaped][mode]; !ok {
+				keys.keymap[viBinding][rk.escaped][mode] = make(map[byte]Action)
+				if !viBinding {
+					keys.onlyWhenEmpty[rk.escaped][mode] = make(map[byte]bool)
+				}
 			}
-			if _, ok := keys.keymap[rk.escaped][mode][rk.v]; ok {
+			if _, ok := keys.keymap[viBinding][rk.escaped][mode][rk.v]; ok {
 				return keys, fmt.Errorf("duplicate mapping for key %s", k)
 			}
-			keys.keymap[rk.escaped][mode][rk.v] = a
+			keys.keymap[viBinding][rk.escaped][mode][rk.v] = action
+			if !viBinding {
+				keys.onlyWhenEmpty[rk.escaped][mode][rk.v] = rk.empty
+			}
 		}
 	}
 
 	return keys, nil
 }
 
-func (k *Keys) Do(mode Mode, n byte) (print bool) {
-	print = true
+func (k *Keys) Do(mode Mode, n byte, empty bool) bool {
+	print := true
+	pr := func() bool {
+		return print && (!k.vi || (k.vi && k.insert))
+	}
 
 	switch n {
 	case 27:
 		k.escape = 1
+		k.escapeSince++
+		escapeSince := k.escapeSince
+		go func() {
+			time.Sleep(time.Millisecond * 100)
+			if k.escapeSince != escapeSince || k.escape != 1 {
+				return
+			}
+			k.escape = 0
+			if ok, _ := k.do(mode, 27, empty); ok || mode == ModeDefault {
+				return
+			}
+			k.do(ModeDefault, 27, empty)
+		}()
 		print = false
 	case 91:
 		if k.escape == 1 {
@@ -166,21 +278,29 @@ func (k *Keys) Do(mode Mode, n byte) (print bool) {
 	}
 
 	if k.escape != 0 && k.escape != 3 {
-		return
+		return pr()
 	}
 
 	var ok bool
-	ok, print = k.do(mode, n)
+	ok, print = k.do(mode, n, empty)
 	if ok || mode == ModeDefault {
-		return
+		return pr()
 	}
 
-	_, print = k.do(ModeDefault, n)
-	return print
+	_, print = k.do(ModeDefault, n, empty)
+	return pr()
 }
 
-func (k *Keys) do(mode Mode, n byte) (bool, bool) {
-	m := k.keymap[k.escape == 3]
+func (k *Keys) do(mode Mode, n byte, empty bool) (bool, bool) {
+	normal := k.vi && !k.insert
+	if !empty && !normal {
+		em := k.onlyWhenEmpty[k.escape == 3]
+		if emptymap, ok := em[mode]; ok && emptymap[n] {
+			return true, true
+		}
+	}
+
+	m := k.keymap[normal][k.escape == 3]
 	if modemap, ok := m[mode]; ok {
 		if a, ok := modemap[n]; ok {
 			return true, k.funcs[a]()

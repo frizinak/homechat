@@ -385,6 +385,10 @@ func main() {
 		f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient,
 	)
 
+	onExits = append(onExits, func() {
+		tui.CursorHide(false)
+	})
+
 	handler := terminal.New(tui)
 	var rhandler client.Handler = handler
 	var musicNodeHandler *musicnode.Handler
@@ -511,6 +515,11 @@ func main() {
 					inputs = inputs[len(inputs)-max:]
 				}
 				current = len(inputs) - 1
+				if strings.HasPrefix(s, "?") {
+					tui.Search(strings.TrimSpace(s[1:]))
+					tui.SetInput(s)
+					return false
+				}
 				send(s)
 				return false
 			},
@@ -573,27 +582,16 @@ func main() {
 				return false
 			},
 			MusicPause: func() bool {
-				if strings.TrimSpace(tui.GetInput()) == "" {
-					send("p")
-					return false
-				}
-				return true
+				send("p")
+				return false
 			},
 			MusicSeekForward: func() bool {
-				if strings.TrimSpace(tui.GetInput()) == "" {
-					send("seek +5")
-					return false
-				}
-
-				return true
+				send("seek +5")
+				return false
 			},
 			MusicSeekBackward: func() bool {
-				if strings.TrimSpace(tui.GetInput()) == "" {
-					send("seek -5")
-					return false
-				}
-
-				return true
+				send("seek -5")
+				return false
 			},
 			MusicJumpActive: func() bool {
 				tui.JumpToActive()
@@ -603,6 +601,9 @@ func main() {
 
 				return false
 			},
+		},
+		func(insertMode bool) {
+			tui.CursorHide(!insertMode)
 		},
 	)
 	exit(err)
@@ -669,7 +670,7 @@ func main() {
 				inputs[len(inputs)-1] = input
 			}
 
-			if keys.Do(keymode, n) {
+			if keys.Do(keymode, n, input == "") {
 				tui.Input(n)
 			}
 		}
