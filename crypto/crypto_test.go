@@ -80,29 +80,27 @@ func TestKeys(t *testing.T) {
 }
 
 func TestEncDec(t *testing.T) {
-	wkey := []byte("some kinda passphrase for writing")
-	rkey := []byte("some other kinda passphrase for reading")
-
-	ec := EncrypterConfig{SaltSize: 30, Cost: 8}
-	dc := DecrypterConfig{MinSaltSize: 30, MinCost: 8}
+	const n = 32
+	_r := rnd(n * 2)
+	var wkey, rkey [n]byte
+	for i := 0; i < n; i++ {
+		wkey[i] = _r[i]
+		rkey[i] = _r[i+n]
+	}
 
 	input := rnd(4096)
 	one := bytes.NewReader(input)
 	three := bytes.NewBuffer(nil)
-	two := NewEncrypter(ec, three, rkey)
+	two := NewEncrypter(three, rkey)
 	if _, err := io.Copy(two, one); err != nil {
 		t.Fatal(err)
 	}
 
 	five := bytes.NewBuffer(nil)
-	four := NewEncDec(
-		three,
-		five,
-		rkey,
-		wkey,
-		ec,
-		dc,
-	)
+	four := ReadWriter{
+		NewDecrypter(three, rkey),
+		NewEncrypter(five, wkey),
+	}
 
 	output, err := ioutil.ReadAll(four)
 	if err != nil {
@@ -114,7 +112,7 @@ func TestEncDec(t *testing.T) {
 	}
 
 	four.Write(input)
-	six := NewDecrypter(dc, five, wkey)
+	six := NewDecrypter(five, wkey)
 	output, err = ioutil.ReadAll(six)
 	if !bytes.Equal(output, input) {
 		t.Fatal("input != output when reading from decrypter")
