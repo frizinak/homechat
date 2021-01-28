@@ -25,8 +25,8 @@ import (
 	b "github.com/frizinak/homechat/bytes"
 
 	"github.com/frizinak/gotls/simplehttp"
-	"github.com/frizinak/homechat/bandwidth"
 	"github.com/frizinak/homechat/crypto"
+	"github.com/frizinak/homechat/server/bandwidth"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/client"
 	"github.com/frizinak/homechat/vars"
@@ -103,7 +103,7 @@ type Server struct {
 
 	onUserUpdate channel.UserUpdateHandler
 
-	bw Bandwidth
+	bw bandwidth.Bandwidth
 
 	closing bool
 }
@@ -118,7 +118,7 @@ func New(c Config) (*Server, error) {
 		clients:    make(map[string]map[string][]*client.Client),
 		clientErrs: make(chan client.Error, clientErrBuf),
 
-		bw: &NoopBandwidth{},
+		bw: &bandwidth.Noop{},
 	}
 
 	if c.LogBandwidth != 0 {
