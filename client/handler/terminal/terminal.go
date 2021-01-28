@@ -190,6 +190,7 @@ func (h *Handler) Run(notify chan ui.Msg) {
 			lastMusicTitle = msg.Title
 
 			h.log.Clear()
+			h.log.JumpToActive()
 			h.log.Broadcast(msgs, change)
 		}
 	}()
