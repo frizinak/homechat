@@ -828,13 +828,39 @@ func (s *Server) onTCP(conn net.Conn) {
 	}
 }
 
-func (s *Server) Run() error {
+func (s *Server) RunHTTP() error {
+	err := s.s.Start(s.c.HTTPAddress, s.tls)
+	if s.closing {
+		err = nil
+	}
+	return err
+}
+
+func (s *Server) RunTCP() error {
 	var err error
 	s.tcp, err = net.Listen("tcp", s.c.TCPAddress)
 	if err != nil {
 		return fmt.Errorf("could not open tcp connection %s: %w", s.c.TCPAddress, err)
 	}
 
+	for {
+		if s.closing {
+			s.tcp.Close()
+			break
+		}
+		conn, err := s.tcp.Accept()
+		if err != nil {
+			s.c.Log.Println("tcp err:", err)
+			continue
+		}
+
+		go s.onTCP(conn)
+	}
+
+	return nil
+}
+
+func (s *Server) RunChannels() error {
 	errs := make(chan error, 1)
 	for chName, ch := range s.channels {
 		go func(chName string, ch channel.Channel) {
@@ -844,39 +870,18 @@ func (s *Server) Run() error {
 		}(chName, ch)
 	}
 
-	go func() {
-		for err := range errs {
-			s.c.Log.Println(err)
-			s.closing = true
-			s.Close()
-		}
-	}()
-
-	go func() {
-		for {
-			if s.closing {
-				s.tcp.Close()
-				break
-			}
-			conn, err := s.tcp.Accept()
-			if err != nil {
-				s.c.Log.Println("tcp err:", err)
-				continue
-			}
-
-			go s.onTCP(conn)
-		}
-	}()
-
-	err = s.s.Start(s.c.HTTPAddress, s.tls)
-	if s.closing {
-		err = nil
+	for err := range errs {
+		s.c.Log.Println(err)
+		return s.Close()
 	}
+
+	return nil
+}
+
+func (s *Server) Close() error {
 	s.closing = true
+	s.http.Close()
 	strs := make([]string, 0)
-	if err != nil {
-		strs = append(strs, err.Error())
-	}
 	for _, ch := range s.channels {
 		if err := ch.Close(); err != nil {
 			strs = append(strs, err.Error())
@@ -888,9 +893,4 @@ func (s *Server) Run() error {
 	}
 
 	return errors.New(strings.Join(strs, ", "))
-}
-
-func (s *Server) Close() {
-	s.closing = true
-	s.http.Close()
 }

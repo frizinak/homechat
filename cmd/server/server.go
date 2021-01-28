@@ -336,6 +336,7 @@ func serve(flock flock, f *Flags) error {
 	chat.AddBot("weather", weatherBot)
 	chat.AddBot("trivia", bot.NewTriviaBot())
 
+	exit := make(chan struct{}, 1)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	var saveErr error
@@ -360,7 +361,7 @@ func serve(flock flock, f *Flags) error {
 		if saveErr != nil {
 			fmt.Fprintln(os.Stderr, saveErr)
 		}
-		s.Close()
+		exit <- struct{}{}
 	}()
 
 	fmt.Printf("Starting server on http://%s tcp://%s\n", c.HTTPAddress, c.TCPAddress)
@@ -368,8 +369,84 @@ func serve(flock flock, f *Flags) error {
 		return err
 	}
 
-	if err := s.Run(); err != nil {
-		return err
+	var tcpErr, httpErr, channelErr error
+	errs := make(chan struct{})
+
+	go func() {
+		if err := s.RunChannels(); err != nil {
+			channelErr = err
+			errs <- struct{}{}
+			return
+		}
+	}()
+
+	go func() {
+		retries := 3
+		var err error
+		for retries > 0 {
+			retries--
+			if err = s.RunTCP(); err == nil {
+				break
+			}
+			if retries > 0 {
+				fmt.Printf("Failed to bind TCP server to %s, retrying in 5s...\n", c.TCPAddress)
+			}
+			time.Sleep(time.Second * 5)
+		}
+
+		if err != nil {
+			tcpErr = err
+			errs <- struct{}{}
+			return
+		}
+	}()
+
+	go func() {
+		retries := 3
+		var err error
+		for retries > 0 {
+			retries--
+			if err = s.RunHTTP(); err == nil {
+				break
+			}
+			if retries > 0 {
+				fmt.Printf("Failed to bind HTTP server to %s, retrying in 5s...\n", c.HTTPAddress)
+			}
+			time.Sleep(time.Second * 5)
+		}
+
+		if err != nil {
+			httpErr = err
+			errs <- struct{}{}
+			return
+		}
+	}()
+
+outer:
+	for {
+		select {
+		case <-exit:
+			if err := s.Close(); err != nil {
+				return err
+			}
+			break outer
+		case <-errs:
+			switch {
+			case tcpErr != nil:
+				fmt.Printf("TCP error: %s\n", tcpErr.Error())
+				fmt.Println("Continuing without TCP")
+				tcpErr = nil
+			case httpErr != nil:
+				fmt.Printf("HTTP error: %s\n", httpErr.Error())
+				fmt.Println("Continuing without HTTP")
+				httpErr = nil
+			case channelErr != nil:
+				if err := s.Close(); err != nil {
+					return fmt.Errorf("%w\nadditionally: %s", channelErr, err)
+				}
+				return channelErr
+			}
+		}
 	}
 
 	fmt.Println("bye...")
@@ -420,6 +497,7 @@ func main() {
 	}
 
 	if err != nil {
-		panic(err)
+		fmt.Println(err.Error())
+		os.Exit(1)
 	}
 }
