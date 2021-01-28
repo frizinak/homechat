@@ -67,6 +67,9 @@ func (p *PolicyLoader) load() error {
 		if line == "" {
 			continue
 		}
+		if line[0] == '#' || line[0] == ';' {
+			continue
+		}
 
 		lp := strings.Fields(line)
 		if len(lp) < 2 {
@@ -268,6 +271,20 @@ func (f *Flags) Parse() error {
 		return err
 	}
 	f.All.Key = key
+
+	if _, err := os.Stat(f.AppConf.ClientPolicyFile); os.IsNotExist(err) {
+		fh, err := os.Create(f.AppConf.ClientPolicyFile)
+		if err != nil {
+			return err
+		}
+		defer fh.Close()
+		fmt.Fprintln(fh, "# Client allow list")
+		fmt.Fprintln(fh, "# One fingerprint and name combination per line")
+		fmt.Fprintln(fh, "")
+		fmt.Fprintln(fh, "# Example:")
+		fmt.Fprintln(fh, "# 00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00 username")
+		fmt.Fprintln(fh, "")
+	}
 
 	f.ServerConf = server.Config{
 		Key:             key,
