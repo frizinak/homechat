@@ -215,7 +215,7 @@ func (h *Handler) HandleMusicStateMessage(state client.MusicState) error {
 
 	if !inQueue {
 		h.q.Reset()
-		h.col.QueueSong(s)
+		h.col.QueueSong(-1, s)
 	}
 
 	if state.Paused && !h.paused {

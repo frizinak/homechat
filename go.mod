@@ -4,12 +4,11 @@ go 1.15
 
 require (
 	github.com/amimof/huego v1.1.0
-	github.com/antchfx/xpath v1.1.11 // indirect
 	github.com/containerd/console v1.0.1
 	github.com/frizinak/binary v0.1.0
 	github.com/frizinak/gotls v0.2.0
 	github.com/frizinak/hue v0.1.0
-	github.com/frizinak/libym v0.6.1
+	github.com/frizinak/libym v0.7.0
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/mattn/go-runewidth v0.0.9
