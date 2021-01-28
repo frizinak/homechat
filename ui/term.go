@@ -31,13 +31,13 @@ type TermUI struct {
 	input []byte
 	users []string
 
-	scrollPage           int
-	scrollSimple         int
-	scroll               int
-	jumpToActive         bool
-	jumpToQuery          string
-	jumpToQueryCount     uint16
-	jumpToQueryCountLast uint16
+	scrollPage        int
+	scrollSimple      int
+	scroll            int
+	jumpToActive      bool
+	jumpToQuery       string
+	jumpToQueryUpdate bool
+	jumpToQueryCount  uint16
 
 	maxMessages int
 
@@ -62,8 +62,6 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool) *TermUI {
 		scrollTop:   scrollTop,
 		maxMessages: maxMessages,
 		disabled:    true,
-
-		jumpToQueryCountLast: 1<<16 - 1,
 	}
 }
 
@@ -105,6 +103,7 @@ func (ui *TermUI) JumpToActive() { ui.jumpToActive = true }
 func (ui *TermUI) Search(qry string) {
 	qry = strings.ToLower(qry)
 	ui.sem.Lock()
+	ui.jumpToQueryUpdate = true
 	same := ui.jumpToQuery == qry
 	ui.jumpToQuery = qry
 	ui.jumpToQueryCount++
@@ -271,12 +270,7 @@ func (ui *TermUI) Flush() {
 
 	logs := make([]string, 0, len(ui.log))
 	scrollMsg := -1
-	search := ""
 	var searchMatches uint16
-	if ui.jumpToQueryCountLast != ui.jumpToQueryCount && ui.jumpToQuery != "" {
-		search = ui.jumpToQuery
-		ui.jumpToQueryCountLast = ui.jumpToQueryCount
-	}
 
 	for i := 0; i < len(ui.log); i++ {
 		meta := ui.log[i].prefix
@@ -290,12 +284,11 @@ func (ui *TermUI) Flush() {
 			scrollMsg = len(logs) + 1
 		}
 
-		if search != "" {
+		if ui.jumpToQueryUpdate {
 			ui.log[i].highlight &= ^HLTemporary
-			if strings.Contains(strings.ToLower(log), search) {
+			if ui.jumpToQuery != "" && strings.Contains(strings.ToLower(log), ui.jumpToQuery) {
 				if searchMatches == ui.jumpToQueryCount {
 					scrollMsg = len(logs) + 1
-					search = ""
 					ui.log[i].highlight |= HLTemporary
 				}
 				searchMatches++
@@ -349,6 +342,7 @@ func (ui *TermUI) Flush() {
 		}
 	}
 
+	ui.jumpToQueryUpdate = false
 	if searchMatches > 0 && scrollMsg < 0 {
 		ui.jumpToQueryCount = 0
 	}
