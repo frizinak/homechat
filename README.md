@@ -34,9 +34,9 @@ server and `homechat music {node,client}`:
 
 `make serve-live`
 
-compile and listen on 127.0.0.1:1200 (storage in /tmp/homechat)
+compile and listen on 127.0.0.1:120{2,3} (storage in /tmp/homechat)
 
 `make local`
 
-runs a local client that will connect to 127.0.0.1:1200 (config in ./testclient)
+compile and run a local client that will connect to 127.0.0.1:120{2 or 3} (config in ./testclient)
 

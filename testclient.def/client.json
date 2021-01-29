@@ -1,6 +1,7 @@
 {
     "NotifyCommand": "notify-send 'HomeChat' '%u: %m'",
-    "ServerAddress": "127.0.0.1:1200",
+    "ServerAddress": "127.0.0.1:1202",
     "Username": "local",
-    "MaxMessages": 250
+    "MaxMessages": 250,
+    "MusicDownloads": "/tmp/homechat/client-ym"
 }

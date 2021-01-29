@@ -335,7 +335,12 @@ func (f *Flags) validateAppConf() error {
 
 	bandwidthIntervalSeconds := 0
 	appendChatDir := filepath.Join(cache, "chatlogs")
-	policyFile := filepath.Join(filepath.Dir(f.All.ConfigFile), "client.allowlist")
+	configFileDir, err := filepath.Abs(filepath.Dir(f.All.ConfigFile))
+	if err != nil {
+		return err
+	}
+
+	policyFile := filepath.Join(configFileDir, "client.allowlist")
 	var maxUploadKBytes int64 = 1024 * 10
 	resave := f.AppConf.Merge(&Config{
 		Directory: cache,

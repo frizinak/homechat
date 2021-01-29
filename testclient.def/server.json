@@ -1,4 +1,5 @@
 {
     "Directory": "/tmp/homechat",
-    "HTTPAddr": "127.0.0.1:1200"
+    "HTTPAddr": "127.0.0.1:1202",
+    "ClientPolicy": "world"
 }
