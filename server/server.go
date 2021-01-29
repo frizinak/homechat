@@ -37,6 +37,7 @@ var (
 	fileRE         = regexp.MustCompile(`(?i)[^a-z0-9\-_.]+`)
 	errProto       = errors.New("unsupported protocol version")
 	errKeyExchange = errors.New("client/server keys mismatch")
+	errNotAllowed  = errors.New("client fingerprint mismatch")
 )
 
 const (
@@ -592,10 +593,34 @@ func (s *Server) newClient(
 	proto channel.Proto,
 	frameWriter bool,
 	id channel.IdentifyMsg,
+	pubkey channel.PubKeyMessage,
 	w channel.WriteFlusher,
 	binW channel.BinaryWriter,
 ) (client.Config, *client.Client, error) {
 	var conf client.Config
+	reqName := strings.Join(strings.Fields(id.Data), "")
+	name := reqName
+
+	if policy := s.c.PolicyLoader.Policy(); policy != PolicyWorld {
+		fp := pubkey.Fingerprint()
+		forced, err := s.c.PolicyLoader.Exists(fp)
+		if policy == PolicyFixed {
+			name = forced
+		}
+
+		if err != nil {
+			s.c.Log.Printf("policy-loader err: %s", err)
+			return conf, nil, errors.New("server error")
+		} else if forced == "" {
+			s.c.Log.Printf(
+				"client with fingerprint %s and requested username %s is not in allow list",
+				fp,
+				reqName,
+			)
+			return conf, nil, errNotAllowed
+		}
+	}
+
 	for _, h := range id.Channels {
 		if _, ok := s.channels[h]; !ok {
 			return conf, nil, fmt.Errorf("invalid channel subscribe: %s", h)
@@ -606,7 +631,6 @@ func (s *Server) newClient(
 		return conf, nil, errProto
 	}
 
-	name := strings.Join(strings.Fields(id.Data), "")
 	if name == "" {
 		return conf, nil, errors.New("invalid name")
 	}
@@ -684,9 +708,9 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 	if err != nil {
 		return err
 	}
-	client := msg.(channel.PubKeyMessage)
+	clientKey := msg.(channel.PubKeyMessage)
 
-	derive, err := channel.CommonSecret32(client, server, key)
+	derive, err := channel.CommonSecret32(clientKey, server, key)
 	if err != nil {
 		return err
 	}
@@ -735,36 +759,16 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 	}
 	id := msg.(channel.IdentifyMsg)
 
-	if policy := s.c.PolicyLoader.Policy(); policy != PolicyWorld {
-		fp := client.Fingerprint()
-		name, err := s.c.PolicyLoader.Exists(fp)
-		if policy == PolicyFixed {
-			id.Data = name
-		}
-
-		if err != nil {
-			return fmt.Errorf("policy-loader err: %w", err)
-		} else if name == "" {
-			err := fmt.Errorf(
-				"client with fingerprint %s and requested username %s is not in allow list",
-				fp,
-				id.Data,
-			)
-			status := channel.StatusMsg{Code: channel.StatusNotAllowed}
-			if err := write(writeFlusher, status); err != nil {
-				return err
-			}
-			return err
-		}
-	}
-
-	conf, c, err := s.newClient(proto, frameWriter, id, writeFlusher, s.c.RWFactory.BinaryWriter(writeFlusher))
+	conf, c, err := s.newClient(proto, frameWriter, id, clientKey, writeFlusher, s.c.RWFactory.BinaryWriter(writeFlusher))
 	status := channel.StatusMsg{Code: channel.StatusOK}
 	if err != nil {
 		status.Code = channel.StatusNOK
 		status.Err = err.Error()
-		if err == errProto {
+		switch err {
+		case errProto:
 			status.Code = channel.StatusUpdateClient
+		case errNotAllowed:
+			status.Code = channel.StatusNotAllowed
 		}
 	}
 
