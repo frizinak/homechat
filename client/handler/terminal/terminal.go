@@ -25,6 +25,7 @@ type Updates interface {
 }
 
 type Handler struct {
+	client.Handler
 	log Updates
 
 	musicState chan ui.State
@@ -34,9 +35,10 @@ type Handler struct {
 	name string
 }
 
-func New(log Updates) *Handler {
+func New(log Updates, handler client.Handler) *Handler {
 	return &Handler{
-		log: log,
+		Handler: handler,
+		log:     log,
 
 		musicState: make(chan ui.State, 1),
 		msgs:       make(chan chatdata.ServerMessage, 8),
@@ -63,10 +65,6 @@ func (h *Handler) HandleChatMessage(m chatdata.ServerMessage) error {
 
 func (h *Handler) HandleMusicMessage(m musicdata.ServerMessage) error {
 	h.songs <- m
-	return nil
-}
-
-func (h *Handler) HandleMusicNodeMessage(musicdata.SongDataMessage) error {
 	return nil
 }
 

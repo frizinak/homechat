@@ -419,8 +419,8 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\n')
 		mw := rw
 
-		duration, timeParts := formatDur(state.Duration, 2)
-		position, _ := formatDur(state.Position, timeParts)
+		duration, timeParts := FormatDuration(state.Duration, 2)
+		position, _ := FormatDuration(state.Position, timeParts)
 		mw -= len(duration) + len(position) + 4
 
 		p := int(state.Pos() * float64(mw))

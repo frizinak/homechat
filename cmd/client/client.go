@@ -18,6 +18,7 @@ import (
 	"github.com/frizinak/homechat/bytes"
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/backend/tcp"
+	"github.com/frizinak/homechat/client/handler"
 	"github.com/frizinak/homechat/client/handler/music"
 	musicclient "github.com/frizinak/homechat/client/handler/music/client"
 	musicnode "github.com/frizinak/homechat/client/handler/music/node"
@@ -53,11 +54,63 @@ func upload(f *Flags, backend client.Backend) error {
 	}
 
 	log := ui.Plain(ioutil.Discard)
-	handler := terminal.New(log)
+	handler := terminal.New(log, handler.NoopHandler{})
 	cl := client.New(backend, handler, log, f.ClientConf)
 	defer cl.Close()
 
 	return cl.Upload(vars.UploadChannel, file, f.Upload.Msg, stat.Size(), r)
+}
+
+func musicRemoteCurrent(f *Flags, backend client.Backend) error {
+	updates := make(chan client.MusicState, 8)
+	handler := music.NewCurrentSongHandler(handler.NoopHandler{}, updates)
+	log := ui.Plain(os.Stderr)
+	cl := client.New(backend, handler, log, f.ClientConf)
+	n := f.MusicRemoteCurrent.N
+	first := true
+
+	errs := make(chan error, 1)
+	go func() {
+		errs <- cl.Run()
+	}()
+
+	for {
+		select {
+		case err := <-errs:
+			return err
+		case m := <-updates:
+			if first {
+				first = false
+				continue
+			}
+			dur, p := ui.FormatDuration(m.Duration, 2)
+			pos, _ := ui.FormatDuration(m.Position, p)
+			var pct float64
+			if m.Duration > 0 {
+				pct = float64(m.Position/time.Second) /
+					float64(m.Duration/time.Second)
+			}
+			if pct > 1 {
+				pct = 1
+			}
+
+			fmt.Printf(
+				"%s:%s\t%s\t%s|%s\t%d\t%d\n",
+				m.Song.NS(),
+				m.Song.ID(),
+				m.Song.Title(),
+				pos,
+				dur,
+				int(100*pct),
+				int(100*m.Volume),
+			)
+			n--
+			if n <= 0 {
+				cl.Close()
+				return nil
+			}
+		}
+	}
 }
 
 func musicDownload(f *Flags, backend client.Backend) error {
@@ -65,7 +118,7 @@ func musicDownload(f *Flags, backend client.Backend) error {
 	conf := f.MusicNodeConfig
 	conf.CustomError = music.NewErrorFlasher(log)
 	di := di.New(conf)
-	handler := terminal.New(log)
+	handler := terminal.New(log, handler.NoopHandler{})
 	cl := &client.Client{}
 	downloadHandler := music.NewDownloadHandler(handler, log, di.Collection(), cl)
 	*cl = *client.New(backend, downloadHandler, log, f.ClientConf)
@@ -216,7 +269,7 @@ func musicInfoSongs(f *Flags) error {
 
 func oneoff(f *Flags, backend client.Backend) error {
 	log := ui.Plain(ioutil.Discard)
-	handler := terminal.New(log)
+	handler := terminal.New(log, handler.NoopHandler{})
 	cl := client.New(backend, handler, log, f.ClientConf)
 	defer cl.Close()
 	if f.All.OneOff == "" {
@@ -350,6 +403,8 @@ func main() {
 		err = fingerprint(f, remoteAddress)
 	case ModeUpload:
 		err = upload(f, backend)
+	case ModeMusicRemoteCurrent:
+		err = musicRemoteCurrent(f, backend)
 	case ModeMusicDownload:
 		err = musicDownload(f, backend)
 	case ModeMusicInfoFiles:
@@ -393,7 +448,7 @@ func main() {
 		tui.CursorHide(false)
 	})
 
-	handler := terminal.New(tui)
+	handler := terminal.New(tui, handler.NoopHandler{})
 	var rhandler client.Handler = handler
 	var musicNodeHandler *musicnode.Handler
 	var musicClientUI *musicclient.UI

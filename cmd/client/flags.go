@@ -28,11 +28,16 @@ type Mode byte
 const (
 	ModeDefault Mode = iota
 	ModeUpload
+
 	ModeFingerprint
+
 	ModeMusicRemote
 	ModeMusicClient
 	ModeMusicNode
 	ModeMusicDownload
+
+	ModeMusicRemoteCurrent
+
 	ModeMusicInfoFiles
 	ModeMusicInfoDownloads
 	ModeMusicInfoSongs
@@ -77,6 +82,9 @@ type Flags struct {
 	MusicInfoSongs struct {
 		Stat bool
 		KiB  bool
+	}
+	MusicRemoteCurrent struct {
+		N uint
 	}
 
 	flags       *flags.Set
@@ -169,9 +177,6 @@ func (f *Flags) Flags() {
 				h.Add(l)
 			}
 		}
-	}).Handler(func(set *flags.Set, args []string) error {
-		// todo
-		return nil
 	})
 
 	f.flags.Add("fingerprint").Define(func(fl *flag.FlagSet) flags.HelpCB {
@@ -201,18 +206,26 @@ func (f *Flags) Flags() {
 		return nil
 	})
 
-	music.Add("remote").Define(func(fl *flag.FlagSet) flags.HelpCB {
+	musicRemote := music.Add("remote").Define(func(fl *flag.FlagSet) flags.HelpCB {
 		return func(h *flags.Help) {
-			h.Add("Run interactively")
-			h.Add(" - homechat music remote")
-			h.Add("")
-			h.Add("Send command and exit")
-			h.Add(" - homechat music remote <command to send>")
-			h.Add(" - command | homechat music remote")
+			h.Add("Commands:")
+			h.Add("  - <empty>:   control server music player (main intended usage)")
+			h.Add("  - current:   print current song")
 		}
 	}).Handler(func(set *flags.Set, args []string) error {
 		f.All.Mode = ModeMusicRemote
 		f.All.OneOff = strings.Join(args, " ")
+		return nil
+	})
+
+	musicRemote.Add("current").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.UintVar(&f.MusicRemoteCurrent.N, "n", 0, "Amount of time")
+
+		return func(h *flags.Help) {
+			h.Add("Continuously logs the current song or -n times")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicRemoteCurrent
 		return nil
 	})
 
@@ -412,6 +425,14 @@ func (f *Flags) Parse() error {
 			vars.MusicPlaylistChannel,
 			vars.MusicErrorChannel,
 		}
+
+	case ModeMusicRemoteCurrent:
+		f.ClientConf.History = 0
+		f.ClientConf.Channels = []string{
+			vars.MusicStateChannel,
+			vars.MusicSongChannel,
+		}
+
 	case ModeMusicNode:
 		os.MkdirAll(f.MusicNode.CacheDir, 0o755)
 		f.ClientConf.Name += "-music-node"

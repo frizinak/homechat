@@ -10,6 +10,7 @@ import (
 
 	"github.com/frizinak/homechat/client"
 	"github.com/frizinak/homechat/client/backend/wswasm"
+	noop "github.com/frizinak/homechat/client/handler"
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/server/channel"
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
@@ -34,13 +35,14 @@ const (
 )
 
 type jsHandler struct {
+	client.Handler
 	handler  js.Value
 	handlers map[handler]js.Value
 	buf      *bytes.Buffer
 	name     string
 }
 
-func newJSHandler(h js.Value) *jsHandler {
+func newJSHandler(h js.Value, underlying client.Handler) *jsHandler {
 	methods := []handler{
 		OnName,
 		OnHistory,
@@ -58,6 +60,7 @@ func newJSHandler(h js.Value) *jsHandler {
 		mp[m] = h.Get(string(m))
 	}
 	return &jsHandler{
+		Handler:  underlying,
 		handler:  h,
 		handlers: mp,
 		buf:      bytes.NewBuffer(nil),
@@ -107,10 +110,6 @@ func (j *jsHandler) HandleMusicMessage(m musicdata.ServerMessage) error {
 
 func (j *jsHandler) HandleMusicStateMessage(m client.MusicState) error {
 	return j.on(OnMusicStateMessage, m)
-}
-
-func (h *jsHandler) HandleMusicNodeMessage(musicdata.SongDataMessage) error {
-	return nil
 }
 
 func (j *jsHandler) HandleUsersMessage(m usersdata.ServerMessage, users client.Users) error {
@@ -213,7 +212,7 @@ func main() {
 			console.Call("error", "init requires 1 arg")
 			return nil
 		}
-		handler = newJSHandler(args[0])
+		handler = newJSHandler(args[0], noop.NoopHandler{})
 		conf := client.Config{
 			Key:               key,
 			ServerFingerprint: fp,

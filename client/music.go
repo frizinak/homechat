@@ -28,17 +28,18 @@ func (m MusicState) Equal(msg channel.Msg) bool { return m == msg }
 func (m MusicState) Close() error               { return nil }
 
 func (m MusicState) FromBinary(r channel.BinaryReader) (channel.Msg, error) {
-	msg, err := m.ServerSongMessage.FromBinary(r)
+	msg, err := m.ServerStateMessage.FromBinary(r)
+	if err != nil {
+		return m, err
+	}
+	m.ServerStateMessage = msg.(musicdata.ServerStateMessage)
+
+	msg, err = m.ServerSongMessage.FromBinary(r)
 	if err != nil {
 		return m, err
 	}
 	m.ServerSongMessage = msg.(musicdata.ServerSongMessage)
 
-	msg, err = m.ServerStateMessage.FromBinary(r)
-	if err != nil {
-		return m, err
-	}
-	m.ServerStateMessage = msg.(musicdata.ServerStateMessage)
 	return m, nil
 }
 

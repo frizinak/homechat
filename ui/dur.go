@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func formatDur(d time.Duration, minParts int) (str string, parts int) {
+func FormatDuration(d time.Duration, minParts int) (str string, parts int) {
 	p := []int64{
 		int64(d / time.Hour),
 		int64(d / time.Minute),
