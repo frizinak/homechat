@@ -33,11 +33,15 @@ import (
 var onExits []func()
 
 func upload(f *Flags, backend client.Backend) error {
-	if f.Upload.File == "" {
-		return errors.New("no file specified. (reading stdin disabled for now)")
+	args := f.CurrentFlag.Args()
+	if len(args) == 0 || args[0] == "" {
+		return errors.New("no file specified (reading stdin disabled for now).")
+	} else if len(args) > 1 {
+		return errors.New("only one file should be passed.")
 	}
+	file := args[0]
 
-	r, err := os.Open(f.Upload.File)
+	r, err := os.Open(file)
 	if err != nil {
 		return err
 	}
@@ -53,7 +57,7 @@ func upload(f *Flags, backend client.Backend) error {
 	cl := client.New(backend, handler, log, f.ClientConf)
 	defer cl.Close()
 
-	return cl.Upload(vars.UploadChannel, f.Upload.File, f.Upload.Msg, stat.Size(), r)
+	return cl.Upload(vars.UploadChannel, file, f.Upload.Msg, stat.Size(), r)
 }
 
 func musicDownload(f *Flags, backend client.Backend) error {
@@ -68,7 +72,7 @@ func musicDownload(f *Flags, backend client.Backend) error {
 	go handler.Run(nil)
 	go cl.Run()
 	defer cl.Close()
-	args := strings.Join(f.flags.musicDownload.Args(), " ")
+	args := strings.Join(f.CurrentFlag.Args(), " ")
 	if err := downloadHandler.DownloadPlaylist(args, time.Second*200); err != nil {
 		return err
 	}

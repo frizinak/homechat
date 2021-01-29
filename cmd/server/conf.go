@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/frizinak/homechat/server"
@@ -32,61 +30,59 @@ type Config struct {
 	HuePass string
 }
 
-func (c *Config) Help(w io.Writer) error {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteString("Directory:                 Data directory\n")
-	buf.WriteString("                           Location of all channel logs\n")
-	buf.WriteString("\n")
-	buf.WriteString("YMDir:                     Libym data directory\n")
-	buf.WriteString("                           Location of songs and song database\n")
-	buf.WriteString("\n")
-	buf.WriteString("ChatMessagesAppendOnlyDir: Location of append only chat logs\n")
-	buf.WriteString("                           Empty to not store any logs (!)\n")
-	buf.WriteString("\n")
-	buf.WriteString("ClientPolicy:              Specify the client policy.\n")
-	buf.WriteString("                           i.e.: a policy that determines who can connect\n")
-	buf.WriteString("                           and with what username.\n")
-	buf.WriteString("                           One of:\n")
-	buf.WriteString(fmt.Sprintf("                             - %-8s: everyone can connect and pick an arbitrary username.\n", server.PolicyWorld))
-	buf.WriteString(fmt.Sprintf("                             - %-8s: only those in the fingerprint file are allowed.\n", server.PolicyAllow))
-	buf.WriteString(fmt.Sprintf("                             - %-8s: same as `fingerprint` but force name as well.\n", server.PolicyFixed))
-	buf.WriteString("\n")
-	buf.WriteString("ClientPolicyFile:          Location of the client policy file\n")
-	buf.WriteString("                           Each line should contain exactly one fingerprint and username\n")
-	buf.WriteString("                           separated by a space\n")
-	buf.WriteString("\n")
-	buf.WriteString("HTTPAddr:                  ip:port of the http server\n")
-	buf.WriteString("                           Should be an actual ip, 192.168.0.1:1200\n")
-	buf.WriteString("                           not 0.0.0.0:1200\n")
-	buf.WriteString("\n")
-	buf.WriteString("TCPAddr:                   ip:port of the tcp server\n")
-	buf.WriteString("                           Can be 0.0.0.0:1201\n")
-	buf.WriteString("\n")
-	buf.WriteString("BandwidthIntervalSeconds:  Log bandwidth usage every n seconds\n")
-	buf.WriteString("                           0 for no logging\n")
-	buf.WriteString("\n")
-	buf.WriteString("MaxUploadKBytes:           Maximum file upload size in KiB\n")
-	buf.WriteString("\n")
-	buf.WriteString("MaxChatMessages:           Maximum amount of chat messages\n")
-	buf.WriteString("                           that are kept in the main channel logfile\n")
-	buf.WriteString("                           (!) note: the logfile will be truncated to this size\n")
-	buf.WriteString("\n")
-	buf.WriteString("WttrCity:                  Name of the city to be used as\n")
-	buf.WriteString("                           the default for wttr.in bot\n")
-	buf.WriteString("\n")
-	buf.WriteString("HolidayCountryCode:        2-letter country code to be used as\n")
-	buf.WriteString("                           the default for the \n")
-	buf.WriteString("                           https://date.nager.at/api/v2/PublicHolidays bot\n")
-	buf.WriteString("\n")
-	buf.WriteString("HueIP:                     Philips Hue bridge ip for the hue bot\n")
-	buf.WriteString("\n")
-	buf.WriteString("HuePass:                   Philips Hue bridge pass for the hue bot\n")
-	buf.WriteString("                           You can use https://github.com/amimof/huego\n")
-	buf.WriteString("                           or https://github.com/frizinak/hue or ...\n")
-	buf.WriteString("                           to find the ip and generate a password\n")
-	buf.WriteString("\n")
-	_, err := io.Copy(w, buf)
-	return err
+func (c *Config) Help() []string {
+	return []string{
+		"Directory:                 Data directory",
+		"                           Location of all channel logs",
+		"",
+		"YMDir:                     Libym data directory",
+		"                           Location of songs and song database",
+		"",
+		"ChatMessagesAppendOnlyDir: Location of append only chat logs",
+		"                           Empty to not store any logs (!)",
+		"",
+		"ClientPolicy:              Specify the client policy.",
+		"                           i.e.: a policy that determines who can connect",
+		"                           and with what username.",
+		"                           One of:",
+		fmt.Sprintf("                             - %-8s: everyone can connect and pick an arbitrary username.", server.PolicyWorld),
+		fmt.Sprintf("                             - %-8s: only those in the fingerprint file are allowed.", server.PolicyAllow),
+		fmt.Sprintf("                             - %-8s: same as `fingerprint` but force name as well.", server.PolicyFixed),
+		"",
+		"ClientPolicyFile:          Location of the client policy file",
+		"                           Each line should contain exactly one fingerprint and username",
+		"                           separated by a space",
+		"",
+		"HTTPAddr:                  ip:port of the http server",
+		"                           Should be an actual ip, 192.168.0.1:1200",
+		"                           not 0.0.0.0:1200",
+		"",
+		"TCPAddr:                   ip:port of the tcp server",
+		"                           Can be 0.0.0.0:1201",
+		"",
+		"BandwidthIntervalSeconds:  Log bandwidth usage every n seconds",
+		"                           0 for no logging",
+		"",
+		"MaxUploadKBytes:           Maximum file upload size in KiB",
+		"",
+		"MaxChatMessages:           Maximum amount of chat messages",
+		"                           that are kept in the main channel logfile",
+		"                           (!) note: the logfile will be truncated to this size",
+		"",
+		"WttrCity:                  Name of the city to be used as",
+		"                           the default for wttr.in bot",
+		"",
+		"HolidayCountryCode:        2-letter country code to be used as",
+		"                           the default for the ",
+		"                           https://date.nager.at/api/v2/PublicHolidays bot",
+		"",
+		"HueIP:                     Philips Hue bridge ip for the hue bot",
+		"",
+		"HuePass:                   Philips Hue bridge pass for the hue bot",
+		"                           You can use https://github.com/amimof/huego",
+		"                           or https://github.com/frizinak/hue or ...",
+		"                           to find the ip and generate a password",
+	}
 }
 
 func (c *Config) Decode(file string) error {

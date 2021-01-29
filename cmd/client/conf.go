@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 )
 
@@ -26,30 +24,28 @@ type Config struct {
 	MusicDownloads    string
 }
 
-func (c *Config) Help(w io.Writer) error {
-	buf := bytes.NewBuffer(nil)
-	buf.WriteString("NotifyCommand:    program to run to show a notification\n")
-	buf.WriteString("                  %u will be replaced with the username of the sender\n")
-	buf.WriteString("                  %m will be replaced with the message\n")
-	buf.WriteString("                  example: notify-send 'Homechat' '%u: %m'\n")
-	buf.WriteString("\n")
-	buf.WriteString("NotifyWhen:       When to trigger the above command\n")
-	buf.WriteString("                  one off 'default' or 'always'\n")
-	buf.WriteString("                  default: direct messages or chat messages that start with '!'\n")
-	buf.WriteString("                  always:  well... always\n")
-	buf.WriteString("\n")
-	buf.WriteString("ServerAddress:    ip:port of the http server\n")
-	buf.WriteString("\n")
-	buf.WriteString("ServerTCPAddress: ip:port of the tcp server\n")
-	buf.WriteString("\n")
-	buf.WriteString("Username:         your desired username\n")
-	buf.WriteString("\n")
-	buf.WriteString("MaxMessages:      maximum amount of messages shown\n")
-	buf.WriteString("\n")
-	buf.WriteString("MusicDownloads:   path where music download will be stored\n")
-	buf.WriteString("\n")
-	_, err := io.Copy(w, buf)
-	return err
+func (c *Config) Help() []string {
+	return []string{
+		"NotifyCommand:    program to run to show a notification",
+		"                  %u will be replaced with the username of the sender",
+		"                  %m will be replaced with the message",
+		"                  example: notify-send 'Homechat' '%u: %m'",
+		"",
+		"NotifyWhen:       When to trigger the above command",
+		"                  one off 'default' or 'always'",
+		"                  default: direct messages or chat messages that start with '!'",
+		"                  always:  well... always",
+		"",
+		"ServerAddress:    ip:port of the http server",
+		"",
+		"ServerTCPAddress: ip:port of the tcp server",
+		"",
+		"Username:         your desired username",
+		"",
+		"MaxMessages:      maximum amount of messages shown",
+		"",
+		"MusicDownloads:   path where music download will be stored",
+	}
 }
 
 func (c *Config) Decode(file string) error {

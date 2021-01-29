@@ -16,6 +16,7 @@ import (
 	"github.com/frizinak/homechat/client/backend/tcp"
 	"github.com/frizinak/homechat/client/backend/ws"
 	"github.com/frizinak/homechat/crypto"
+	"github.com/frizinak/homechat/flags"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
 	"github.com/frizinak/libym/di"
@@ -57,8 +58,7 @@ type Flags struct {
 		NotifyCommand []string
 	}
 	Upload struct {
-		Msg  string
-		File string
+		Msg string
 	}
 	MusicNode struct {
 		CacheDir   string
@@ -79,21 +79,8 @@ type Flags struct {
 		KiB  bool
 	}
 
-	flags struct {
-		chat               *flag.FlagSet
-		music              *flag.FlagSet
-		musicRemote        *flag.FlagSet
-		musicNode          *flag.FlagSet
-		musicClient        *flag.FlagSet
-		musicDownload      *flag.FlagSet
-		musicInfo          *flag.FlagSet
-		musicInfoFiles     *flag.FlagSet
-		musicInfoDownloads *flag.FlagSet
-		musicInfoSongs     *flag.FlagSet
-		upload             *flag.FlagSet
-		config             *flag.FlagSet
-		fingerprint        *flag.FlagSet
-	}
+	flags       *flags.Set
+	CurrentFlag *flags.Set
 
 	AppConf         *Config
 	ClientConf      client.Config
@@ -108,6 +95,7 @@ func NewFlags(output io.Writer, defaultConfigDir, defaultCacheDir string, intera
 	f := &Flags{
 		out:     output,
 		AppConf: &Config{},
+		flags:   flags.NewRoot(output),
 	}
 	f.All.ConfigDir = defaultConfigDir
 	f.All.CacheDir = defaultCacheDir
@@ -117,156 +105,208 @@ func NewFlags(output io.Writer, defaultConfigDir, defaultCacheDir string, intera
 }
 
 func (f *Flags) Flags() {
-	f.flags.chat = flag.NewFlagSet("chat", flag.ExitOnError)
-	f.flags.chat.SetOutput(f.out)
-	f.flags.chat.BoolVar(
-		&f.All.Linemode,
-		"l",
-		false,
-		"when piping treat every line as a new message, thus streaming line by line",
-	)
+	f.flags.Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
 
-	f.flags.upload = flag.NewFlagSet("upload", flag.ExitOnError)
-	f.flags.upload.SetOutput(f.out)
-	f.flags.upload.StringVar(&f.Upload.Msg, "m", "Download: ", "prefix upload url with this message")
-
-	f.flags.config = flag.NewFlagSet("config", flag.ExitOnError)
-	f.flags.config.SetOutput(f.out)
-
-	f.flags.fingerprint = flag.NewFlagSet("fingerprint", flag.ExitOnError)
-	f.flags.fingerprint.SetOutput(f.out)
-
-	f.flags.music = flag.NewFlagSet("music", flag.ExitOnError)
-	f.flags.music.SetOutput(f.out)
-
-	f.flags.musicRemote = flag.NewFlagSet("music remote", flag.ExitOnError)
-	f.flags.musicRemote.SetOutput(f.out)
-
-	f.flags.musicNode = flag.NewFlagSet("music node", flag.ExitOnError)
-	f.flags.musicNode.BoolVar(&f.MusicNode.LowLatency, "low-latency", false, "Enable low latency mode")
-	f.flags.musicNode.SetOutput(f.out)
-
-	f.flags.musicClient = flag.NewFlagSet("music client", flag.ExitOnError)
-	f.flags.musicClient.BoolVar(&f.MusicClient.Offline, "offline", false, "Dont connect to server")
-	f.flags.musicClient.SetOutput(f.out)
-
-	f.flags.musicDownload = flag.NewFlagSet("music download", flag.ExitOnError)
-	f.flags.musicDownload.SetOutput(f.out)
-
-	f.flags.musicInfo = flag.NewFlagSet("music info", flag.ExitOnError)
-
-	def := filepath.Join(f.All.CacheDir, "ym")
-	f.flags.musicInfo.StringVar(&f.MusicInfo.Dir, "d", def, "libym directory")
-	f.flags.musicInfo.SetOutput(f.out)
-
-	f.flags.musicInfoFiles = flag.NewFlagSet("music info files", flag.ExitOnError)
-	f.flags.musicInfoFiles.BoolVar(&f.MusicInfoFiles.Stat, "s", false, "stat files and print disk usage")
-	f.flags.musicInfoFiles.BoolVar(&f.MusicInfoFiles.KiB, "k", false, "print size in KiB, ignored when -s is not passed")
-	f.flags.musicInfoFiles.SetOutput(f.out)
-
-	f.flags.musicInfoDownloads = flag.NewFlagSet("music info downloads", flag.ExitOnError)
-	f.flags.musicInfoDownloads.SetOutput(f.out)
-
-	f.flags.musicInfoSongs = flag.NewFlagSet("music info songs", flag.ExitOnError)
-	f.flags.musicInfoSongs.BoolVar(&f.MusicInfoSongs.Stat, "s", false, "stat files and print disk usage")
-	f.flags.musicInfoSongs.BoolVar(&f.MusicInfoSongs.KiB, "k", false, "print size in KiB, ignored when -s is not passed")
-	f.flags.musicInfoSongs.SetOutput(f.out)
-
-	flag.CommandLine.SetOutput(f.out)
-	flag.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
-
-	flag.Usage = func() {
-		fmt.Fprintln(f.out, "homechat")
-		flag.PrintDefaults()
-		fmt.Fprint(f.out, "\nCommands:\n")
-		fmt.Fprintln(f.out, "  - chat | <empty>: Chat client")
-		fmt.Fprintln(f.out, "  - music:          Music commands")
-		fmt.Fprintln(f.out, "  - upload:         Upload a file from stdin or commandline to chat")
-		fmt.Fprintln(f.out, "  - config:         Config options explained")
-		fmt.Fprintln(f.out, "  - fingerprint:    Show your and the server's trusted publickey fingerprint")
-		fmt.Fprintln(f.out, "  - version:        Print version and exit")
-	}
-	f.flags.chat.Usage = func() {
-		f.flags.chat.PrintDefaults()
-		fmt.Fprintln(f.out, "Run interactively")
-		fmt.Fprintln(f.out, " - homechat chat")
-		fmt.Fprintln(f.out, "")
-		fmt.Fprintln(f.out, "Send message and exit")
-		fmt.Fprintln(f.out, " - homechat chat <message to send>")
-		fmt.Fprintln(f.out, " - command | homechat chat")
-	}
-	f.flags.music.Usage = func() {
-		fmt.Fprintln(f.out, "music")
-		f.flags.music.PrintDefaults()
-		fmt.Fprint(f.out, "\nCommands:\n")
-		fmt.Fprintln(f.out, "  - remote:   control server music player (main intended usage)")
-		fmt.Fprintln(f.out, "  - node:     run a music node in sync with the server")
-		fmt.Fprintln(f.out, "  - client:   start a local music player with local queue but playlists on server")
-		fmt.Fprintln(f.out, "  - download: download music from server")
-		fmt.Fprintln(f.out, "  - info:     libym related commands")
-	}
-	f.flags.musicRemote.Usage = func() {
-		f.flags.musicRemote.PrintDefaults()
-		fmt.Fprintln(f.out, "Run interactively")
-		fmt.Fprintln(f.out, " - homechat music remote")
-		fmt.Fprintln(f.out, "")
-		fmt.Fprintln(f.out, "Send command and exit")
-		fmt.Fprintln(f.out, " - homechat music remote <command to send>")
-		fmt.Fprintln(f.out, " - command | homechat music remote")
-	}
-	f.flags.musicNode.Usage = func() {
-		f.flags.musicNode.PrintDefaults()
-		fmt.Fprintln(f.out, "Run a music node")
-	}
-	f.flags.musicClient.Usage = func() {
-		f.flags.musicClient.PrintDefaults()
-		fmt.Fprintln(f.out, "Run a music client")
-	}
-	f.flags.musicDownload.Usage = func() {
-		f.flags.musicDownload.PrintDefaults()
-		fmt.Fprintln(f.out, "Download the given playlist")
-	}
-	f.flags.musicInfo.Usage = func() {
-		fmt.Fprintln(f.out, "music info")
-		fmt.Fprintln(f.out, "")
-		fmt.Fprintln(f.out, "Note: these commands operate on the server libym database")
-		fmt.Fprintln(f.out, "      they will work on the client equivalent as well")
-		fmt.Fprintln(f.out, "      but might hold less relevance")
-		fmt.Fprintln(f.out, "")
-		f.flags.musicInfo.PrintDefaults()
-		fmt.Fprint(f.out, "\nCommands:\n")
-		fmt.Fprintln(f.out, "  - files:     list unused files (not in a playlist)")
-		fmt.Fprintln(f.out, "  - downloads: list songs that are not (yet) downloaded")
-		fmt.Fprintln(f.out, "  - songs:     list all songs")
-	}
-	f.flags.musicInfoFiles.Usage = func() {
-		fmt.Fprintln(f.out, "List unused files")
-		f.flags.musicInfoFiles.PrintDefaults()
-	}
-	f.flags.musicInfoDownloads.Usage = func() {
-		fmt.Fprintln(f.out, "List songs that are not (yet) downloaded")
-		f.flags.musicInfoDownloads.PrintDefaults()
-	}
-	f.flags.musicInfoSongs.Usage = func() {
-		fmt.Fprintln(f.out, "List all songs")
-		f.flags.musicInfoSongs.PrintDefaults()
-	}
-	f.flags.upload.Usage = func() {
-		f.flags.upload.PrintDefaults()
-		fmt.Fprintln(f.out, "Usage")
-		fmt.Fprintln(f.out, " - homechat upload <filepath>")
-		fmt.Fprintln(f.out, " - command | homechat upload")
-	}
-	f.flags.config.Usage = func() {
-		fmt.Fprintf(f.out, "Config file used: '%s'\n\n", f.All.ConfigFile)
-		if err := f.AppConf.Help(f.out); err != nil {
-			panic(err)
+		return func(h *flags.Help) {
+			h.Add("Commands:")
+			h.Add("  - chat | <empty>: Chat client")
+			h.Add("  - music:          Music commands")
+			h.Add("  - upload:         Upload a file from stdin or commandline to chat")
+			h.Add("  - config:         Config options explained")
+			h.Add("  - fingerprint:    Show your and the server's trusted publickey fingerprint")
+			h.Add("  - version:        Print version and exit")
 		}
-	}
-	f.flags.fingerprint.Usage = func() {
-		fmt.Fprintln(f.out, "Show your and the server's trusted publickey fingerprint")
-		f.flags.fingerprint.PrintDefaults()
-	}
+	}).Handler(func(set *flags.Set, args []string) error {
+		if len(args) != 0 {
+			set.Usage(1)
+		}
+
+		f.All.Mode = ModeDefault
+		return nil
+	})
+
+	f.flags.Add("chat").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.BoolVar(
+			&f.All.Linemode,
+			"l",
+			false,
+			"when piping treat every line as a new message, thus streaming line by line",
+		)
+
+		return func(h *flags.Help) {
+			h.Add("Run interactively")
+			h.Add(" - homechat chat")
+			h.Add("")
+			h.Add("Send message and exit")
+			h.Add(" - homechat chat <message to send>")
+			h.Add(" - command | homechat chat")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeDefault
+		f.All.OneOff = strings.Join(args, " ")
+		return nil
+	})
+
+	f.flags.Add("upload").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.StringVar(&f.Upload.Msg, "m", "Download: ", "prefix upload url with this message")
+
+		return func(h *flags.Help) {
+			h.Add("Usage")
+			h.Add(" - homechat upload <filepath>")
+			h.Add(" - command | homechat upload")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeUpload
+		return nil
+	})
+
+	f.flags.Add("config").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		return func(h *flags.Help) {
+			h.Add(fmt.Sprintf("Config file used: '%s'", f.All.ConfigFile))
+			h.Add("")
+			for _, l := range f.AppConf.Help() {
+				h.Add(l)
+			}
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		// todo
+		return nil
+	})
+
+	f.flags.Add("fingerprint").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		return func(h *flags.Help) {
+			h.Add("Show your and the server's trusted publickey fingerprint")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeFingerprint
+		return nil
+	})
+
+	music := f.flags.Add("music").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		return func(h *flags.Help) {
+			h.Add("Commands:")
+			h.Add("  - remote | <empty>:   control server music player (main intended usage)")
+			h.Add("  - node:               run a music node in sync with the server")
+			h.Add("  - client:             start a local music player with local queue but playlists on server")
+			h.Add("  - download:           download music from server")
+			h.Add("  - info:               libym related commands")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		if len(args) != 0 {
+			set.Usage(1)
+		}
+
+		f.All.Mode = ModeMusicRemote
+		return nil
+	})
+
+	music.Add("remote").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		return func(h *flags.Help) {
+			h.Add("Run interactively")
+			h.Add(" - homechat music remote")
+			h.Add("")
+			h.Add("Send command and exit")
+			h.Add(" - homechat music remote <command to send>")
+			h.Add(" - command | homechat music remote")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicRemote
+		f.All.OneOff = strings.Join(args, " ")
+		return nil
+	})
+
+	music.Add("node").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.BoolVar(&f.MusicNode.LowLatency, "low-latency", false, "Enable low latency mode")
+
+		return func(h *flags.Help) {
+			h.Add("Run a music node")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicNode
+		return nil
+	})
+
+	music.Add("client").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.BoolVar(&f.MusicClient.Offline, "offline", false, "Dont connect to server")
+
+		return func(h *flags.Help) {
+			h.Add("Run a music client")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicClient
+		return nil
+	})
+
+	music.Add("download").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		return func(h *flags.Help) {
+			h.Add("Download the given playlist")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicDownload
+		return nil
+	})
+
+	musicInfo := music.Add("info").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		def := filepath.Join(f.All.CacheDir, "ym")
+		fl.StringVar(&f.MusicInfo.Dir, "d", def, "libym directory")
+
+		return func(h *flags.Help) {
+			h.Add("music info")
+			h.Add("")
+			h.Add("Note: these commands operate on the server libym database")
+			h.Add("      they will work on the client equivalent as well")
+			h.Add("      but might hold less relevance")
+			h.Add("")
+			h.Add("Commands:")
+			h.Add("  - files:     list unused files (not in a playlist)")
+			h.Add("  - downloads: list songs that are not (yet) downloaded")
+			h.Add("  - songs:     list all songs")
+		}
+	})
+
+	musicInfo.Add("files").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.BoolVar(&f.MusicInfoFiles.Stat, "s", false, "stat files and print disk usage")
+		fl.BoolVar(&f.MusicInfoFiles.KiB, "k", false, "print size in KiB, ignored when -s is not passed")
+
+		return func(h *flags.Help) {
+			h.Add("List unused files")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicInfoFiles
+		return nil
+	})
+
+	musicInfo.Add("downloads").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		return func(h *flags.Help) {
+			h.Add("List songs that are not (yet) downloaded")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicInfoDownloads
+		return nil
+	})
+
+	musicInfo.Add("songs").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.BoolVar(&f.MusicInfoSongs.Stat, "s", false, "stat files and print disk usage")
+		fl.BoolVar(&f.MusicInfoSongs.KiB, "k", false, "print size in KiB, ignored when -s is not passed")
+
+		return func(h *flags.Help) {
+			h.Add("List all songs")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicInfoSongs
+		return nil
+	})
+
+	f.flags.Add("version").Handler(func(set *flags.Set, args []string) error {
+		version := vars.GitVersion
+		if version == "" {
+			version = vars.Version
+		}
+		fmt.Fprintf(f.out, "%s (protocol: %s)\n", version, vars.ProtocolVersion)
+		os.Exit(0)
+		return nil
+	})
 }
 
 func (f *Flags) SaveConfig() error {
@@ -274,16 +314,17 @@ func (f *Flags) SaveConfig() error {
 }
 
 func (f *Flags) Parse() error {
-	flag.Parse()
+	set, trail := f.flags.ParseCommandline()
+	f.CurrentFlag = set
+
 	if f.All.ConfigDir == "" {
 		return errors.New("please specify a config directory")
 	}
 
 	f.All.ConfigFile = filepath.Join(f.All.ConfigDir, "client.json")
 	f.All.KeymapFile = filepath.Join(f.All.ConfigDir, "keymap.json")
-	if flag.Arg(0) == "config" {
-		f.flags.config.Usage()
-		os.Exit(0)
+	if len(trail) == 1 && trail[len(trail)-1] == "config" {
+		set.Usage(0)
 	}
 	os.MkdirAll(f.All.ConfigDir, 0o755)
 
@@ -335,7 +376,7 @@ func (f *Flags) Parse() error {
 		return fmt.Errorf("please specify a valid NotifyWhen in %s", f.All.ConfigFile)
 	}
 
-	if err := f.parseCommand(); err != nil {
+	if err := set.Do(); err != nil {
 		return err
 	}
 
@@ -523,122 +564,6 @@ func (f *Flags) validateKeymap() error {
 		if _, ok := defaultKeymap[i]; !ok {
 			return fmt.Errorf("unknown action '%s' in keymap", i)
 		}
-	}
-
-	return nil
-}
-
-func (f *Flags) parseCommand() error {
-	args := flag.Args()
-
-	switch flag.Arg(0) {
-	case "", "chat":
-		f.All.Mode = ModeDefault
-		if len(args) == 0 {
-			break
-		}
-		if err := f.flags.chat.Parse(args[1:]); err != nil {
-			return err
-		}
-		f.All.OneOff = strings.Join(f.flags.chat.Args(), " ")
-
-	case "music":
-		if len(args) <= 1 {
-			f.flags.music.Usage()
-			os.Exit(1)
-		}
-		f.flags.music.Parse(args[1:])
-		args = f.flags.music.Args()
-		switch f.flags.music.Arg(0) {
-		case "remote":
-			f.All.Mode = ModeMusicRemote
-			if err := f.flags.musicRemote.Parse(args[1:]); err != nil {
-				return err
-			}
-			f.All.OneOff = strings.Join(f.flags.musicRemote.Args(), " ")
-
-		case "node":
-			f.All.Mode = ModeMusicNode
-			if err := f.flags.musicNode.Parse(args[1:]); err != nil {
-				return err
-			}
-
-		case "client":
-			f.All.Mode = ModeMusicClient
-			if err := f.flags.musicClient.Parse(args[1:]); err != nil {
-				return err
-			}
-
-		case "download":
-			f.All.Mode = ModeMusicDownload
-			if err := f.flags.musicDownload.Parse(args[1:]); err != nil {
-				return err
-			}
-
-		case "info":
-			if len(args) <= 1 {
-				f.flags.musicInfo.Usage()
-				os.Exit(0)
-			}
-			f.flags.musicInfo.Parse(args[1:])
-			args = f.flags.musicInfo.Args()
-
-			switch f.flags.musicInfo.Arg(0) {
-			case "files":
-				f.All.Mode = ModeMusicInfoFiles
-				if err := f.flags.musicInfoFiles.Parse(args[1:]); err != nil {
-					return err
-				}
-
-			case "downloads":
-				f.All.Mode = ModeMusicInfoDownloads
-				if err := f.flags.musicInfoDownloads.Parse(args[1:]); err != nil {
-					return err
-				}
-
-			case "songs":
-				f.All.Mode = ModeMusicInfoSongs
-				if err := f.flags.musicInfoSongs.Parse(args[1:]); err != nil {
-					return err
-				}
-
-			default:
-				f.flags.musicInfo.Usage()
-				os.Exit(0)
-			}
-
-		default:
-			f.flags.music.Usage()
-			os.Exit(1)
-		}
-
-	case "upload":
-		f.All.Mode = ModeUpload
-		if err := f.flags.upload.Parse(args[1:]); err != nil {
-			return err
-		}
-		f.Upload.File = f.flags.upload.Arg(0)
-		if f.Upload.File == "" && f.All.Interactive {
-			return errors.New("please provide a file")
-		}
-
-	case "fingerprint":
-		f.All.Mode = ModeFingerprint
-		if err := f.flags.fingerprint.Parse(args[1:]); err != nil {
-			return err
-		}
-
-	case "version":
-		version := vars.GitVersion
-		if version == "" {
-			version = vars.Version
-		}
-		fmt.Fprintf(f.out, "%s (protocol: %s)\n", version, vars.ProtocolVersion)
-		os.Exit(0)
-
-	default:
-		flag.Usage()
-		os.Exit(1)
 	}
 
 	return nil
