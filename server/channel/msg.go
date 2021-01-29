@@ -28,19 +28,6 @@ const (
 	ProtoBinary
 )
 
-func StripUnprintable(str string) string {
-	runes := make([]rune, 0, len(str))
-	for _, n := range str {
-		switch {
-		case n == 9 || n == '\n':
-		case n < 32:
-			continue
-		}
-		runes = append(runes, n)
-	}
-	return string(runes)
-}
-
 type Msg interface {
 	Binary(BinaryWriter) error
 	JSON(io.Writer) error
@@ -126,11 +113,11 @@ func (m IdentifyMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSON
 
 func BinaryIdentifyMsg(r BinaryReader) (IdentifyMsg, error) {
 	v := r.ReadString(8)
-	n := StripUnprintable(r.ReadString(8))
+	n := r.ReadString(8)
 	nh := int(r.ReadUint8())
 	l := make([]string, 0, nh)
 	for i := 0; i < nh; i++ {
-		l = append(l, StripUnprintable(r.ReadString(8)))
+		l = append(l, r.ReadString(8))
 	}
 	return IdentifyMsg{Data: n, Channels: l, Version: v}, r.Err()
 }
@@ -160,7 +147,7 @@ func (m ChannelMsg) FromJSON(r io.Reader) (Msg, io.Reader, error) { return JSONC
 func (m ChannelMsg) Equal(Msg) bool                               { return false }
 
 func BinaryChannelMsg(r BinaryReader) (ChannelMsg, error) {
-	n := StripUnprintable(r.ReadString(8))
+	n := r.ReadString(8)
 	return ChannelMsg{Data: n}, r.Err()
 }
 

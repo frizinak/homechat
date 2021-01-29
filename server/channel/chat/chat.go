@@ -140,7 +140,7 @@ func (c *ChatChannel) Handle(cl channel.Client, m data.Message) error {
 }
 
 func (c *ChatChannel) botMessage(cl channel.Client, m data.Message, silent bool) error {
-	cmd := multiSpaceRE.Split(channel.StripUnprintable(m.Data), -1)
+	cmd := multiSpaceRE.Split(m.Data, -1)
 	name, d, err := c.bots.Message(cl.Name(), cmd...)
 	if err == bot.ErrNotExists {
 		return nil
@@ -175,11 +175,10 @@ func (c *ChatChannel) batch(notify data.Notify, cl channel.Client, m data.Messag
 		notify |= data.NotifyNever
 	}
 
-	msg := channel.StripUnprintable(m.Data)
 	s := data.ServerMessage{
 		From:    cl.Name(),
 		Stamp:   time.Now(),
-		Message: data.Message{Data: msg},
+		Message: data.Message{Data: m.Data},
 		Bot:     fromBot,
 		Notify:  notify,
 	}

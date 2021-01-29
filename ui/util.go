@@ -33,3 +33,16 @@ func FormatDuration(d time.Duration, minParts int) (str string, parts int) {
 
 	return string(l[:len(l)-1]), parts
 }
+
+func StripUnprintable(str string) string {
+	runes := make([]rune, 0, len(str))
+	for _, n := range str {
+		switch {
+		case n == 9 || n == '\n':
+		case n < 32:
+			continue
+		}
+		runes = append(runes, n)
+	}
+	return string(runes)
+}

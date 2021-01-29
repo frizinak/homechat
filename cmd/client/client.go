@@ -98,7 +98,7 @@ func musicRemoteCurrent(f *Flags, backend client.Backend) error {
 				"%s:%s\t%s\t%s|%s\t%d\t%d\n",
 				m.Song.NS(),
 				m.Song.ID(),
-				m.Song.Title(),
+				ui.StripUnprintable(m.Song.Title()),
 				pos,
 				dur,
 				int(100*pct),
@@ -199,7 +199,7 @@ func musicInfoDownloads(f *Flags) error {
 		}
 		uniq[gid] = struct{}{}
 		if !s.Local() {
-			fmt.Printf("[%s] %s\n", gid, s.Title())
+			fmt.Printf("[%s] %s\n", gid, ui.StripUnprintable(s.Title()))
 			count++
 		}
 	}
@@ -243,20 +243,21 @@ func musicInfoSongs(f *Flags) error {
 			return fmt.Errorf("song error: %s: %s: %w", gid, s.Title(), err)
 		}
 
+		title := ui.StripUnprintable(s.Title())
 		if f.MusicInfoSongs.Stat {
 			stat, err := os.Stat(path)
 			if err != nil {
-				fmt.Printf("%10s\t%-5s\t%-20s\t%s\t%s\n", "?", s.NS(), s.ID(), path, s.Title())
+				fmt.Printf("%10s\t%-5s\t%-20s\t%s\t%s\n", "?", s.NS(), s.ID(), path, title)
 				continue
 			}
 			size := stat.Size()
 			v := bytes.New(float64(size/1024), bytes.KiB)
-			fmt.Printf("%10s\t%-5s\t%-20s\t%s\t%s\n", convert(v), s.NS(), s.ID(), path, s.Title())
+			fmt.Printf("%10s\t%-5s\t%-20s\t%s\t%s\n", convert(v), s.NS(), s.ID(), path, title)
 			total += uint64(size)
 			continue
 		}
 
-		fmt.Printf("%-5s\t%-20s\t%s\t%s\n", s.NS(), s.ID(), path, s.Title())
+		fmt.Printf("%-5s\t%-20s\t%s\t%s\n", s.NS(), s.ID(), path, title)
 	}
 
 	if f.MusicInfoSongs.Stat {
@@ -744,8 +745,8 @@ func main() {
 		rcmd := make([]string, len(f.Chat.NotifyCommand))
 		copy(rcmd, f.Chat.NotifyCommand)
 		for i := range rcmd {
-			rcmd[i] = strings.ReplaceAll(rcmd[i], "%u", meta)
-			rcmd[i] = strings.ReplaceAll(rcmd[i], "%m", data)
+			rcmd[i] = strings.ReplaceAll(rcmd[i], "%u", ui.StripUnprintable(meta))
+			rcmd[i] = strings.ReplaceAll(rcmd[i], "%m", ui.StripUnprintable(data))
 		}
 
 		cmd := exec.Command(rcmd[0], rcmd[1:]...)

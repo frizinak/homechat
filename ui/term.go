@@ -273,8 +273,8 @@ func (ui *TermUI) Flush() {
 	var searchMatches uint16
 
 	for i := 0; i < len(ui.log); i++ {
-		meta := ui.log[i].prefix
-		log := ui.log[i].msg
+		meta := StripUnprintable(ui.log[i].prefix)
+		log := StripUnprintable(ui.log[i].msg)
 		both := meta + log
 
 		ln := runewidth.StringWidth(both)
@@ -387,14 +387,14 @@ func (ui *TermUI) Flush() {
 	s = append(s, clear...)
 	s = append(s, clrStatus...)
 	s = append(s, indent...)
-	s = append(s, status...)
+	s = append(s, StripUnprintable(status)...)
 	s = append(s, lat...)
 	s = append(s, clrReset...)
 	s = append(s, '\r')
 	s = append(s, '\n')
 	s = append(s, clrUser...)
 	s = append(s, indent...)
-	s = append(s, user...)
+	s = append(s, StripUnprintable(user)...)
 	s = append(s, clrReset...)
 	s = append(s, '\r')
 	s = append(s, '\n')
@@ -448,7 +448,7 @@ func (ui *TermUI) Flush() {
 		song := runewidth.Truncate(state.Song, songW, "…")
 		song = runewidth.FillRight(song, songW)
 		s = append(s, indent...)
-		s = append(s, song...)
+		s = append(s, StripUnprintable(song)...)
 		s = append(s, vol...)
 		s = append(s, '\r')
 		s = append(s, '\n')
