@@ -100,6 +100,9 @@ func (g *BinaryHistory) DecodeAppendFile(r io.Reader, cb func(Msg)) error {
 	bin := binary.NewReader(peeker)
 	v := DecoderVersion(bin.ReadString(16))
 	if err := bin.Err(); err != nil {
+		if err == io.EOF {
+			err = nil
+		}
 		return err
 	}
 
