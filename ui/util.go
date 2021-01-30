@@ -3,6 +3,7 @@ package ui
 import (
 	"strconv"
 	"time"
+	"unicode"
 )
 
 func FormatDuration(d time.Duration, minParts int) (str string, parts int) {
@@ -38,11 +39,11 @@ func StripUnprintable(str string) string {
 	runes := make([]rune, 0, len(str))
 	for _, n := range str {
 		switch {
-		case n == 9 || n == '\n':
-		case n < 32:
-			continue
+		case n == '\n' || n == ' ':
+			runes = append(runes, n)
+		case unicode.IsPrint(n):
+			runes = append(runes, n)
 		}
-		runes = append(runes, n)
 	}
 	return string(runes)
 }

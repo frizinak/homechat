@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	b "github.com/frizinak/homechat/bytes"
 
@@ -598,7 +599,14 @@ func (s *Server) newClient(
 	binW channel.BinaryWriter,
 ) (client.Config, *client.Client, error) {
 	var conf client.Config
-	reqName := strings.Join(strings.Fields(id.Data), "")
+	filtered := make([]rune, 0, len(id.Data))
+	for _, n := range id.Data {
+		if unicode.IsPrint(n) && !unicode.IsSpace(n) {
+			filtered = append(filtered, n)
+		}
+	}
+
+	reqName := string(filtered)
 	name := reqName
 
 	if policy := s.c.PolicyLoader.Policy(); policy != PolicyWorld {

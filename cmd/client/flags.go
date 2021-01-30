@@ -363,7 +363,7 @@ func (f *Flags) Parse() error {
 	}
 
 	f.ClientConf.Key = key
-	f.ClientConf.Name = strings.TrimSpace(f.AppConf.Username)
+	f.ClientConf.Name = f.AppConf.Username
 	f.ClientConf.Proto = channel.ProtoBinary
 	f.ClientConf.ServerURL = "http://" + f.AppConf.ServerAddress
 	f.ClientConf.ServerFingerprint = f.AppConf.ServerFingerprint
