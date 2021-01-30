@@ -349,6 +349,9 @@ func (ui *TermUI) Flush() {
 
 	if scrollMsg >= 0 {
 		ui.scroll = len(logs) - scrollMsg - h/2 + 1
+		if ui.scroll < 0 {
+			ui.scroll = 0
+		}
 	}
 
 	offset := len(logs) - nmsgs - ui.scroll
