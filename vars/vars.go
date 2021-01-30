@@ -12,6 +12,8 @@ const (
 
 	PingChannel = "p" // rw
 
+	TypingChannel = "t" // rw
+
 	MusicChannel         = "m"  // rw
 	MusicStateChannel    = ">"  // r
 	MusicSongChannel     = "<"  // r

@@ -16,6 +16,7 @@ import (
 	historydata "github.com/frizinak/homechat/server/channel/history/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
 	pingdata "github.com/frizinak/homechat/server/channel/ping/data"
+	typingdata "github.com/frizinak/homechat/server/channel/typing/data"
 	uploaddata "github.com/frizinak/homechat/server/channel/upload/data"
 	usersdata "github.com/frizinak/homechat/server/channel/users/data"
 	"github.com/frizinak/homechat/vars"
@@ -37,6 +38,7 @@ type Handler interface {
 	HandleMusicStateMessage(MusicState) error
 	HandleUsersMessage(usersdata.ServerMessage, Users) error
 	HandleMusicNodeMessage(musicdata.SongDataMessage) error
+	HandleTypingMessage(typingdata.ServerMessage) error
 }
 
 type User struct {
@@ -88,6 +90,8 @@ type Client struct {
 	users    Users
 	allUsers map[string]map[string]User
 
+	channels map[string]struct{}
+
 	latency time.Duration
 
 	playlists []string
@@ -98,6 +102,8 @@ type Client struct {
 	fatal       error
 
 	serverFingerprint string
+
+	lastTyping time.Time
 
 	c Config
 }
@@ -115,14 +121,25 @@ type Config struct {
 }
 
 func New(b Backend, h Handler, log Logger, c Config) *Client {
+	ch := make(map[string]struct{}, len(c.Channels))
+	for _, c := range c.Channels {
+		ch[c] = struct{}{}
+	}
 	return &Client{
 		backend: b,
 		handler: h,
 		log:     log,
 		c:       c,
 
+		channels: ch,
+
 		allUsers: make(map[string]map[string]User),
 	}
+}
+
+func (c *Client) In(ch string) bool {
+	_, ok := c.channels[ch]
+	return ok
 }
 
 func (c *Client) Users() Users                   { return c.users }
@@ -132,6 +149,15 @@ func (c *Client) Name() string                   { return c.c.Name }
 func (c *Client) Err() error                     { return c.fatal }
 func (c *Client) ServerFingerprint() string      { return c.serverFingerprint }
 func (c *Client) SetTrustedFingerprint(n string) { c.c.ServerFingerprint = n }
+
+func (c *Client) ChatTyping() error {
+	now := time.Now()
+	if now.Sub(c.lastTyping) < time.Second*2 {
+		return nil
+	}
+	c.lastTyping = now
+	return c.Send(vars.TypingChannel, typingdata.Message{Channel: vars.ChatChannel})
+}
 
 func (c *Client) Chat(msg string) error {
 	return c.Send(vars.ChatChannel, chatdata.Message{Data: msg})
@@ -457,6 +483,17 @@ func (c *Client) Run() error {
 				return r, err
 			}
 			return r, c.handler.HandleChatMessage(msg.(chatdata.ServerMessage))
+		case vars.TypingChannel:
+			msg, r, err = c.read(r, typingdata.ServerMessage{})
+			if err != nil {
+				return r, err
+			}
+
+			m := msg.(typingdata.ServerMessage)
+			if m.Who == c.c.Name || !c.In(m.Channel) {
+				return r, nil
+			}
+			return r, c.handler.HandleTypingMessage(m)
 		case vars.MusicChannel:
 			msg, r, err = c.read(r, musicdata.ServerMessage{})
 			if err != nil {

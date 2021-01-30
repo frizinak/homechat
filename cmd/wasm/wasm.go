@@ -202,6 +202,21 @@ func main() {
 		})
 	}
 
+	lastType := time.Now()
+	typing := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
+		now := time.Now()
+		if now.Sub(lastType) < time.Second*2 {
+			return nil
+		}
+		lastType = now
+		go func() {
+			if err := c.ChatTyping(); err != nil {
+				handler.HandleError(err)
+			}
+		}()
+		return nil
+	})
+
 	proto := channel.ProtoJSON
 	if binary {
 		proto = channel.ProtoBinary
@@ -223,6 +238,7 @@ func main() {
 				vars.UserChannel,
 				vars.HistoryChannel,
 				vars.ChatChannel,
+				vars.TypingChannel,
 				vars.MusicChannel,
 				vars.MusicStateChannel,
 				vars.MusicSongChannel,
@@ -235,6 +251,7 @@ func main() {
 
 		public.Set("chat", createSender(c.Chat))
 		public.Set("music", createSender(c.Music))
+		public.Set("typing", typing)
 
 		go func() {
 			err := c.Connect()

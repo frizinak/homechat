@@ -3,7 +3,6 @@ package terminal
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/frizinak/homechat/client"
@@ -11,6 +10,7 @@ import (
 
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
+	typingdata "github.com/frizinak/homechat/server/channel/typing/data"
 	usersdata "github.com/frizinak/homechat/server/channel/users/data"
 )
 
@@ -19,7 +19,8 @@ type Updates interface {
 	Broadcast(msg []ui.Msg, scroll bool)
 	JumpToActive()
 	MusicState(ui.State)
-	Users(string)
+	Users([]string)
+	UserTyping(string, bool)
 	Latency(time.Duration)
 	Clear()
 }
@@ -31,6 +32,9 @@ type Handler struct {
 	musicState chan ui.State
 	msgs       chan chatdata.ServerMessage
 	songs      chan musicdata.ServerMessage
+	typing     chan typingdata.ServerMessage
+
+	usersTyping map[string]time.Time
 
 	name string
 }
@@ -43,6 +47,9 @@ func New(log Updates, handler client.Handler) *Handler {
 		musicState: make(chan ui.State, 1),
 		msgs:       make(chan chatdata.ServerMessage, 8),
 		songs:      make(chan musicdata.ServerMessage, 8),
+		typing:     make(chan typingdata.ServerMessage, 8),
+
+		usersTyping: make(map[string]time.Time),
 	}
 }
 
@@ -84,7 +91,12 @@ func (h *Handler) HandleUsersMessage(m usersdata.ServerMessage, users client.Use
 	for _, u := range users {
 		all = append(all, u.Name)
 	}
-	h.log.Users(strings.Join(all, " "))
+	h.log.Users(all)
+	return nil
+}
+
+func (h *Handler) HandleTypingMessage(m typingdata.ServerMessage) error {
+	h.typing <- m
 	return nil
 }
 
@@ -117,6 +129,31 @@ func (h *Handler) Run(notify chan ui.Msg) {
 			case <-after:
 				after = newAfter()
 				do()
+			}
+		}
+	}()
+
+	go func() {
+		fixup := func() {
+			now := time.Now()
+			for n, t := range h.usersTyping {
+				if now.Sub(t) > time.Second*3 {
+					delete(h.usersTyping, n)
+					h.log.UserTyping(n, false)
+					continue
+				}
+
+				h.log.UserTyping(n, true)
+			}
+		}
+
+		for {
+			select {
+			case m := <-h.typing:
+				h.usersTyping[m.Who] = time.Now()
+				fixup()
+			case <-time.After(time.Second):
+				fixup()
 			}
 		}
 	}()

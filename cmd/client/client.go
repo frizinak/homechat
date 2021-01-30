@@ -502,7 +502,26 @@ func main() {
 	}
 
 	*cl = *client.New(backend, rhandler, tui, f.ClientConf)
+
+	typingSig := make(chan struct{}, 1000)
+	go func() {
+		for range typingSig {
+			err := cl.ChatTyping()
+			if err != nil {
+				tui.Err(err)
+			}
+		}
+	}()
+
 	send := cl.Chat
+	typing := func() {
+		typingSig <- struct{}{}
+	}
+
+	if f.All.Mode != ModeDefault {
+		typing = func() {}
+	}
+
 	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode {
 		send = cl.Music
 	} else if f.All.Mode == ModeMusicClient {
@@ -732,6 +751,7 @@ func main() {
 
 			if keys.Do(keymode, n, input == "") {
 				tui.Input(n)
+				typing()
 			}
 		}
 	}()

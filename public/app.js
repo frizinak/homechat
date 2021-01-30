@@ -307,7 +307,9 @@ function init() {
     },
   });
 
+
   window.onkeydown = function (e) {
+    homechat.typing();
     if (e.keyCode == 13) {
       e.preventDefault();
       if (!e.shiftKey) {

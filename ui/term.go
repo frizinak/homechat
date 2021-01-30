@@ -15,6 +15,11 @@ import (
 
 const stampFormat = "01-02 15:04"
 
+type user struct {
+	name   string
+	typing bool
+}
+
 type TermUI struct {
 	metaPrefix bool
 	indent     int
@@ -29,7 +34,7 @@ type TermUI struct {
 	sem   sync.Mutex
 	log   []msg
 	input []byte
-	users []string
+	users []*user
 
 	scrollPage        int
 	scrollSimple      int
@@ -70,8 +75,36 @@ func (ui *TermUI) Start() {
 	ui.Flush()
 }
 
-func (ui *TermUI) Users(msg string) {
-	ui.users = strings.Split(msg, "\n")
+func (ui *TermUI) Users(users []string) {
+	ui.sem.Lock()
+	nm := make(map[string]*user, len(users))
+	for _, u := range ui.users {
+		nm[u.name] = u
+	}
+
+	u := make([]*user, 0, len(users))
+	for _, n := range users {
+		if ex, ok := nm[n]; ok {
+			u = append(u, ex)
+			continue
+		}
+
+		u = append(u, &user{n, false})
+	}
+
+	ui.users = u
+	ui.sem.Unlock()
+	ui.Flush()
+}
+
+func (ui *TermUI) UserTyping(who string, is bool) {
+	ui.sem.Lock()
+	for _, u := range ui.users {
+		if u.name == who {
+			u.typing = is
+		}
+	}
+	ui.sem.Unlock()
 	ui.Flush()
 }
 
@@ -379,7 +412,15 @@ func (ui *TermUI) Flush() {
 		status = fmt.Sprintf("%s - %s", status, ui.flash)
 	}
 	status = pad(status, " ", w-len(lat))
-	user := pad(strings.Join(ui.users, " "), " ", w)
+	users := make([]string, 0, len(ui.users))
+	for _, u := range ui.users {
+		typ := " "
+		if u.typing {
+			typ = "…"
+		}
+		users = append(users, fmt.Sprintf("%s%s", u.name, typ))
+	}
+	user := pad(strings.Join(users, " "), " ", w)
 
 	indent := make([]byte, ui.indent)
 	for i := range indent {

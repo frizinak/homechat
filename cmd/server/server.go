@@ -34,6 +34,7 @@ import (
 	"github.com/frizinak/homechat/server/channel/music"
 	"github.com/frizinak/homechat/server/channel/ping"
 	"github.com/frizinak/homechat/server/channel/status"
+	"github.com/frizinak/homechat/server/channel/typing"
 	"github.com/frizinak/homechat/server/channel/upload"
 	"github.com/frizinak/homechat/server/channel/users"
 	"github.com/frizinak/homechat/vars"
@@ -289,15 +290,14 @@ func serve(flock flock, f *Flags) error {
 	music := music.NewYM(c.Log, musicErr, f.AppConf.YMDir)
 	*chat = *chatpkg.New(c.Log, history)
 	upload := upload.New(c.MaxUploadSize, chat, s)
-	users := users.New(
-		[]string{vars.ChatChannel, vars.MusicChannel},
-		s,
-	)
+	users := users.New([]string{vars.ChatChannel, vars.MusicChannel}, s)
+	typing := typing.New([]string{vars.ChatChannel})
 
 	s.MustAddChannel(vars.ChatChannel, chat)
 	s.MustAddChannel(vars.UploadChannel, upload)
 	s.MustAddChannel(vars.HistoryChannel, history)
 	s.MustAddChannel(vars.PingChannel, ping.New())
+	s.MustAddChannel(vars.TypingChannel, typing)
 	s.MustAddChannel(vars.UserChannel, users)
 	s.MustAddChannel(vars.MusicChannel, music)
 	s.MustAddChannel(vars.MusicStateChannel, music.StateChannel())

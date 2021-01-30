@@ -398,6 +398,7 @@ func (f *Flags) Parse() error {
 		vars.UserChannel,
 		vars.HistoryChannel,
 		vars.ChatChannel,
+		vars.TypingChannel,
 	}
 
 	f.MusicNode.CacheDir = f.AppConf.MusicDownloads
