@@ -108,7 +108,7 @@ func (ui *TermUI) Search(qry string) {
 	ui.jumpToQuery = qry
 	ui.jumpToQueryCount++
 	if !same {
-		ui.jumpToQueryCount = 0
+		ui.jumpToQueryCount = 1
 	}
 
 	ui.sem.Unlock()
@@ -287,11 +287,11 @@ func (ui *TermUI) Flush() {
 		if ui.jumpToQueryUpdate {
 			ui.log[i].highlight &= ^HLTemporary
 			if ui.jumpToQuery != "" && strings.Contains(strings.ToLower(log), ui.jumpToQuery) {
+				searchMatches++
 				if searchMatches == ui.jumpToQueryCount {
 					scrollMsg = len(logs) + 1
 					ui.log[i].highlight |= HLTemporary
 				}
-				searchMatches++
 			}
 		}
 
