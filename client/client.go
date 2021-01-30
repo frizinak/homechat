@@ -150,7 +150,7 @@ func (c *Client) MusicPlaylistDownload(playlist string) error {
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {
-	_, w, err := c.tryConnect()
+	_, w, _, err := c.tryConnect()
 	if err != nil {
 		c.disconnect()
 		return err
@@ -208,12 +208,12 @@ func (c *Client) disconnect() {
 	c.conn = nil
 }
 
-func (c *Client) tryConnect() (io.Reader, channel.WriteFlusher, error) {
+func (c *Client) tryConnect() (io.Reader, channel.WriteFlusher, bool, error) {
 	c.sem.Lock()
 	defer c.sem.Unlock()
 	conn := c.conn
 	if conn != nil {
-		return conn.r, conn.w, nil
+		return conn.r, conn.w, false, nil
 	}
 
 	for time.Since(c.lastConnect) < time.Second*2 {
@@ -224,37 +224,37 @@ func (c *Client) tryConnect() (io.Reader, channel.WriteFlusher, error) {
 	c.lastConnect = time.Now()
 	underlying, err := c.backend.Connect()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, true, err
 	}
 
 	c.log.Log("connecting...")
 	if err := c.negotiateProto(underlying); err != nil {
-		return nil, nil, err
+		return nil, nil, true, err
 	}
 
 	c.log.Log("encrypting...")
 	fp, r, w, err := c.negotiateCrypto(underlying, underlying)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, true, err
 	}
 
 	c.serverFingerprint = fp
 	if c.c.ServerFingerprint == "" || c.c.ServerFingerprint != fp {
 		c.fatal = ErrFingerPrint
-		return nil, nil, ErrFingerPrint
+		return nil, nil, true, ErrFingerPrint
 	}
 
 	if r, err = c.negotiateSymmetric(r, w); err != nil {
-		return nil, nil, err
+		return nil, nil, true, err
 	}
 
 	if r, err = c.negotiateUser(r, w); err != nil {
-		return nil, nil, err
+		return nil, nil, true, err
 	}
 	c.log.Log("connected")
 
 	c.conn = &RW{r, w, underlying}
-	return r, w, nil
+	return r, w, true, nil
 }
 
 func (c *Client) negotiateProto(w io.Writer) error {
@@ -360,10 +360,11 @@ func (c *Client) connect() (io.Reader, error) {
 		return nil, err
 	}
 
-	r, _, err := c.tryConnect()
-	if err != nil {
+	r, _, reconn, err := c.tryConnect()
+	if !reconn || err != nil {
 		return r, err
 	}
+
 	if c.c.History > 0 {
 		if err = c.Send(vars.HistoryChannel, historydata.New(c.c.History)); err != nil {
 			return r, err
