@@ -686,6 +686,17 @@ func main() {
 		},
 	)
 	exit(err)
+	keys.OnMouseEvent(func(btn Btn, ev Event, x, y int) {
+		switch {
+		case ev == EventScrollUp:
+			tui.Scroll(1)
+		case ev == EventScrollDown:
+			tui.Scroll(-1)
+		case btn == 0 && ev == EventMouseDown:
+			//tui.Select(y)
+		}
+		//tui.Log(fmt.Sprintf("%d %d %dx%d", btn, ev, x, y))
+	})
 
 	if !f.MusicClient.Offline {
 		fmt.Printf("Shaking hands with %s\n", remoteAddress)
@@ -729,9 +740,11 @@ func main() {
 	tui.Start()
 
 	exit(currentConsole.SetRaw())
+	fmt.Println("\033[?1000h\033[?1006h")
 	onExits = append(onExits, func() {
 		cl.Close()
 		resetTTY()
+		fmt.Println("\033[?1000l\033[?1006l")
 	})
 
 	input := bufio.NewReader(os.Stdin)

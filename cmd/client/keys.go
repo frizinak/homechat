@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -132,6 +133,18 @@ func Simple(cb func()) KeyHandler {
 	}
 }
 
+type Btn byte
+type Event byte
+
+const (
+	EventScrollUp Event = iota + 1
+	EventScrollDown
+	EventMouseDown
+	EventMouseUp
+)
+
+type MouseCallback func(Btn, Event, int, int)
+
 type Keys struct {
 	vi            bool
 	insert        bool
@@ -140,6 +153,9 @@ type Keys struct {
 	onlyWhenEmpty map[bool]map[Mode]map[byte]bool
 	escape        byte
 	escapeSince   byte
+	mouse         [][]byte
+	mouseSeq      byte
+	mouseCb       MouseCallback
 }
 
 func NewKeys(keyMap map[Action]string, actionMap map[Action]KeyHandler, vi func(insertMode bool)) (*Keys, error) {
@@ -240,14 +256,67 @@ func NewKeys(keyMap map[Action]string, actionMap map[Action]KeyHandler, vi func(
 	return keys, nil
 }
 
+func (k *Keys) OnMouseEvent(cb MouseCallback) { k.mouseCb = cb }
+
+func (k *Keys) parseMouseEvent(up bool) {
+	if k.mouseCb == nil {
+		return
+	}
+
+	if len(k.mouse) != 3 {
+		return
+	}
+
+	btn, err := strconv.Atoi(string(k.mouse[0]))
+	if err != nil {
+		return
+	}
+
+	x, err := strconv.Atoi(string(k.mouse[1]))
+	if err != nil {
+		return
+	}
+	y, err := strconv.Atoi(string(k.mouse[2]))
+	if err != nil {
+		return
+	}
+
+	// ignore modifiers
+	btn &= ^(4 | 8 | 16)
+	scroll := btn&64 != 0
+	if scroll {
+		up = btn&1 == 0
+		btn = 1
+	}
+
+	var ev Event
+	switch {
+	case scroll && up:
+		ev = EventScrollUp
+	case scroll:
+		ev = EventScrollDown
+	case up:
+		ev = EventMouseUp
+	default:
+		ev = EventMouseDown
+	}
+
+	if btn > 255 {
+		panic("big btn")
+	}
+
+	k.mouseCb(Btn(btn), ev, x, y)
+}
+
 func (k *Keys) Do(mode Mode, n byte, empty bool) bool {
 	print := true
 	pr := func() bool {
 		return print && (!k.vi || (k.vi && k.insert))
 	}
 
-	switch n {
-	case 27:
+	switch {
+	// ESC
+	case n == 27:
 		k.escape = 1
 		k.escapeSince++
 		escapeSince := k.escapeSince
@@ -263,17 +332,39 @@ func (k *Keys) Do(mode Mode, n byte, empty bool) bool {
 			k.do(ModeDefault, 27, empty)
 		}()
 		print = false
-	case 91:
-		if k.escape == 1 {
-			k.escape = 2
-			print = false
+
+	// ESC [
+	// CSI
+	case n == '[' && k.escape == 1:
+		k.escape = 2
+		print = false
+	// ESC [ < = (CSI M)
+	// CSI <
+	case n == '<' && k.escape == 2:
+		k.mouse = make([][]byte, 0, 3)
+		k.mouse = append(k.mouse, make([]byte, 0, 1))
+		k.mouseSeq = 1
+		print = false
+	case k.escape == 2 && k.mouseSeq == 1:
+		switch n {
+		case ';':
+			k.mouse = append(k.mouse, make([]byte, 0, 1))
+		case 'm', 'M':
+			k.escape = 0
+			k.mouseSeq = 0
+			k.parseMouseEvent(n == 'M')
+			k.mouse = nil
+			return false
+		default:
+			l := len(k.mouse) - 1
+			k.mouse[l] = append(k.mouse[l], n)
 		}
+		print = false
+	case k.escape == 2:
+		k.escape = 3
+		print = false
 	default:
-		if k.escape == 2 {
-			k.escape = 3
-			print = false
-			break
-		}
+		k.mouseSeq = 0
 		k.escape = 0
 	}
 
