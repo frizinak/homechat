@@ -731,7 +731,7 @@ func (s *Server) handleConn(proto channel.Proto, conn net.Conn, addr string, fra
 	macRSecret := derive(channel.CryptoServerMacRead)
 	macWSecret := derive(channel.CryptoServerMacWrite)
 	macR := crypto.NewSHA1HMACReader(encryptedRW, macRSecret[:])
-	macW := crypto.NewSHA1HMACWriter(encryptedRW, macWSecret[:], (1<<16)-1)
+	macW := crypto.NewSHA1HMACWriter(encryptedRW, macWSecret[:], 1<<16-1)
 
 	writer = s.c.RWFactory.Writer(macW)
 	reader = s.c.RWFactory.Reader(macR)

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +13,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -59,6 +63,62 @@ func upload(f *Flags, backend client.Backend) error {
 	defer cl.Close()
 
 	return cl.Upload(vars.UploadChannel, file, f.Upload.Msg, stat.Size(), r)
+}
+
+func update(f *Flags, backend client.Backend) error {
+	output := f.Update.Path
+	if output == "" {
+		output = os.Args[0]
+	}
+
+	stamp := strconv.FormatInt(time.Now().UnixNano(), 36)
+	rnd := make([]byte, 32)
+	_, err := io.ReadFull(rand.Reader, rnd)
+	if err != nil {
+		return err
+	}
+
+	tmp := fmt.Sprintf(
+		"%s.%s-%s.tmp",
+		output,
+		stamp,
+		base64.RawURLEncoding.EncodeToString(rnd),
+	)
+
+	w, err := os.Create(tmp)
+	if err != nil {
+		return err
+	}
+
+	log := ui.Plain(os.Stdout)
+	conf := f.MusicNodeConfig
+	conf.CustomError = music.NewErrorFlasher(log)
+	rhandler := handler.NoopHandler{}
+	cl := &client.Client{}
+	updateHandler := handler.NewUpdateHandler(rhandler, log, cl)
+	*cl = *client.New(backend, updateHandler, log, f.ClientConf)
+
+	defer cl.Close()
+	go cl.Run()
+	if err := updateHandler.Download(runtime.GOOS, runtime.GOARCH, w); err != nil {
+		w.Close()
+		os.Remove(tmp)
+		return err
+	}
+
+	if err := w.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, output); err != nil {
+		return err
+	}
+	if err := os.Chmod(output, 755); err != nil {
+		return err
+	}
+
+	log.Log("Updated")
+	return nil
 }
 
 func musicRemoteCurrent(f *Flags, backend client.Backend) error {
@@ -402,6 +462,8 @@ func main() {
 	switch f.All.Mode {
 	case ModeFingerprint:
 		err = fingerprint(f, remoteAddress)
+	case ModeUpdate:
+		err = update(f, backend)
 	case ModeUpload:
 		err = upload(f, backend)
 	case ModeMusicRemoteCurrent:

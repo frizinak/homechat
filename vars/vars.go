@@ -6,6 +6,8 @@ const (
 	Version         = "custom"
 	ProtocolVersion = "1022"
 
+	UpdateChannel = "update" // rw
+
 	ChatChannel    = "c"  // rw
 	HistoryChannel = "h"  // rw
 	UploadChannel  = "up" // w

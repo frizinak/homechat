@@ -17,7 +17,7 @@ func Plain(w io.Writer) *PlainUI {
 func (p *PlainUI) Users([]string)          {}
 func (p *PlainUI) UserTyping(string, bool) {}
 func (p *PlainUI) Latency(time.Duration)   {}
-func (p *PlainUI) Log(msg string)          { fmt.Fprintln(p.Writer, "[log]", StripUnprintable(msg)) }
+func (p *PlainUI) Log(msg string)          { fmt.Fprintln(p.Writer, StripUnprintable(msg)) }
 func (p *PlainUI) Err(err error)           { fmt.Fprintln(p.Writer, "[err]", StripUnprintable(err.Error())) }
 
 func (p *PlainUI) Flash(msg string, dur time.Duration) {

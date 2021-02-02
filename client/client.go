@@ -17,6 +17,7 @@ import (
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
 	pingdata "github.com/frizinak/homechat/server/channel/ping/data"
 	typingdata "github.com/frizinak/homechat/server/channel/typing/data"
+	updatedata "github.com/frizinak/homechat/server/channel/update/data"
 	uploaddata "github.com/frizinak/homechat/server/channel/upload/data"
 	usersdata "github.com/frizinak/homechat/server/channel/users/data"
 	"github.com/frizinak/homechat/vars"
@@ -39,6 +40,7 @@ type Handler interface {
 	HandleUsersMessage(usersdata.ServerMessage, Users) error
 	HandleMusicNodeMessage(musicdata.SongDataMessage) error
 	HandleTypingMessage(typingdata.ServerMessage) error
+	HandleUpdateMessage(updatedata.ServerMessage) error
 }
 
 type User struct {
@@ -98,6 +100,8 @@ type Client struct {
 
 	conn *RW
 
+	serverKey *crypto.PubKey
+
 	lastConnect time.Time
 	fatal       error
 
@@ -148,6 +152,7 @@ func (c *Client) Latency() time.Duration         { return c.latency }
 func (c *Client) Name() string                   { return c.c.Name }
 func (c *Client) Err() error                     { return c.fatal }
 func (c *Client) ServerFingerprint() string      { return c.serverFingerprint }
+func (c *Client) ServerKey() *crypto.PubKey      { return c.serverKey }
 func (c *Client) SetTrustedFingerprint(n string) { c.c.ServerFingerprint = n }
 
 func (c *Client) ChatTyping() error {
@@ -299,6 +304,8 @@ func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, c
 	}
 	server := _server.(channel.PubKeyServerMessage)
 
+	c.serverKey = server.PubKey()
+
 	client, err := channel.NewPubKeyMessage(c.c.Key, server)
 	if err != nil {
 		return "", nil, nil, err
@@ -321,7 +328,7 @@ func (c *Client) negotiateCrypto(r io.Reader, w io.Writer) (string, io.Reader, c
 	macRSecret := derive(channel.CryptoClientMacRead)
 	macWSecret := derive(channel.CryptoClientMacWrite)
 	macR := crypto.NewSHA1HMACReader(rw, macRSecret[:])
-	macW := crypto.NewSHA1HMACWriter(rw, macWSecret[:], (1<<16)-1)
+	macW := crypto.NewSHA1HMACWriter(rw, macWSecret[:], 1<<16-1)
 
 	wf = &channel.WriterFlusher{macW, channel.NewFlushFlusher(macW, wf)}
 
@@ -576,6 +583,12 @@ func (c *Client) Run() error {
 				return r, err
 			}
 			return r, c.handler.HandleMusicNodeMessage(msg.(musicdata.SongDataMessage))
+		case vars.UpdateChannel:
+			msg, r, err = c.read(r, updatedata.ServerMessage{})
+			if err != nil {
+				return r, err
+			}
+			return r, c.handler.HandleUpdateMessage(msg.(updatedata.ServerMessage))
 		default:
 			return r, fmt.Errorf("received unknown message type: '%s'", chnl)
 		}

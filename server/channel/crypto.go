@@ -135,9 +135,8 @@ func NewPubKeyServerMessage(key *crypto.Key) (PubKeyServerMessage, error) {
 	return p, nil
 }
 
-func (m PubKeyServerMessage) Fingerprint() string {
-	return m.pkey.FingerprintString()
-}
+func (m PubKeyServerMessage) PubKey() *crypto.PubKey { return m.pkey }
+func (m PubKeyServerMessage) Fingerprint() string    { return m.pkey.FingerprintString() }
 
 func (m PubKeyServerMessage) do() (der, sig []byte, err error) {
 	der = m.pkey.MarshalDER()

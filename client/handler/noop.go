@@ -7,6 +7,7 @@ import (
 	chatdata "github.com/frizinak/homechat/server/channel/chat/data"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
 	typingdata "github.com/frizinak/homechat/server/channel/typing/data"
+	updatedata "github.com/frizinak/homechat/server/channel/update/data"
 	usersdata "github.com/frizinak/homechat/server/channel/users/data"
 )
 
@@ -22,3 +23,4 @@ func (h NoopHandler) HandleMusicNodeMessage(musicdata.SongDataMessage) error    
 func (h NoopHandler) HandleMusicStateMessage(client.MusicState) error                { return nil }
 func (h NoopHandler) HandleUsersMessage(usersdata.ServerMessage, client.Users) error { return nil }
 func (h NoopHandler) HandleTypingMessage(typingdata.ServerMessage) error             { return nil }
+func (h NoopHandler) HandleUpdateMessage(updatedata.ServerMessage) error             { return nil }

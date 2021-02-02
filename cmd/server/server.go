@@ -35,6 +35,7 @@ import (
 	"github.com/frizinak/homechat/server/channel/ping"
 	"github.com/frizinak/homechat/server/channel/status"
 	"github.com/frizinak/homechat/server/channel/typing"
+	"github.com/frizinak/homechat/server/channel/update"
 	"github.com/frizinak/homechat/server/channel/upload"
 	"github.com/frizinak/homechat/server/channel/users"
 	"github.com/frizinak/homechat/vars"
@@ -154,6 +155,19 @@ func serve(flock flock, f *Flags) error {
 
 	fmt.Println("Loading assets")
 	static := make(map[string][]byte)
+	sign := func(a string, data []byte) error {
+		sig, err := f.All.Key.Sign(data)
+		if err != nil {
+			return err
+		}
+		enc := base64.RawURLEncoding
+		n := make([]byte, enc.EncodedLen(len(sig)))
+		enc.Encode(n, sig)
+		static[a+".sig"] = sig
+		static[a+".sig.base64"] = n
+		return nil
+	}
+
 	err := func() error {
 		fs := []string{
 			"index.html",
@@ -170,7 +184,14 @@ func serve(flock flock, f *Flags) error {
 		}
 		for _, n := range names {
 			a := "clients/" + n
+			if strings.HasSuffix(n, ".gz") {
+				continue
+			}
 			static[a] = bound.MustAsset(a)
+			err := sign(a, static[a])
+			if err != nil {
+				return err
+			}
 		}
 		for k := range static {
 			g := k + ".gz"
@@ -292,7 +313,22 @@ func serve(flock flock, f *Flags) error {
 	upload := upload.New(c.MaxUploadSize, chat, s)
 	users := users.New([]string{vars.ChatChannel, vars.MusicChannel}, s)
 	typing := typing.New([]string{vars.ChatChannel})
+	update := update.New(func(os, arch string) (sig []byte, data []byte, ok bool) {
+		suf := ""
+		if os == "windows" {
+			suf = ".exe"
+		}
+		k := fmt.Sprintf("clients/homechat-%s-%s%s", os, arch, suf)
+		s := fmt.Sprintf("%s.sig", k)
+		data, ok = static[k]
+		if !ok {
+			return
+		}
+		sig, ok = static[s]
+		return
+	})
 
+	s.MustAddChannel(vars.UpdateChannel, update)
 	s.MustAddChannel(vars.ChatChannel, chat)
 	s.MustAddChannel(vars.UploadChannel, upload)
 	s.MustAddChannel(vars.HistoryChannel, history)

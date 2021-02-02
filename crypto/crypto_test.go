@@ -118,3 +118,31 @@ func TestEncDec(t *testing.T) {
 		t.Fatal("input != output when reading from decrypter")
 	}
 }
+
+func TestHMAC(t *testing.T) {
+	sec := rnd(32)
+	buf := bytes.NewBuffer(nil)
+	w := NewSHA1HMACWriter(buf, sec, 100)
+
+	write := rnd(1 << 16)
+	w.Write(write[0:10])
+	if err := w.Flush(); err != nil {
+		t.Error(err)
+	}
+
+	w.Write(write[10:300])
+	w.Write(write[300:600])
+	w.Write(write[600:])
+	if err := w.Flush(); err != nil {
+		t.Error(err)
+	}
+
+	r := NewSHA1HMACReader(buf, sec)
+	read, err := ioutil.ReadAll(r)
+	if err != nil {
+		t.Error(err)
+	}
+	if !bytes.Equal(write, read) {
+		t.Errorf("data does not match (len: %d %d)", len(write), len(read))
+	}
+}

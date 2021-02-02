@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	fmt.Println("pprof build! (:6061")
+	fmt.Println("pprof build! (:6061)")
 	go func() {
 		if err := http.ListenAndServe(":6061", nil); err != nil {
 			fmt.Printf("failed to start pprof http server: %s\n", err)

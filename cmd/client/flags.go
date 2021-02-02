@@ -42,6 +42,8 @@ const (
 	ModeMusicInfoFiles
 	ModeMusicInfoDownloads
 	ModeMusicInfoSongs
+
+	ModeUpdate
 )
 
 type Flags struct {
@@ -87,6 +89,9 @@ type Flags struct {
 	MusicRemoteCurrent struct {
 		N uint
 	}
+	Update struct {
+		Path string
+	}
 
 	flags       *flags.Set
 	CurrentFlag *flags.Set
@@ -126,6 +131,7 @@ func (f *Flags) Flags() {
 			h.Add("  - upload:         Upload a file from stdin or commandline to chat")
 			h.Add("  - config:         Config options explained")
 			h.Add("  - fingerprint:    Show your and the server's trusted publickey fingerprint")
+			h.Add("  - update:         Update your client to the latest version")
 			h.Add("  - version:        Print version and exit")
 		}
 	}).Handler(func(set *flags.Set, args []string) error {
@@ -134,6 +140,22 @@ func (f *Flags) Flags() {
 		}
 
 		f.All.Mode = ModeDefault
+		return nil
+	})
+
+	f.flags.Add("update").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.StringVar(
+			&f.Update.Path,
+			"d",
+			"",
+			"write new binary to destination instead of overwriting the current one",
+		)
+
+		return func(h *flags.Help) {
+			h.Add("Update your homechat client")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeUpdate
 		return nil
 	})
 
@@ -445,6 +467,11 @@ func (f *Flags) Parse() error {
 	case ModeUpload:
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{}
+	case ModeUpdate:
+		f.ClientConf.History = 0
+		f.ClientConf.Channels = []string{
+			vars.UpdateChannel,
+		}
 	case ModeMusicRemote:
 		f.ClientConf.History = 0
 		f.ClientConf.Channels = []string{
