@@ -22,6 +22,7 @@ CLIENTS := dist/homechat-linux-amd64 dist/homechat-darwin-amd64 dist/homechat-li
 PCLIENTS:= $(patsubst dist/%, public/clients/%, $(CLIENTS))
 PCLIENTS_GZ := $(foreach f, $(PCLIENTS), $(f).gz)
 NATIVE := dist/homechat-$(shell go env GOOS)-$(shell go env GOARCH)
+NATIVE_DEBUG := dist/debug-homechat
 
 TESTCLIENT := $(patsubst testclient.def/%, testclient/%, $(wildcard testclient.def/*))
 
@@ -58,6 +59,9 @@ dist/homechat-%: $(CLIENT_FILES) | dist
 	GOOS=$$(echo $* | cut -d- -f1) \
 		 GOARCH=$$(echo $* | cut -d- -f2 | cut -d. -f1) \
 		 go build -o "$@" -trimpath -ldflags "$(LDFLAGS)" ./cmd/client
+
+$(NATIVE_DEBUG): $(CLIENT_FILES) | dist
+	go build -tags pprof -o "$@" -trimpath -ldflags "$(LDFLAGS)" ./cmd/client
 
 public/clients/homechat-%: dist/homechat-% | public/clients
 	cp "$<" "$@"
@@ -97,10 +101,10 @@ serve-live: $(SERVER_FILES) bound/bound.go testclient/server.json
 	go run -tags pprof ./cmd/server -c ./testclient/server.json serve -http ./public
 
 .PHONY: local
-local: $(NATIVE) $(TESTCLIENT)
-	$(NATIVE) -c ./testclient
+local: $(NATIVE_DEBUG) $(TESTCLIENT)
+	$(NATIVE_DEBUG) -c ./testclient
 
 .PHONY: local-music
-local-music: $(NATIVE) $(TESTCLIENT)
-	$(NATIVE) -c ./testclient music remote
+local-music: $(NATIVE_DEBUG) $(TESTCLIENT)
+	$(NATIVE_DEBUG) -c ./testclient music remote
 

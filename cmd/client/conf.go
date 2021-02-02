@@ -22,6 +22,7 @@ type Config struct {
 	Username          string
 	MaxMessages       int
 	MusicDownloads    string
+	OpenURLCommand    string
 }
 
 func (c *Config) Help() []string {
@@ -45,6 +46,9 @@ func (c *Config) Help() []string {
 		"MaxMessages:      maximum amount of messages shown",
 		"",
 		"MusicDownloads:   path where music download will be stored",
+		"",
+		"OpenURLCommand:   command to run to open urls (%u will be replaced with the url)",
+		"                  leave empty to use system defaults",
 	}
 }
 

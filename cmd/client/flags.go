@@ -17,6 +17,7 @@ import (
 	"github.com/frizinak/homechat/client/backend/ws"
 	"github.com/frizinak/homechat/crypto"
 	"github.com/frizinak/homechat/flags"
+	"github.com/frizinak/homechat/open"
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/vars"
 	"github.com/frizinak/libym/di"
@@ -96,6 +97,8 @@ type Flags struct {
 	WSConf          ws.Config
 	MusicNodeConfig di.Config
 
+	Opener *open.Opener
+
 	Keymap Keymap
 }
 
@@ -149,6 +152,18 @@ func (f *Flags) Flags() {
 			h.Add("Send message and exit")
 			h.Add(" - homechat chat <message to send>")
 			h.Add(" - command | homechat chat")
+			h.Add("")
+			h.Add("Chat commands:")
+			h.Add(" - @username:     whisper someone if message starts with this mention")
+			h.Add(" - ... @username: mention a user (notify)")
+			h.Add(" - @...<tab>:     autocomplete a mention/whisper")
+			h.Add(" - /command:      send a bot command (use /help to get a listing of bots)")
+			h.Add(" - //command:     same as the above but other users see neither your command nor the bots' reply")
+			h.Add(" - ?query:        search and jump to matches of your query")
+			h.Add("                  repeat the query to jump to the next occurrence")
+			h.Add(" - %n             open link with id n")
+			h.Add("")
+			h.Add("See keys.json for other commands/keybinds")
 		}
 	}).Handler(func(set *flags.Set, args []string) error {
 		f.All.Mode = ModeDefault
@@ -373,11 +388,26 @@ func (f *Flags) Parse() error {
 		return fmt.Errorf("please specify your desired username in %s", f.All.ConfigFile)
 	}
 
-	n, err := shlex.Split(*f.AppConf.NotifyCommand)
+	notify, err := shlex.Split(*f.AppConf.NotifyCommand)
 	if err != nil {
 		return err
 	}
-	f.Chat.NotifyCommand = n
+	f.Chat.NotifyCommand = notify
+
+	f.Opener = open.New()
+	openurl, err := shlex.Split(f.AppConf.OpenURLCommand)
+	if err != nil {
+		return err
+	}
+	if len(openurl) != 0 {
+		f.Opener.SetOpenURL(func(u string) error {
+			for i := range openurl {
+				openurl[i] = strings.ReplaceAll(openurl[i], "%u", u)
+			}
+
+			return open.Run(openurl[0], openurl[1:]...)
+		})
+	}
 
 	if len(f.AppConf.ServerAddress) == 0 {
 		return fmt.Errorf("please specify the server ip:port in %s", f.All.ConfigFile)

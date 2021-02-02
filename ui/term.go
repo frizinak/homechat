@@ -3,7 +3,9 @@ package ui
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +16,8 @@ import (
 )
 
 const stampFormat = "01-02 15:04"
+
+var linkRE = regexp.MustCompile(`https?://[^\s]+`)
 
 type user struct {
 	name   string
@@ -35,6 +39,8 @@ type TermUI struct {
 	log   []msg
 	input []byte
 	users []*user
+
+	links []*url.URL
 
 	scrollPage        int
 	scrollSimple      int
@@ -67,6 +73,7 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool) *TermUI {
 		scrollTop:   scrollTop,
 		maxMessages: maxMessages,
 		disabled:    true,
+		links:       make([]*url.URL, 0),
 	}
 }
 
@@ -77,6 +84,11 @@ func (ui *TermUI) Start() {
 
 func (ui *TermUI) Users(users []string) {
 	ui.sem.Lock()
+
+	for i := range users {
+		users[i] = StripUnprintable(users[i])
+	}
+
 	nm := make(map[string]*user, len(users))
 	for _, u := range ui.users {
 		nm[u.name] = u
@@ -100,12 +112,27 @@ func (ui *TermUI) Users(users []string) {
 func (ui *TermUI) UserTyping(who string, is bool) {
 	ui.sem.Lock()
 	for _, u := range ui.users {
-		if u.name == who {
+		if u.name == StripUnprintable(who) {
 			u.typing = is
 		}
 	}
 	ui.sem.Unlock()
 	ui.Flush()
+}
+
+func (ui *TermUI) Link(id string) (*url.URL, bool) {
+	n, err := strconv.Atoi(id)
+	if err != nil {
+		return nil, false
+	}
+	n--
+	ui.sem.Lock()
+	defer ui.sem.Unlock()
+	if n >= len(ui.links) {
+		return nil, false
+	}
+
+	return ui.links[n], true
 }
 
 func (ui *TermUI) Latency(n time.Duration) {
@@ -118,12 +145,12 @@ func (ui *TermUI) Flash(msg string, dur time.Duration) {
 		dur = time.Second * 5
 	}
 	ui.flashExpiry = time.Now().Add(dur)
-	ui.flash = msg
+	ui.flash = StripUnprintable(msg)
 	ui.Flush()
 }
 
-func (ui *TermUI) Log(msg string)    { ui.status = msg; ui.Flush() }
-func (ui *TermUI) ErrStr(err string) { ui.status = err; ui.Flush() }
+func (ui *TermUI) Log(msg string)    { ui.status = StripUnprintable(msg); ui.Flush() }
+func (ui *TermUI) ErrStr(err string) { ui.status = StripUnprintable(err); ui.Flush() }
 func (ui *TermUI) Err(err error)     { ui.ErrStr(err.Error()) }
 
 func (ui *TermUI) Clear() {
@@ -151,8 +178,19 @@ func (ui *TermUI) Search(qry string) {
 func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 	ui.sem.Lock()
 	for _, m := range msgs {
+		m.From = StripUnprintable(m.From)
+		m.Message = StripUnprintable(m.Message)
 		texts := strings.Split(strings.ReplaceAll(m.Message, "\r", ""), "\n")
 		for _, text := range texts {
+			text = linkRE.ReplaceAllStringFunc(text, func(m string) string {
+				u, err := url.Parse(m)
+				if err != nil {
+					return m
+				}
+				ui.links = append(ui.links, u)
+				return fmt.Sprintf("\033[1m[%d]\033[0m%s", len(ui.links), m)
+			})
+
 			msg := msg{"", text, m.Highlight}
 			if ui.metaPrefix {
 				msg.prefix = fmt.Sprintf(
@@ -180,6 +218,8 @@ func (ui *TermUI) MusicState(s State) {
 	if s == ui.s {
 		return
 	}
+
+	s.Song = StripUnprintable(s.Song)
 
 	ui.s = s
 	ui.Flush()
@@ -306,8 +346,8 @@ func (ui *TermUI) Flush() {
 	var searchMatches uint16
 
 	for i := 0; i < len(ui.log); i++ {
-		meta := StripUnprintable(ui.log[i].prefix)
-		log := StripUnprintable(ui.log[i].msg)
+		meta := ui.log[i].prefix
+		log := ui.log[i].msg
 		both := meta + log
 
 		ln := runewidth.StringWidth(both)
@@ -411,6 +451,8 @@ func (ui *TermUI) Flush() {
 	if time.Now().Before(ui.flashExpiry) {
 		status = fmt.Sprintf("%s - %s", status, ui.flash)
 	}
+
+	status = runewidth.Truncate(status, w-len(lat), "…")
 	status = pad(status, " ", w-len(lat))
 	users := make([]string, 0, len(ui.users))
 	for _, u := range ui.users {
@@ -431,14 +473,14 @@ func (ui *TermUI) Flush() {
 	s = append(s, clear...)
 	s = append(s, clrStatus...)
 	s = append(s, indent...)
-	s = append(s, StripUnprintable(status)...)
+	s = append(s, status...)
 	s = append(s, lat...)
 	s = append(s, clrReset...)
 	s = append(s, '\r')
 	s = append(s, '\n')
 	s = append(s, clrUser...)
 	s = append(s, indent...)
-	s = append(s, StripUnprintable(user)...)
+	s = append(s, user...)
 	s = append(s, clrReset...)
 	s = append(s, '\r')
 	s = append(s, '\n')
@@ -492,7 +534,7 @@ func (ui *TermUI) Flush() {
 		song := runewidth.Truncate(state.Song, songW, "…")
 		song = runewidth.FillRight(song, songW)
 		s = append(s, indent...)
-		s = append(s, StripUnprintable(song)...)
+		s = append(s, song...)
 		s = append(s, vol...)
 		s = append(s, '\r')
 		s = append(s, '\n')
