@@ -69,6 +69,14 @@ func update(f *Flags, backend client.Backend) error {
 	output := f.Update.Path
 	if output == "" {
 		output = os.Args[0]
+		var err error
+
+		if output, err = filepath.EvalSymlinks(output); err != nil {
+			return err
+		}
+		if output, err = filepath.Abs(output); err != nil {
+			return err
+		}
 	}
 
 	stamp := strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -110,15 +118,43 @@ func update(f *Flags, backend client.Backend) error {
 		os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, output); err != nil {
-		return err
-	}
-	if err := os.Chmod(output, 755); err != nil {
-		return err
+
+	var gerr error
+	rename := func() bool {
+		if err := os.Rename(tmp, output); err != nil {
+			gerr = err
+			return false
+		}
+		if err := os.Chmod(output, 0o755); err != nil {
+			gerr = err
+			return false
+		}
+
+		return true
 	}
 
-	log.Log("Updated")
-	return nil
+	rename2 := func() bool {
+		bak := output + ".bak"
+		if err := os.Rename(output, bak); err != nil {
+			gerr = err
+			return false
+		}
+
+		if !rename() {
+			os.Rename(bak, output)
+			return false
+		}
+		os.Remove(bak)
+		return true
+	}
+
+	if rename() || rename2() {
+		log.Log("Updated")
+		return nil
+	}
+
+	os.Remove(tmp)
+	return gerr
 }
 
 func musicRemoteCurrent(f *Flags, backend client.Backend) error {
