@@ -17,7 +17,7 @@ type HMACWriter struct {
 	hmac   hash.Hash
 	w      io.Writer
 	buf    *bytes.Buffer
-	maxLen uint16
+	maxLen int
 	b      []byte
 }
 
@@ -26,7 +26,7 @@ func NewHMACWriter(w io.Writer, h func() hash.Hash, secret []byte, buffer uint16
 		hmac.New(h, secret),
 		w,
 		bytes.NewBuffer(make([]byte, 0, buffer)),
-		buffer,
+		int(buffer),
 		make([]byte, 2),
 	}
 }
@@ -36,7 +36,7 @@ func NewSHA1HMACWriter(w io.Writer, secret []byte, buffer uint16) *HMACWriter {
 }
 
 func (h *HMACWriter) Write(b []byte) (int, error) {
-	cut := int(h.maxLen) - h.buf.Len()
+	cut := h.maxLen - h.buf.Len()
 	if cut > len(b) {
 		cut = len(b)
 	}
@@ -44,8 +44,7 @@ func (h *HMACWriter) Write(b []byte) (int, error) {
 	n := b[:cut]
 	wr, _ := h.buf.Write(n)
 	h.hmac.Write(n)
-
-	if cut == 0 {
+	if cut == 0 || h.buf.Len() == h.maxLen {
 		if err := h.Flush(); err != nil {
 			return wr, err
 		}
@@ -127,7 +126,7 @@ func (h *HMACReader) Read(b []byte) (n int, err error) {
 			hash := -h.amount
 			n -= hash
 			h.amount = 0
-			h.hash = append(h.hash, rb[n:]...)
+			h.hash = append(h.hash, rb[n:n+hash]...)
 		}
 
 		copy(b, rb[:n])
