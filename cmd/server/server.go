@@ -375,27 +375,24 @@ func serve(flock flock, f *Flags) error {
 	exit := make(chan struct{}, 1)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	var saveErr error
 	go func() {
 		<-sig
 		fmt.Println("saving")
 		serverErr := s.Save()
 		ymErr := music.SaveCollection()
 		if serverErr != nil {
-			saveErr = fmt.Errorf(
-				"error occurred when trying to run server.Save: %w",
-				serverErr,
+			fmt.Fprintf(
+				os.Stderr,
+				"error occurred when trying to run server.Save: %s",
+				serverErr.Error(),
 			)
 		}
 		if ymErr != nil {
-			saveErr = fmt.Errorf(
-				"error occurred when trying to run libym.Collection.Save %w, additionally: %s",
-				serverErr,
-				err.Error(),
+			fmt.Fprintf(
+				os.Stderr,
+				"error occurred when trying to run libym.Collection.Save %s",
+				ymErr.Error(),
 			)
-		}
-		if saveErr != nil {
-			fmt.Fprintln(os.Stderr, saveErr)
 		}
 		exit <- struct{}{}
 	}()
