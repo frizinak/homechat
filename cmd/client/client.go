@@ -68,12 +68,33 @@ func upload(f *Flags, backend client.Backend) error {
 func update(f *Flags, backend client.Backend) error {
 	output := f.Update.Path
 	if output == "" {
-		output = os.Args[0]
 		var err error
-
-		if output, err = filepath.EvalSymlinks(output); err != nil {
+		output, err = os.Executable()
+		if err != nil {
 			return err
 		}
+		for {
+			stat, err := os.Lstat(output)
+			if err != nil {
+				return err
+			}
+
+			if stat.Mode()&os.ModeSymlink == 0 {
+				break
+			}
+
+			link, err := os.Readlink(output)
+			if err != nil {
+				return err
+			}
+			if filepath.IsAbs(link) {
+				output = link
+				continue
+			}
+
+			output = filepath.Clean(filepath.Join(filepath.Dir(output), link))
+		}
+
 		if output, err = filepath.Abs(output); err != nil {
 			return err
 		}
