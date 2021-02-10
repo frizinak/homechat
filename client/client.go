@@ -181,7 +181,7 @@ func (c *Client) MusicPlaylistDownload(playlist string) error {
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {
-	_, w, _, err := c.tryConnect()
+	_, w, err := c.connect()
 	if err != nil {
 		c.disconnect()
 		return err
@@ -204,7 +204,7 @@ func (c *Client) send(w channel.WriteFlusher, chnl string, msg channel.Msg) erro
 
 func (c *Client) Connect() error {
 	c.fatal = nil
-	_, err := c.connect()
+	_, _, err := c.connect()
 	if err != nil {
 		c.disconnect()
 	}
@@ -388,23 +388,23 @@ func (c *Client) negotiateUser(r io.Reader, w channel.WriteFlusher) (io.Reader, 
 	return nr, nil
 }
 
-func (c *Client) connect() (io.Reader, error) {
+func (c *Client) connect() (io.Reader, channel.WriteFlusher, error) {
 	if err := c.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	r, _, reconn, err := c.tryConnect()
+	r, w, reconn, err := c.tryConnect()
 	if !reconn || err != nil {
-		return r, err
+		return r, w, err
 	}
 
 	if c.c.History > 0 {
-		if err = c.Send(vars.HistoryChannel, historydata.New(c.c.History)); err != nil {
-			return r, err
+		if err = c.send(w, vars.HistoryChannel, historydata.New(c.c.History)); err != nil {
+			return r, w, err
 		}
 	}
 
-	return r, c.Send(vars.UserChannel, usersdata.Message{})
+	return r, w, c.send(w, vars.UserChannel, usersdata.Message{})
 }
 
 func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {
@@ -608,7 +608,7 @@ func (c *Client) Run() error {
 
 	var gerr error
 	for {
-		r, err := c.connect()
+		r, _, err := c.connect()
 		if err != nil {
 			if err := c.Err(); err != nil {
 				gerr = err
