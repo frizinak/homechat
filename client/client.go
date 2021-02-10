@@ -192,7 +192,7 @@ func (c *Client) Send(chnl string, msg channel.Msg) error {
 
 func (c *Client) send(w channel.WriteFlusher, chnl string, msg channel.Msg) error {
 	c.sem.Lock()
-	if err := c.writeMulti(w, channel.ChannelMsg{Data: chnl}, msg); err != nil {
+	if err := c.write(w, channel.ChannelMsg{Data: chnl}, msg); err != nil {
 		c.sem.Unlock()
 		c.disconnect()
 		return err
@@ -418,7 +418,7 @@ func (c *Client) writeRaw(w io.Writer, m channel.Msg) error {
 	}
 }
 
-func (c *Client) writeMulti(w channel.WriteFlusher, ms ...channel.Msg) error {
+func (c *Client) write(w channel.WriteFlusher, ms ...channel.Msg) error {
 	for _, m := range ms {
 		if err := c.writeRaw(w, m); err != nil {
 			return err
@@ -426,10 +426,6 @@ func (c *Client) writeMulti(w channel.WriteFlusher, ms ...channel.Msg) error {
 	}
 
 	return w.Flush()
-}
-
-func (c *Client) write(w channel.WriteFlusher, m channel.Msg) error {
-	return c.writeMulti(w, m)
 }
 
 func (c *Client) read(r io.Reader, msg channel.Msg) (channel.Msg, io.Reader, error) {
