@@ -355,6 +355,10 @@ func serve(flock flock, f *Flags) error {
 	quoteBots.AddBot("cats", bot.NewBotFunc(bot.CatQuote))
 
 	weatherBot := bot.NewWttrBot(f.AppConf.WttrCity)
+	bitcoinBot, err := bot.NewBTCBot()
+	if err != nil {
+		return err
+	}
 
 	if f.AppConf.HueIP != "" {
 		hue := bot.NewHueBot(
@@ -371,6 +375,8 @@ func serve(flock flock, f *Flags) error {
 	chat.AddBot("wttr", weatherBot)
 	chat.AddBot("weather", weatherBot)
 	chat.AddBot("trivia", bot.NewTriviaBot())
+	chat.AddBot("btc", bitcoinBot)
+	chat.AddBot("bitcoin", bitcoinBot)
 
 	exit := make(chan struct{}, 1)
 	sig := make(chan os.Signal, 1)
