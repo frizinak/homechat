@@ -181,6 +181,8 @@ func NewUI(offline bool, handler client.Handler, logger client.Logger, di *di.DI
 	q := di.Queue()
 	ui := base.New(output, output, parser, p, col, q)
 
+	p.LoadPosition()
+
 	rhandler.ui = ui
 	return &UI{UI: ui, handler: rhandler, p: p, q: q}
 }
@@ -207,6 +209,7 @@ func (ui *UI) Flush() {
 
 func (ui *UI) Close() error {
 	ui.closed = true
+	ui.p.SavePosition()
 	return ui.p.Close()
 }
 

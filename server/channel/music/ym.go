@@ -77,6 +77,8 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 	ym.playlistCh = NewPlaylist(log, ym.col)
 	ym.musicNode = NewMusicNode(log, ym.col)
 
+	ym.LoadPlayerPosition()
+
 	return ym
 }
 
@@ -90,6 +92,9 @@ func (c *YMChannel) PlaylistChannel() *PlaylistChannel { return c.playlistCh }
 func (c *YMChannel) NodeChannel() *MusicNodeChannel    { return c.musicNode }
 
 func (c *YMChannel) SaveCollection() error { return c.col.Save() }
+
+func (c *YMChannel) LoadPlayerPosition() error { return c.p.LoadPosition() }
+func (c *YMChannel) SavePlayerPosition() error { return c.p.SavePosition() }
 
 func (c *YMChannel) Register(chnl string, s channel.Sender) error {
 	c.channel = chnl

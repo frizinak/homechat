@@ -386,6 +386,7 @@ func serve(flock flock, f *Flags) error {
 		fmt.Println("saving")
 		serverErr := s.Save()
 		ymErr := music.SaveCollection()
+		_ = music.SavePlayerPosition()
 		if serverErr != nil {
 			fmt.Fprintf(
 				os.Stderr,
