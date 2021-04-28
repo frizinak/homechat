@@ -23,6 +23,7 @@ PCLIENTS:= $(patsubst dist/%, public/clients/%, $(CLIENTS))
 PCLIENTS_GZ := $(foreach f, $(PCLIENTS), $(f).gz)
 NATIVE := dist/homechat-$(shell go env GOOS)-$(shell go env GOARCH)
 NATIVE_DEBUG := dist/debug-homechat
+NATIVE_DEBUG_NOCGO := dist/debug-homechat-nocgo
 
 TESTCLIENT := $(patsubst testclient.def/%, testclient/%, $(wildcard testclient.def/*))
 
@@ -62,6 +63,9 @@ dist/homechat-%: $(CLIENT_FILES) | dist
 
 $(NATIVE_DEBUG): $(CLIENT_FILES) | dist
 	go build -tags pprof -o "$@" -trimpath -ldflags "$(LDFLAGS)" ./cmd/client
+
+$(NATIVE_DEBUG_NOCGO): $(CLIENT_FILES) | dist
+	CGO_ENABLED=0 go build -tags pprof -o "$@" -trimpath -ldflags "$(LDFLAGS)" ./cmd/client
 
 public/clients/homechat-%: dist/homechat-% | public/clients
 	cp "$<" "$@"

@@ -22,6 +22,7 @@ type Config struct {
 	Username          string
 	MaxMessages       int
 	MusicDownloads    string
+	MusicSocketFile   string
 	OpenURLCommand    string
 }
 
@@ -46,6 +47,10 @@ func (c *Config) Help() []string {
 		"MaxMessages:      maximum amount of messages shown",
 		"",
 		"MusicDownloads:   path where music download will be stored",
+		"",
+		"MusicSocketFile:  when not compiled with libmpv use this path for the socket file",
+		"                  can be useful when the libym downloads path is on a filesystem",
+		"                  that does not support fifos",
 		"",
 		"OpenURLCommand:   command to run to open urls (%u will be replaced with the url)",
 		"                  leave empty to use system defaults",
@@ -111,6 +116,10 @@ func (c *Config) Merge(def *Config) bool {
 	if c.MusicDownloads == "" {
 		resave = true
 		c.MusicDownloads = def.MusicDownloads
+	}
+	if c.MusicSocketFile == "" {
+		resave = true
+		c.MusicSocketFile = def.MusicSocketFile
 	}
 	return resave
 }

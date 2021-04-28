@@ -70,6 +70,7 @@ type Flags struct {
 	}
 	MusicNode struct {
 		CacheDir   string
+		Socket     string
 		LowLatency bool
 	}
 	MusicClient struct {
@@ -454,9 +455,11 @@ func (f *Flags) Parse() error {
 	}
 
 	f.MusicNode.CacheDir = f.AppConf.MusicDownloads
+	f.MusicNode.Socket = f.AppConf.MusicSocketFile
 	f.MusicNodeConfig = di.Config{
 		Log:           log.New(ioutil.Discard, "", 0),
 		StorePath:     f.MusicNode.CacheDir,
+		SocketPath:    f.MusicNode.Socket,
 		BackendLogger: ioutil.Discard,
 		AutoSave:      false,
 		SimpleOutput:  ioutil.Discard,
