@@ -386,7 +386,7 @@ func serve(flock flock, f *Flags) error {
 		fmt.Println("saving")
 		serverErr := s.Save()
 		ymErr := music.SaveCollection()
-		_ = music.SavePlayerPosition()
+		posErr := music.SavePlayerPosition()
 		if serverErr != nil {
 			fmt.Fprintf(
 				os.Stderr,
@@ -399,6 +399,13 @@ func serve(flock flock, f *Flags) error {
 				os.Stderr,
 				"error occurred when trying to run libym.Collection.Save %s",
 				ymErr.Error(),
+			)
+		}
+		if posErr != nil {
+			fmt.Fprintf(
+				os.Stderr,
+				"error occurred when trying to run libym.SavePlayerPosition %s",
+				posErr.Error(),
 			)
 		}
 		exit <- struct{}{}
