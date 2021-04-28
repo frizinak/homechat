@@ -16,8 +16,9 @@ type Config struct {
 	ClientPolicy     server.ClientPolicy
 	ClientPolicyFile string
 
-	HTTPAddr string
-	TCPAddr  string
+	HTTPPublicAddr string
+	HTTPBindAddr   string
+	TCPBindAddr    string
 
 	BandwidthIntervalSeconds *int
 	MaxUploadKBytes          *int64
@@ -53,12 +54,14 @@ func (c *Config) Help() []string {
 		"                           Each line should contain exactly one fingerprint and username",
 		"                           separated by a space",
 		"",
-		"HTTPAddr:                  ip:port of the http server",
-		"                           Should be an actual ip, 192.168.0.1:1200",
-		"                           not 0.0.0.0:1200",
+		"HTTPPublicAddr:            The publicly reachable domain or ip:port",
+		"                           Used to create download links",
 		"",
-		"TCPAddr:                   ip:port of the tcp server",
-		"                           Can be 0.0.0.0:1201",
+		"HTTPBindAddr:              ip:port of the http server",
+		"                           use 0.0.0.0:1200 to bind to all interfaces",
+		"",
+		"TCPBindAddr:               ip:port of the tcp server",
+		"                           use 0.0.0.0:1201 to bind to all interfaces",
 		"",
 		"BandwidthIntervalSeconds:  Log bandwidth usage every n seconds",
 		"                           0 for no logging",
@@ -137,9 +140,13 @@ func (c *Config) Merge(def *Config) bool {
 		resave = true
 		c.Directory = def.Directory
 	}
-	if c.HTTPAddr == "" {
+	if c.HTTPPublicAddr == "" {
 		resave = true
-		c.HTTPAddr = def.HTTPAddr
+		c.HTTPPublicAddr = def.HTTPPublicAddr
+	}
+	if c.HTTPBindAddr == "" {
+		resave = true
+		c.HTTPBindAddr = def.HTTPBindAddr
 	}
 	if c.BandwidthIntervalSeconds == nil {
 		resave = true
@@ -157,9 +164,9 @@ func (c *Config) Merge(def *Config) bool {
 		resave = true
 		c.ChatMessagesAppendOnlyDir = def.ChatMessagesAppendOnlyDir
 	}
-	if c.TCPAddr == "" {
+	if c.TCPBindAddr == "" {
 		resave = true
-		c.TCPAddr = def.TCPAddr
+		c.TCPBindAddr = def.TCPBindAddr
 	}
 	if c.ClientPolicy == "" {
 		resave = true

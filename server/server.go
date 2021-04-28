@@ -77,6 +77,8 @@ type Config struct {
 
 	Log *log.Logger
 
+	// HTTP link address
+	HTTPPublicAddress string
 	// HTTP/WS listen address
 	HTTPAddress string
 	// TCP listen address
@@ -457,11 +459,18 @@ func (s *Server) Upload(filename string, r io.Reader) (*url.URL, error) {
 		return nil, fmt.Errorf("ERR upload rename; %w", err)
 	}
 
-	scheme := "http"
+	proto := "http://"
 	if s.tls {
-		scheme = "https"
+		proto = "https://"
 	}
-	u, err := url.Parse(fmt.Sprintf("%s://%s", scheme, s.c.HTTPAddress))
+	re := regexp.MustCompile("(?i)^[a-z]+://")
+	if re.MatchString(s.c.HTTPPublicAddress) {
+		// already contains protocol
+		// could be https while s.tls = false we are reverse proxied
+		proto = ""
+	}
+
+	u, err := url.Parse(fmt.Sprintf("%s%s", proto, s.c.HTTPPublicAddress))
 	if err != nil {
 		return nil, err
 	}

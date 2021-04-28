@@ -312,16 +312,17 @@ func (f *Flags) Parse() error {
 	}
 
 	f.ServerConf = server.Config{
-		Key:             key,
-		ProtocolVersion: vars.ProtocolVersion,
-		Log:             log.New(f.out, "", 0),
-		HTTPAddress:     f.AppConf.HTTPAddr,
-		TCPAddress:      f.AppConf.TCPAddr,
-		StorePath:       f.All.Store,
-		UploadsPath:     f.All.Uploads,
-		MaxUploadSize:   *f.AppConf.MaxUploadKBytes * 1024,
-		LogBandwidth:    time.Duration(*f.AppConf.BandwidthIntervalSeconds) * time.Second,
-		RWFactory:       channel.NewRWFactory(nil),
+		Key:               key,
+		ProtocolVersion:   vars.ProtocolVersion,
+		Log:               log.New(f.out, "", 0),
+		HTTPPublicAddress: f.AppConf.HTTPPublicAddr,
+		HTTPAddress:       f.AppConf.HTTPBindAddr,
+		TCPAddress:        f.AppConf.TCPBindAddr,
+		StorePath:         f.All.Store,
+		UploadsPath:       f.All.Uploads,
+		MaxUploadSize:     *f.AppConf.MaxUploadKBytes * 1024,
+		LogBandwidth:      time.Duration(*f.AppConf.BandwidthIntervalSeconds) * time.Second,
+		RWFactory:         channel.NewRWFactory(nil),
 
 		PolicyLoader: &PolicyLoader{
 			policy: f.AppConf.ClientPolicy,
@@ -348,7 +349,7 @@ func (f *Flags) validateAppConf() error {
 		cache = f.All.CacheDir
 	}
 
-	addr := strings.Split(f.AppConf.HTTPAddr, ":")
+	addr := strings.Split(f.AppConf.HTTPBindAddr, ":")
 	if len(addr) != 2 {
 		addr = []string{"127.0.0.1", "1200"}
 	}
@@ -368,10 +369,11 @@ func (f *Flags) validateAppConf() error {
 	policyFile := filepath.Join(configFileDir, "client.allowlist")
 	var maxUploadKBytes int64 = 1024 * 10
 	resave := f.AppConf.Merge(&Config{
-		Directory: cache,
-		HTTPAddr:  "127.0.0.1:1200",
-		TCPAddr:   fmt.Sprintf("%s:%d", addr[0], port+1),
-		YMDir:     filepath.Join(cache, "ym"),
+		Directory:      cache,
+		HTTPPublicAddr: fmt.Sprintf("%s:%d", addr[0], port),
+		HTTPBindAddr:   "127.0.0.1:1200",
+		TCPBindAddr:    fmt.Sprintf("%s:%d", addr[0], port+1),
+		YMDir:          filepath.Join(cache, "ym"),
 
 		ClientPolicy:     server.PolicyAllow,
 		ClientPolicyFile: policyFile,
