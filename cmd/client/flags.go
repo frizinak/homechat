@@ -77,7 +77,9 @@ type Flags struct {
 		Offline bool
 	}
 	MusicInfo struct {
-		Dir string
+		DefaultDir string
+		Dir        string
+		ForClient  bool
 	}
 	MusicInfoFiles struct {
 		Stat bool
@@ -300,14 +302,21 @@ func (f *Flags) Flags() {
 
 	musicInfo := music.Add("info").Define(func(fl *flag.FlagSet) flags.HelpCB {
 		def := filepath.Join(f.All.CacheDir, "ym")
-		fl.StringVar(&f.MusicInfo.Dir, "d", def, "libym directory")
+		f.MusicInfo.DefaultDir = def
+		fl.StringVar(&f.MusicInfo.Dir, "d", "", fmt.Sprintf("libym directory (default \"%s\")", def))
+		fl.BoolVar(
+			&f.MusicInfo.ForClient,
+			"c",
+			false,
+			"use client/node libym directory as opposed to the server dir\nthis overrides -d",
+		)
 
 		return func(h *flags.Help) {
 			h.Add("music info")
 			h.Add("")
 			h.Add("Note: these commands operate on the server libym database")
 			h.Add("      they will work on the client equivalent as well")
-			h.Add("      but might hold less relevance")
+			h.Add("      if you use any of `homechat music {download,client,node}`")
 			h.Add("")
 			h.Add("Commands:")
 			h.Add("  - files:     list unused files (not in a playlist)")
@@ -434,6 +443,13 @@ func (f *Flags) Parse() error {
 
 	if len(f.AppConf.ServerAddress) == 0 {
 		return fmt.Errorf("please specify the server ip:port in %s", f.All.ConfigFile)
+	}
+
+	if f.MusicInfo.Dir == "" {
+		f.MusicInfo.Dir = f.MusicInfo.DefaultDir
+		if f.MusicInfo.ForClient {
+			f.MusicInfo.Dir = f.AppConf.MusicDownloads
+		}
 	}
 
 	switch f.AppConf.NotifyWhen {
