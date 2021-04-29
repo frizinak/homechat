@@ -339,6 +339,7 @@ func serve(flock flock, f *Flags) error {
 	s.MustAddChannel(vars.MusicStateChannel, music.StateChannel())
 	s.MustAddChannel(vars.MusicSongChannel, music.SongChannel())
 	s.MustAddChannel(vars.MusicPlaylistChannel, music.PlaylistChannel())
+	s.MustAddChannel(vars.MusicPlaylistSongsChannel, music.PlaylistSongsChannel())
 	s.MustAddChannel(vars.MusicErrorChannel, musicErr)
 	s.MustAddChannel(vars.MusicNodeChannel, music.NodeChannel())
 

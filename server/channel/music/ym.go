@@ -46,11 +46,12 @@ type YMChannel struct {
 	channel string
 	sender  channel.Sender
 
-	stateCh    *StateChannel
-	songCh     *SongChannel
-	playlistCh *PlaylistChannel
-	musicNode  *MusicNodeChannel
-	statusCh   *status.StatusChannel
+	stateCh         *StateChannel
+	songCh          *SongChannel
+	playlistCh      *PlaylistChannel
+	playlistSongsCh *PlaylistSongsChannel
+	musicNode       *MusicNodeChannel
+	statusCh        *status.StatusChannel
 
 	channel.NoSave
 	channel.Limit
@@ -75,6 +76,7 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 	ym.stateCh = NewState(log, ym.p)
 	ym.songCh = NewSong(log, di.Queue())
 	ym.playlistCh = NewPlaylist(log, ym.col)
+	ym.playlistSongsCh = NewPlaylistSongs(log, ym.col)
 	ym.musicNode = NewMusicNode(log, ym.col)
 
 	ym.LoadPlayerPosition()
@@ -86,10 +88,11 @@ func (c *YMChannel) Close() error {
 	return c.p.Close()
 }
 
-func (c *YMChannel) StateChannel() *StateChannel       { return c.stateCh }
-func (c *YMChannel) SongChannel() *SongChannel         { return c.songCh }
-func (c *YMChannel) PlaylistChannel() *PlaylistChannel { return c.playlistCh }
-func (c *YMChannel) NodeChannel() *MusicNodeChannel    { return c.musicNode }
+func (c *YMChannel) StateChannel() *StateChannel                 { return c.stateCh }
+func (c *YMChannel) SongChannel() *SongChannel                   { return c.songCh }
+func (c *YMChannel) PlaylistChannel() *PlaylistChannel           { return c.playlistCh }
+func (c *YMChannel) PlaylistSongsChannel() *PlaylistSongsChannel { return c.playlistSongsCh }
+func (c *YMChannel) NodeChannel() *MusicNodeChannel              { return c.musicNode }
 
 func (c *YMChannel) SaveCollection() error { return c.col.Save() }
 

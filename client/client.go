@@ -37,6 +37,7 @@ type Handler interface {
 	HandleChatMessage(chatdata.ServerMessage) error
 	HandleMusicMessage(musicdata.ServerMessage) error
 	HandleMusicStateMessage(MusicState) error
+	HandleMusicPlaylistSongsMessage(musicdata.ServerPlaylistSongsMessage) error
 	HandleUsersMessage(usersdata.ServerMessage, Users) error
 	HandleMusicNodeMessage(musicdata.SongDataMessage) error
 	HandleTypingMessage(typingdata.ServerMessage) error
@@ -176,8 +177,8 @@ func (c *Client) MusicSongDownload(ns, id string) error {
 	return c.Send(vars.MusicNodeChannel, musicdata.NodeMessage{NS: ns, ID: id})
 }
 
-func (c *Client) MusicPlaylistDownload(playlist string) error {
-	return c.Send(vars.MusicNodeChannel, musicdata.NodeMessage{Playlist: playlist})
+func (c *Client) MusicPlaylistSongs(playlist string) error {
+	return c.Send(vars.MusicPlaylistSongsChannel, musicdata.PlaylistSongsMessage{Playlist: playlist})
 }
 
 func (c *Client) Send(chnl string, msg channel.Msg) error {
@@ -585,6 +586,12 @@ func (c *Client) Run() error {
 				return r, err
 			}
 			return r, c.handler.HandleUpdateMessage(msg.(updatedata.ServerMessage))
+		case vars.MusicPlaylistSongsChannel:
+			msg, r, err = c.read(r, musicdata.ServerPlaylistSongsMessage{})
+			if err != nil {
+				return r, err
+			}
+			return r, c.handler.HandleMusicPlaylistSongsMessage(msg.(musicdata.ServerPlaylistSongsMessage))
 		default:
 			return r, fmt.Errorf("received unknown message type: '%s'", chnl)
 		}

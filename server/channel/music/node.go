@@ -84,22 +84,6 @@ func (c *MusicNodeChannel) sendSong(f channel.ClientFilter, s collection.Song) e
 
 func (c *MusicNodeChannel) handle(cl channel.Client, m data.NodeMessage) error {
 	filter := channel.ClientFilter{Client: cl, Channel: c.channel}
-	if m.NS == "" && m.ID == "" {
-		songs, err := c.col.PlaylistSongs(m.Playlist)
-		if err == collection.ErrNotExists {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		for _, s := range songs {
-			if err := c.sendSong(filter, s); err != nil {
-				return err
-			}
-		}
-	}
-
 	song, err := c.col.Find(m.NS, m.ID)
 	if err == collection.ErrSongNotExists {
 		return c.sender.Broadcast(filter, data.NewNoSongDataMessage())

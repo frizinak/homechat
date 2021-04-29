@@ -246,7 +246,6 @@ func musicDownload(f *Flags, backend client.Backend) error {
 	if err := downloadHandler.DownloadPlaylist(args, time.Second*200); err != nil {
 		return err
 	}
-	time.Sleep(time.Second * 2)
 	downloadHandler.Wait()
 	return nil
 }

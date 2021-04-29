@@ -528,6 +528,7 @@ func (f *Flags) Parse() error {
 			vars.PingChannel,
 			vars.MusicErrorChannel,
 			vars.MusicNodeChannel,
+			vars.MusicPlaylistSongsChannel,
 		}
 	}
 

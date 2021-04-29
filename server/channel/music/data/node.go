@@ -9,9 +9,8 @@ import (
 )
 
 type NodeMessage struct {
-	NS       string
-	ID       string
-	Playlist string
+	NS string
+	ID string
 
 	channel.NoClose
 }
@@ -19,7 +18,6 @@ type NodeMessage struct {
 func (m NodeMessage) Binary(r channel.BinaryWriter) error {
 	r.WriteString(m.NS, 8)
 	r.WriteString(m.ID, 8)
-	r.WriteString(m.Playlist, 16)
 	return r.Err()
 }
 
@@ -41,7 +39,6 @@ func BinaryNodeMessage(r channel.BinaryReader) (NodeMessage, error) {
 	m := NodeMessage{}
 	m.NS = r.ReadString(8)
 	m.ID = r.ReadString(8)
-	m.Playlist = r.ReadString(16)
 	return m, r.Err()
 }
 

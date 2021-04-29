@@ -24,3 +24,7 @@ func (h NoopHandler) HandleMusicStateMessage(client.MusicState) error           
 func (h NoopHandler) HandleUsersMessage(usersdata.ServerMessage, client.Users) error { return nil }
 func (h NoopHandler) HandleTypingMessage(typingdata.ServerMessage) error             { return nil }
 func (h NoopHandler) HandleUpdateMessage(updatedata.ServerMessage) error             { return nil }
+
+func (h NoopHandler) HandleMusicPlaylistSongsMessage(musicdata.ServerPlaylistSongsMessage) error {
+	return nil
+}

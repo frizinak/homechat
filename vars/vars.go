@@ -4,7 +4,7 @@ var GitVersion string
 
 const (
 	Version         = "custom"
-	ProtocolVersion = "1022"
+	ProtocolVersion = "1023"
 
 	UpdateChannel = "update" // rw
 
@@ -16,12 +16,13 @@ const (
 
 	TypingChannel = "t" // rw
 
-	MusicChannel         = "m"  // rw
-	MusicStateChannel    = ">"  // r
-	MusicSongChannel     = "<"  // r
-	MusicPlaylistChannel = "-"  // r
-	MusicErrorChannel    = "mr" // r
-	MusicNodeChannel     = "mn" // rw
+	MusicChannel              = "m"  // rw
+	MusicStateChannel         = ">"  // r
+	MusicSongChannel          = "<"  // r
+	MusicPlaylistChannel      = "-"  // r
+	MusicPlaylistSongsChannel = "-*" // rw
+	MusicErrorChannel         = "mr" // r
+	MusicNodeChannel          = "mn" // rw
 
 	EOFChannel = "eof"
 

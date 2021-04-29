@@ -5,20 +5,21 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/frizinak/homechat/client"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
 	"github.com/frizinak/libym/collection"
+	"github.com/frizinak/libym/youtube"
 )
 
 type DownloadHandler struct {
 	client.Handler
-	log          client.Logger
-	col          *collection.Collection
-	cl           *client.Client
-	can          chan struct{}
-	lastResponse time.Time
+	wg  sync.WaitGroup
+	log client.Logger
+	col *collection.Collection
+	cl  *client.Client
 }
 
 func NewDownloadHandler(
@@ -32,56 +33,48 @@ func NewDownloadHandler(
 		log:     log,
 		col:     col,
 		cl:      cl,
-		can:     make(chan struct{}),
 	}
 
-	go d.loop()
 	return d
 }
 
-func (h *DownloadHandler) loop() {
-	for {
-		if time.Since(h.lastResponse) > time.Second {
-			h.can <- struct{}{}
-		}
-		time.Sleep(time.Millisecond * 200)
-	}
-}
-
-func (h *DownloadHandler) newdl(to time.Duration) bool {
-	select {
-	case <-h.can:
-		h.lastResponse = time.Now()
-		return true
-	case <-time.After(to):
-		return false
-	}
+func (h *DownloadHandler) Wait() {
+	h.wg.Wait()
 }
 
 func (h *DownloadHandler) DownloadSong(ns, id string, to time.Duration) error {
-	if h.newdl(to) {
-		return h.cl.MusicSongDownload(ns, id)
-	}
-	return nil
+	h.wg.Add(1)
+	return h.cl.MusicSongDownload(ns, id)
 }
 
 func (h *DownloadHandler) DownloadPlaylist(playlist string, to time.Duration) error {
-	if h.newdl(to) {
-		return h.cl.MusicPlaylistDownload(playlist)
+	h.wg.Add(1)
+	return h.cl.MusicPlaylistSongs(playlist)
+}
+
+func (h *DownloadHandler) HandleMusicPlaylistSongsMessage(m musicdata.ServerPlaylistSongsMessage) error {
+	defer h.wg.Done()
+	for _, s := range m.List {
+		switch s.NS() {
+		case collection.NSYoutube:
+			rs := h.col.FromYoutube(youtube.NewResult(s.ID(), s.Title()))
+			if rs.Local() {
+				h.log.Flash(fmt.Sprintf("We already have: %s", collection.GlobalID(s)), time.Second*5)
+				continue
+			}
+		default:
+			return fmt.Errorf("song with unknown namespace: '%s'", s.NS())
+		}
+		if err := h.DownloadSong(s.NS(), s.ID(), 0); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (h *DownloadHandler) Wait() {
-	<-h.can
-	select {
-	case h.can <- struct{}{}:
-	default:
-	}
-}
-
 func (h *DownloadHandler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
-	h.lastResponse = time.Now()
+	defer h.wg.Done()
+
 	if h.Handler != nil {
 		if err := h.Handler.HandleMusicNodeMessage(m); err != nil {
 			return err
@@ -92,19 +85,6 @@ func (h *DownloadHandler) HandleMusicNodeMessage(m musicdata.SongDataMessage) er
 		h.log.Flash("Download not available on server", time.Second*5)
 		return nil
 	}
-
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			case <-time.After(time.Millisecond * 200):
-				h.lastResponse = time.Now()
-			}
-		}
-	}()
-	defer func() { done <- struct{}{} }()
 
 	path := h.col.SongPath(m.Song)
 	tmp := collection.TempFile(path)
