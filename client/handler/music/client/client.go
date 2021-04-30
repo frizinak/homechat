@@ -124,6 +124,7 @@ func newCommandParser(offline bool, handler *handler, logger client.Logger, pars
 			ui.CmdSetSongIndex: {},
 			ui.CmdSeek:         {},
 			ui.CmdQueue:        {},
+			ui.CmdQueueAfter:   {},
 			ui.CmdQueueShuffle: {},
 			ui.CmdQueueClear:   {},
 			ui.CmdViewQueue:    {},
