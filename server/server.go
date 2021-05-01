@@ -418,6 +418,9 @@ func (s *Server) route(r *http.Request, l *log.Logger) (simplehttp.HandleFunc, i
 		return func(w http.ResponseWriter, r *http.Request, l *log.Logger) (int, error) {
 			file := fileRE.ReplaceAllString(p[3:], "-")
 			file = filepath.Join(s.c.UploadsPath, file)
+			if s, err := os.Stat(file); err != nil || s.IsDir() {
+				return http.StatusNotFound, nil
+			}
 			http.ServeFile(w, r, file)
 			return 0, nil
 		}, 0
