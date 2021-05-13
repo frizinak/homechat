@@ -514,7 +514,7 @@ func (ui *TermUI) Flush() {
 
 		duration, timeParts := FormatDuration(state.Duration, 2)
 		position, _ := FormatDuration(state.Position, timeParts)
-		mw -= len(duration) + len(position) + 4
+		mw -= len(duration) + len(position) + 4 + 3
 
 		p := int(state.Pos() * float64(mw))
 		if p > mw {
@@ -525,7 +525,7 @@ func (ui *TermUI) Flush() {
 		for i := p; i > 0; i-- {
 			progress += chrBar
 		}
-		for i := mw - 1 - 3 - p; i > 0; i-- {
+		for i := mw - 1 - p; i > 0; i-- {
 			rest += chrBar
 		}
 
