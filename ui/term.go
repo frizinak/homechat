@@ -51,6 +51,7 @@ type TermUI struct {
 	jumpToQueryCount  uint16
 
 	maxMessages int
+	minimal     bool
 
 	cursorHide        bool
 	cursorHiddenState bool
@@ -66,11 +67,12 @@ type msg struct {
 	highlight Highlight
 }
 
-func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool) *TermUI {
+func Term(metaPrefix bool, maxMessages, indent int, scrollTop, minimal bool) *TermUI {
 	return &TermUI{
 		metaPrefix:  metaPrefix,
 		indent:      indent,
 		scrollTop:   scrollTop,
+		minimal:     minimal,
 		maxMessages: maxMessages,
 		disabled:    true,
 		links:       make([]*url.URL, 0),
@@ -247,16 +249,17 @@ func (ui *TermUI) Scroll(amount int) {
 }
 
 var (
-	cursorTop    = []byte("\033[H")
-	cursorHide   = []byte("\033[?25l")
-	cursorShow   = []byte("\033[?25h")
-	clear        = []byte("\033[H\033[J")
-	clrLine      = []byte("\033[1m")
-	clrStatus    = []byte("\033[40;37m")
-	clrUser      = []byte("\033[40;37m")
-	clrReset     = []byte("\033[0m")
-	clrMusicSeek = []byte("\033[1;32m")
-	clrMusicIcon = []byte("\033[1;32m")
+	cursorTop          = []byte("\033[H")
+	cursorHide         = []byte("\033[?25l")
+	cursorShow         = []byte("\033[?25h")
+	clear              = []byte("\033[H\033[J")
+	clrLine            = []byte("\033[1m")
+	clrStatus          = []byte("\033[40;37m")
+	clrUser            = []byte("\033[40;37m")
+	clrReset           = []byte("\033[0m")
+	clrMusicSeek       = []byte("\033[1;30m")
+	clrMusicSeekPlayed = []byte("\033[1;32m")
+	clrMusicIcon       = []byte("\033[0;32m")
 )
 
 var hl = map[Highlight][]byte{
@@ -271,7 +274,7 @@ var hl = map[Highlight][]byte{
 const (
 	chrPlaying = "\u25B8" //"\u25BA" //"\u22D7" //"\u2023" //"‣▶"
 	chrPause   = "\u2016" //"\u2225" // ⏸"
-	chrBar     = "\u23AF" //"\u22EF"
+	chrBar     = "\u2500" //\u23AF" //"\u22EF"
 	chrLine    = "\u2E3B"
 )
 
@@ -291,7 +294,9 @@ func (ui *TermUI) Flush() {
 	h -= 5
 	state := ui.s
 	if state.Song != "" {
-		h -= 3
+		if !ui.minimal {
+			h -= 3
+		}
 	}
 
 	ui.scroll += ui.scrollPage * h / 2
@@ -471,19 +476,21 @@ func (ui *TermUI) Flush() {
 
 	s := make([]byte, 0, 1024)
 	s = append(s, clear...)
-	s = append(s, clrStatus...)
-	s = append(s, indent...)
-	s = append(s, status...)
-	s = append(s, lat...)
-	s = append(s, clrReset...)
-	s = append(s, '\r')
-	s = append(s, '\n')
-	s = append(s, clrUser...)
-	s = append(s, indent...)
-	s = append(s, user...)
-	s = append(s, clrReset...)
-	s = append(s, '\r')
-	s = append(s, '\n')
+	if !ui.minimal {
+		s = append(s, clrStatus...)
+		s = append(s, indent...)
+		s = append(s, status...)
+		s = append(s, lat...)
+		s = append(s, clrReset...)
+		s = append(s, '\r')
+		s = append(s, '\n')
+		s = append(s, clrUser...)
+		s = append(s, indent...)
+		s = append(s, user...)
+		s = append(s, clrReset...)
+		s = append(s, '\r')
+		s = append(s, '\n')
+	}
 
 	for _, l := range logs {
 		s = append(s, indent...)
@@ -518,7 +525,7 @@ func (ui *TermUI) Flush() {
 		for i := p; i > 0; i-- {
 			progress += chrBar
 		}
-		for i := mw - 1 - p; i > 0; i-- {
+		for i := mw - 1 - 3 - p; i > 0; i-- {
 			rest += chrBar
 		}
 
@@ -538,10 +545,12 @@ func (ui *TermUI) Flush() {
 		s = append(s, vol...)
 		s = append(s, '\r')
 		s = append(s, '\n')
-		s = append(s, clrMusicSeek...)
-		s = append(s, progress...)
 		s = append(s, clrMusicIcon...)
+		s = append(s, indent...)
 		s = append(s, playStatus...)
+		s = append(s, ' ')
+		s = append(s, clrMusicSeekPlayed...)
+		s = append(s, progress...)
 		s = append(s, clrMusicSeek...)
 		s = append(s, rest...)
 		s = append(s, clrReset...)

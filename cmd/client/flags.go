@@ -56,6 +56,7 @@ type Flags struct {
 		ConfigFile string
 		KeymapFile string
 		Linemode   bool
+		UIMinimal  bool
 
 		Mode Mode
 
@@ -229,6 +230,13 @@ func (f *Flags) Flags() {
 	})
 
 	music := f.flags.Add("music").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.BoolVar(
+			&f.All.UIMinimal,
+			"m",
+			false,
+			"minimal ui",
+		)
+
 		return func(h *flags.Help) {
 			h.Add("Commands:")
 			h.Add("  - remote | <empty>:   control server music player (main intended usage)")
