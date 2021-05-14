@@ -19,6 +19,7 @@ import (
 	"github.com/frizinak/homechat/flags"
 	"github.com/frizinak/homechat/open"
 	"github.com/frizinak/homechat/server/channel"
+	"github.com/frizinak/homechat/ui"
 	"github.com/frizinak/homechat/vars"
 	"github.com/frizinak/libym/di"
 	"github.com/google/shlex"
@@ -56,7 +57,13 @@ type Flags struct {
 		ConfigFile string
 		KeymapFile string
 		Linemode   bool
-		UIMinimal  bool
+
+		uiHideStatus  bool
+		uiHideBrowser bool
+		uiHideSeek    bool
+		uiHideInput   bool
+
+		UIVisible ui.Visible
 
 		Mode Mode
 
@@ -231,10 +238,28 @@ func (f *Flags) Flags() {
 
 	music := f.flags.Add("music").Define(func(fl *flag.FlagSet) flags.HelpCB {
 		fl.BoolVar(
-			&f.All.UIMinimal,
-			"m",
+			&f.All.uiHideStatus,
+			"hide-status",
 			false,
-			"minimal ui",
+			"hide status bar",
+		)
+		fl.BoolVar(
+			&f.All.uiHideBrowser,
+			"hide-browser",
+			false,
+			"hide browser",
+		)
+		fl.BoolVar(
+			&f.All.uiHideSeek,
+			"hide-seek",
+			false,
+			"hide seek bar",
+		)
+		fl.BoolVar(
+			&f.All.uiHideInput,
+			"hide-input",
+			false,
+			"hide input",
 		)
 
 		return func(h *flags.Help) {
@@ -487,6 +512,20 @@ func (f *Flags) Parse() error {
 		BackendLogger: ioutil.Discard,
 		AutoSave:      false,
 		SimpleOutput:  ioutil.Discard,
+	}
+
+	f.All.UIVisible = ui.VisibleDefault
+	if f.All.uiHideStatus {
+		f.All.UIVisible &= ^ui.VisibleStatus
+	}
+	if f.All.uiHideBrowser {
+		f.All.UIVisible &= ^ui.VisibleBrowser
+	}
+	if f.All.uiHideSeek {
+		f.All.UIVisible &= ^ui.VisibleSeek
+	}
+	if f.All.uiHideInput {
+		f.All.UIVisible &= ^ui.VisibleInput
 	}
 
 	switch f.All.Mode {

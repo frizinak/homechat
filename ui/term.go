@@ -17,6 +17,17 @@ import (
 
 const stampFormat = "01-02 15:04"
 
+type Visible uint8
+
+const (
+	VisibleStatus Visible = 1 << iota
+	VisibleBrowser
+	VisibleSeek
+	VisibleInput
+
+	VisibleDefault = VisibleStatus | VisibleBrowser | VisibleSeek | VisibleInput
+)
+
 var linkRE = regexp.MustCompile(`https?://[^\s]+`)
 
 type user struct {
@@ -51,7 +62,7 @@ type TermUI struct {
 	jumpToQueryCount  uint16
 
 	maxMessages int
-	minimal     bool
+	visible     Visible
 
 	cursorHide        bool
 	cursorHiddenState bool
@@ -67,15 +78,16 @@ type msg struct {
 	highlight Highlight
 }
 
-func Term(metaPrefix bool, maxMessages, indent int, scrollTop, minimal bool) *TermUI {
+func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visible) *TermUI {
 	return &TermUI{
 		metaPrefix:  metaPrefix,
 		indent:      indent,
 		scrollTop:   scrollTop,
-		minimal:     minimal,
+		visible:     visible,
 		maxMessages: maxMessages,
 		disabled:    true,
 		links:       make([]*url.URL, 0),
+		cursorHide:  visible&VisibleInput == 0,
 	}
 }
 
@@ -178,6 +190,9 @@ func (ui *TermUI) Search(qry string) {
 }
 
 func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
+	if ui.visible&VisibleBrowser == 0 {
+		return
+	}
 	ui.sem.Lock()
 	for _, m := range msgs {
 		m.From = StripUnprintable(m.From)
@@ -293,10 +308,15 @@ func (ui *TermUI) Flush() {
 
 	h -= 5
 	state := ui.s
-	if state.Song != "" {
-		if !ui.minimal {
-			h -= 3
-		}
+	if state.Song != "" && ui.visible&VisibleSeek != 0 {
+		h -= 3
+	}
+
+	if ui.visible&VisibleStatus == 0 {
+		h += 2
+	}
+	if ui.visible&VisibleInput == 0 {
+		h += 3
 	}
 
 	ui.scroll += ui.scrollPage * h / 2
@@ -476,7 +496,7 @@ func (ui *TermUI) Flush() {
 
 	s := make([]byte, 0, 1024)
 	s = append(s, clear...)
-	if !ui.minimal {
+	if ui.visible&VisibleStatus != 0 {
 		s = append(s, clrStatus...)
 		s = append(s, indent...)
 		s = append(s, status...)
@@ -504,10 +524,12 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\n')
 	}
 
-	if state.Song != "" {
-		s = append(s, clrLine...)
-		s = append(s, pad("", chrLine, rw)...)
-		s = append(s, clrReset...)
+	if state.Song != "" && ui.visible&VisibleSeek != 0 {
+		if ui.visible&VisibleBrowser != 0 {
+			s = append(s, clrLine...)
+			s = append(s, pad("", chrLine, rw)...)
+			s = append(s, clrReset...)
+		}
 		s = append(s, '\r')
 		s = append(s, '\n')
 		mw := rw
@@ -554,17 +576,21 @@ func (ui *TermUI) Flush() {
 		s = append(s, clrMusicSeek...)
 		s = append(s, rest...)
 		s = append(s, clrReset...)
-		s = append(s, '\r')
-		s = append(s, '\n')
+		if ui.visible&VisibleInput != 0 {
+			s = append(s, '\r')
+			s = append(s, '\n')
+		}
 	}
 
-	s = append(s, clrLine...)
-	s = append(s, pad("", chrLine, rw)...)
-	s = append(s, clrReset...)
-	s = append(s, '\r')
-	s = append(s, '\n')
-	s = append(s, indent...)
-	s = append(s, ui.input...)
+	if ui.visible&VisibleInput != 0 {
+		s = append(s, clrLine...)
+		s = append(s, pad("", chrLine, rw)...)
+		s = append(s, clrReset...)
+		s = append(s, '\r')
+		s = append(s, '\n')
+		s = append(s, indent...)
+		s = append(s, ui.input...)
+	}
 
 	if ui.cursorHide {
 		s = append(s, cursorTop...)
