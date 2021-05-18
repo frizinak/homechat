@@ -275,6 +275,7 @@ var (
 	clrMusicSeek       = []byte("\033[1;30m")
 	clrMusicSeekPlayed = []byte("\033[1;32m")
 	clrMusicIcon       = []byte("\033[0;32m")
+	clrDuration        = []byte("\033[0;32m")
 )
 
 var hl = map[Highlight][]byte{
@@ -551,8 +552,6 @@ func (ui *TermUI) Flush() {
 			rest += chrBar
 		}
 
-		rest += fmt.Sprintf(" %s/%s", position, duration)
-
 		playStatus := chrPlaying
 		if state.Paused {
 			playStatus = chrPause
@@ -575,6 +574,8 @@ func (ui *TermUI) Flush() {
 		s = append(s, progress...)
 		s = append(s, clrMusicSeek...)
 		s = append(s, rest...)
+		s = append(s, clrDuration...)
+		s = append(s, fmt.Sprintf(" %s/%s", position, duration)...)
 		s = append(s, clrReset...)
 		if ui.visible&VisibleInput != 0 {
 			s = append(s, '\r')
