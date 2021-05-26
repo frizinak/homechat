@@ -13,6 +13,10 @@ func complete(input, prefix string, list []string, excludes map[string]struct{})
 
 	p := strings.Split(input, " ")
 	l := p[len(p)-1]
+	if len(l) < len(prefix) {
+		return ""
+	}
+
 	if l[0:len(prefix)] != prefix {
 		return ""
 	}
