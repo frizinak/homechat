@@ -755,6 +755,14 @@ func main() {
 				tui.SetInput(i)
 				return false
 			},
+			InputLeft: func() bool {
+				tui.Left()
+				return false
+			},
+			InputRight: func() bool {
+				tui.Right()
+				return false
+			},
 			MusicPlaylistCompletion: func() bool {
 				n := complete(
 					tui.GetInput(),

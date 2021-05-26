@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/containerd/console"
 	"github.com/mattn/go-runewidth"
@@ -35,6 +36,7 @@ type user struct {
 	typing bool
 }
 
+// assumes utf-8
 type TermUI struct {
 	metaPrefix bool
 	indent     int
@@ -53,6 +55,7 @@ type TermUI struct {
 
 	links []*url.URL
 
+	cursorcol         int
 	scrollPage        int
 	scrollSimple      int
 	scroll            int
@@ -259,6 +262,45 @@ func (ui *TermUI) ScrollPageDown() {
 func (ui *TermUI) Scroll(amount int) {
 	ui.sem.Lock()
 	ui.scrollSimple += amount
+	ui.sem.Unlock()
+	ui.Flush()
+}
+
+func (ui *TermUI) setcursor(val int) {
+	ui.cursorcol = val
+	if ui.cursorcol < 0 {
+		ui.cursorcol = 0
+	}
+
+	l := utf8.RuneCount(ui.input)
+	if ui.cursorcol > l {
+		ui.cursorcol = l
+	}
+}
+
+func (ui *TermUI) width(str string, runes int) (width int) {
+	c := 0
+	for _, n := range str {
+		if runes > -1 && c >= runes {
+			break
+		}
+		width += runewidth.RuneWidth(n)
+		c++
+	}
+
+	return width
+}
+
+func (ui *TermUI) Left() {
+	ui.sem.Lock()
+	ui.setcursor(ui.cursorcol - 1)
+	ui.sem.Unlock()
+	ui.Flush()
+}
+
+func (ui *TermUI) Right() {
+	ui.sem.Lock()
+	ui.setcursor(ui.cursorcol + 1)
 	ui.sem.Unlock()
 	ui.Flush()
 }
@@ -591,6 +633,8 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\n')
 		s = append(s, indent...)
 		s = append(s, ui.input...)
+		w := ui.width(string(ui.input), ui.cursorcol)
+		s = append(s, fmt.Sprintf("\033[0G\033[%dC", w+ui.indent)...)
 	}
 
 	if ui.cursorHide {
@@ -611,7 +655,36 @@ func (ui *TermUI) Flush() {
 
 func (ui *TermUI) Input(n byte) {
 	ui.sem.Lock()
-	ui.input = append(ui.input, n)
+
+	ns := make([]byte, 0, len(ui.input)+1)
+	pre := true
+	c := 0
+	cursorcol := 0
+	for len(ui.input) > 0 {
+		if pre {
+			cursorcol++
+		}
+
+		if pre && c == ui.cursorcol {
+			ns = append(ns, n)
+			pre = false
+		}
+
+		_, size := utf8.DecodeRune(ui.input)
+		ns = append(ns, ui.input[:size]...)
+		ui.input = ui.input[size:]
+
+		c++
+	}
+
+	if pre {
+		ns = append(ns, n)
+		cursorcol++
+	}
+
+	ui.input = ns
+	ui.setcursor(cursorcol)
+
 	ui.sem.Unlock()
 	ui.Flush()
 }
@@ -626,6 +699,7 @@ func (ui *TermUI) GetInput() string {
 func (ui *TermUI) SetInput(n string) {
 	ui.sem.Lock()
 	ui.input = []byte(n)
+	ui.setcursor(utf8.RuneCount(ui.input))
 	ui.sem.Unlock()
 	ui.Flush()
 }
@@ -637,7 +711,20 @@ func (ui *TermUI) BackspaceInput() {
 		ui.Flush()
 		return
 	}
-	ui.input = ui.input[:len(ui.input)-1]
+
+	ns := make([]byte, 0, len(ui.input))
+	c := 0
+	for len(ui.input) > 0 {
+		_, size := utf8.DecodeRune(ui.input)
+		if c != ui.cursorcol-1 {
+			ns = append(ns, ui.input[:size]...)
+		}
+		ui.input = ui.input[size:]
+		c++
+	}
+	ui.input = ns
+
+	ui.setcursor(ui.cursorcol - 1)
 	ui.sem.Unlock()
 	ui.Flush()
 }
@@ -647,6 +734,7 @@ func (ui *TermUI) ResetInput() []byte {
 	d := make([]byte, len(ui.input))
 	copy(d, ui.input)
 	ui.input = ui.input[0:0]
+	ui.setcursor(0)
 	ui.sem.Unlock()
 	ui.Flush()
 	return d

@@ -49,6 +49,8 @@ const (
 	Submit      Action = "submit"
 	InputDown   Action = "input-down"
 	InputUp     Action = "input-up"
+	InputLeft   Action = "input-left"
+	InputRight  Action = "input-right"
 	ScrollBegin Action = "scroll-to-top"
 	ScrollEnd   Action = "scroll-to-bottom"
 
