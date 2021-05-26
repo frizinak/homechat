@@ -1,5 +1,9 @@
 # homechat
 
+![screenshot-music](https://raw.githubusercontent.com/frizinak/homechat/master/music.png)
+
+![screenshot-chat](https://raw.githubusercontent.com/frizinak/homechat/master/chat.png)
+
 A chat server.
 
 contains a few bots and a youtube music server [frizinak/libym](https://github.com/frizinak/libym)
