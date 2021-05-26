@@ -16,6 +16,7 @@ type Set struct {
 }
 
 func New(f *flag.FlagSet, output io.Writer) *Set {
+	f.SetOutput(output)
 	return &Set{w: output, f: f, name: f.Name(), children: make(map[string]*Set)}
 }
 
