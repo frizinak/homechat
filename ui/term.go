@@ -349,7 +349,7 @@ func (ui *TermUI) Flush() {
 		w, h = int(size.Width), int(size.Height)
 	}
 
-	h -= 5
+	h -= 4
 	state := ui.s
 	if state.Song != "" && ui.visible&VisibleSeek != 0 {
 		h -= 3
@@ -370,8 +370,8 @@ func (ui *TermUI) Flush() {
 		ui.scroll = 0
 	}
 
-	if w < 50 {
-		w = 50
+	if w < 10 {
+		w = 10
 	}
 	rw := w
 	w -= ui.indent
@@ -632,9 +632,34 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\r')
 		s = append(s, '\n')
 		s = append(s, indent...)
-		s = append(s, ui.input...)
-		w := ui.width(string(ui.input), ui.cursorcol)
-		s = append(s, fmt.Sprintf("\033[0G\033[%dC", w+ui.indent)...)
+
+		input := string(ui.input)
+		inputCW := ui.width(input, ui.cursorcol)
+		off := 0
+		max := w - 2
+		if inputCW > max {
+			off = inputCW - max
+			inputCW = max
+		}
+
+		cw := 0
+		sliceMin, sliceMax := len(ui.input), len(ui.input)
+		for i, r := range input {
+			rw := runewidth.RuneWidth(r)
+			cw += rw
+			if cw >= off+rw && i < sliceMin {
+				inputCW += off + rw - cw
+				sliceMin = i
+			}
+
+			if cw > max+off {
+				sliceMax = i
+				break
+			}
+		}
+
+		s = append(s, ui.input[sliceMin:sliceMax]...)
+		s = append(s, fmt.Sprintf("\033[0G\033[%dC", inputCW+ui.indent)...)
 	}
 
 	if ui.cursorHide {
