@@ -39,6 +39,7 @@ import (
 	"github.com/frizinak/homechat/server/channel/upload"
 	"github.com/frizinak/homechat/server/channel/users"
 	"github.com/frizinak/homechat/vars"
+	"github.com/frizinak/libym/acoustid"
 	"github.com/nightlyone/lockfile"
 )
 
@@ -308,7 +309,8 @@ func serve(flock flock, f *Flags) error {
 		return err
 	}
 	musicErr := status.New()
-	music := music.NewYM(c.Log, musicErr, f.AppConf.YMDir)
+	acoustConf := acoustid.Config{Key: f.AppConf.AcoustIDKey}
+	music := music.NewYM(c.Log, musicErr, f.AppConf.YMDir, acoustConf)
 	*chat = *chatpkg.New(c.Log, history)
 	upload := upload.New(c.MaxUploadSize, chat, s)
 	users := users.New([]string{vars.ChatChannel, vars.MusicChannel}, s)

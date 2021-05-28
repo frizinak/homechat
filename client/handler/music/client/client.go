@@ -181,7 +181,7 @@ func NewUI(offline bool, handler client.Handler, logger client.Logger, di *di.DI
 	parser := newCommandParser(offline, rhandler, logger, di.CommandParser(), cl)
 	p := di.Player()
 	q := di.Queue()
-	ui := base.New(output, output, parser, p, col, q)
+	ui := base.New(output, output, parser, p, col, q, nil)
 
 	p.LoadPosition()
 

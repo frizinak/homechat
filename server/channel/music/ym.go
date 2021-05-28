@@ -11,6 +11,7 @@ import (
 	"github.com/frizinak/homechat/server/channel"
 	"github.com/frizinak/homechat/server/channel/music/data"
 	"github.com/frizinak/homechat/server/channel/status"
+	"github.com/frizinak/libym/acoustid"
 	"github.com/frizinak/libym/collection"
 	"github.com/frizinak/libym/di"
 	"github.com/frizinak/libym/player"
@@ -58,7 +59,12 @@ type YMChannel struct {
 	channel.NoRun
 }
 
-func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChannel {
+func NewYM(
+	log *log.Logger,
+	status *status.StatusChannel,
+	ymPath string,
+	acoust acoustid.Config,
+) *YMChannel {
 	ym := &YMChannel{log: log, statusCh: status, Limit: channel.Limiter(1024 * 1024 * 5)}
 	c := di.Config{
 		StorePath: ymPath,
@@ -66,6 +72,8 @@ func NewYM(log *log.Logger, status *status.StatusChannel, ymPath string) *YMChan
 
 		CustomOutput: ym,
 		CustomError:  ym,
+
+		AcoustID: acoust,
 	}
 
 	di := di.New(c)

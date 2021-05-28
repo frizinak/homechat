@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Directory                 string
 	YMDir                     string
+	AcoustIDKey               string
 	ChatMessagesAppendOnlyDir *string
 
 	ClientPolicy     server.ClientPolicy
@@ -38,6 +39,8 @@ func (c *Config) Help() []string {
 		"",
 		"YMDir:                     Libym data directory",
 		"                           Location of songs and song database",
+		"",
+		"AcoustIDKey:               Acoustid application api key",
 		"",
 		"ChatMessagesAppendOnlyDir: Location of append only chat logs",
 		"                           Empty to not store any logs (!)",
@@ -124,9 +127,14 @@ func (c *Config) Encode(file string) error {
 
 func (c *Config) Merge(def *Config) bool {
 	resave := false
+
 	if c.WttrCity == "" {
 		resave = true
 		c.WttrCity = def.WttrCity
+	}
+	if c.AcoustIDKey == "" {
+		resave = true
+		c.AcoustIDKey = def.AcoustIDKey
 	}
 	if c.HolidayCountryCode == "" {
 		resave = true
