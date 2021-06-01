@@ -483,7 +483,7 @@ func main() {
 		for _, onExit := range onExits {
 			onExit()
 		}
-		fmt.Println("bye")
+		fmt.Fprintln(os.Stderr, "bye")
 		os.Exit(ex)
 	}()
 
@@ -832,7 +832,7 @@ func main() {
 	exit(err)
 
 	if !f.MusicClient.Offline {
-		fmt.Printf("Shaking hands with %s\n", remoteAddress)
+		fmt.Fprintf(os.Stderr, "Shaking hands with %s\n", remoteAddress)
 		err = cl.Connect()
 		if err == client.ErrFingerPrint {
 			trust := f.AppConf.ServerFingerprint
