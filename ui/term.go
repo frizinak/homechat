@@ -458,11 +458,12 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 			suffix = string(clrReset)
 		}
 
-		if width <= w {
+		maxw := w - ui.log[i].pwidth - 2
+
+		if width <= w || maxw <= 8 {
 			logs = append(logs, suffpref(w, prefix, suffix, both, width))
 			continue
 		}
-		maxw := w - ui.log[i].pwidth - 2
 
 		cwidth := 0
 		lastSpace, lastSpaceIx := 0, 0
@@ -495,7 +496,7 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 
 				width := ui.log[i].pwidth
 				width += ui.log[i].mwidths[lastCutIx:ix-2].Sum() + 1
-				clean := suffpref(w, prefix, suffix, meta+log[lastCut:bi2ago]+"-", -1)
+				clean := suffpref(w, prefix, suffix, meta+log[lastCut:bi2ago]+"-", width)
 				logs = append(logs, clean)
 				cwidth = ui.log[i].mwidths[ix-2:ix].Sum() + 1
 				lastCut = bi2ago
