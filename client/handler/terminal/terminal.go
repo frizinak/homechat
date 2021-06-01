@@ -174,12 +174,16 @@ func (h *Handler) Run(notify chan ui.Msg) {
 				}
 			}
 
+			if msg.From == h.name {
+				m.Highlight |= ui.HLOwn
+			}
+
 			if msg.Shout {
-				m.Highlight = ui.HLActive
+				m.Highlight |= ui.HLActive
 			}
 
 			if msg.Bot {
-				m.Highlight = ui.HLMuted
+				m.Highlight |= ui.HLMuted
 			}
 
 			msgsBatch <- m

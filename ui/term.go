@@ -240,7 +240,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 					return m
 				}
 				ui.links = append(ui.links, u)
-				return fmt.Sprintf("\033[1m[%d]\033[0m%s", len(ui.links), m)
+				return fmt.Sprintf("[%d]%s", len(ui.links), m)
 			})
 
 			msg := msg{"", text, m.Highlight, nil, nil, 0, 0}
@@ -250,7 +250,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 					m.Stamp.Format(stampFormat),
 					m.From,
 				)
-				msg.prefix = runewidth.FillRight(msg.prefix, len(stampFormat)+15+1) + "│ "
+				msg.prefix = runewidth.FillRight(msg.prefix, len(stampFormat)+15+1)
 			}
 
 			pwidths := make([]uint8, 0, len(msg.prefix))
@@ -363,13 +363,24 @@ var (
 	clrDuration        = []byte("\033[0;32m")
 )
 
-var hl = map[Highlight][]byte{
-	HLTitle:     []byte("\033[1m"),
-	HLActive:    []byte("\033[1;37;41m"),
-	HLMuted:     []byte("\033[40;37m"),
-	HLSlight:    []byte("\033[1m"),
-	HLProblem:   []byte("\033[1;31m"),
-	HLTemporary: []byte("\033[1;32m"),
+const (
+	partMeta = 1
+	partMsg  = 2
+)
+
+type hlSetting struct {
+	v     string
+	which uint8
+}
+
+var hl = map[Highlight]hlSetting{
+	HLTitle:     {"\033[1m", partMeta | partMsg},
+	HLActive:    {"\033[1;37;41m", partMsg},
+	HLMuted:     {"\033[40;37m", partMeta | partMsg},
+	HLSlight:    {"\033[1m", partMeta | partMsg},
+	HLProblem:   {"\033[1;31m", partMeta | partMsg},
+	HLOwn:       {"\033[32m", partMeta},
+	HLTemporary: {"\033[1;32m", partMeta | partMsg},
 }
 
 const (
@@ -413,14 +424,11 @@ func pad(n, padchr string, total int, nWidth int) string {
 	return n + string(b)
 }
 
-func suffpref(w int, prefix, suffix, str string, strWidth int) string {
+func suffpref(w int, prefix, suffix, meta, between, msg string, strWidth int) string {
 	if prefix == "" && suffix == "" {
-		return str
+		return meta + between + msg
 	}
-	str = pad(str, " ", w, strWidth)
-	str = prefix + str
-	str = str + suffix
-	return str
+	return prefix + pad(meta+between+msg, " ", w, strWidth) + suffix
 }
 
 func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
@@ -428,7 +436,6 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 	for i := 0; i < len(ui.log); i++ {
 		meta := ui.log[i].prefix
 		log := ui.log[i].msg
-		both := meta + log
 
 		width := ui.log[i].pwidth + ui.log[i].mwidth
 
@@ -448,11 +455,26 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 			}
 		}
 
+		extra := 0
+		msgPrefix := ""
+		between := string(clrReset)
+		if ui.metaPrefix {
+			between += "│"
+			msgPrefix = " "
+			extra = 2
+			width += extra
+		}
 		var prefix, suffix string
 		if ui.log[i].highlight > 0 {
 			for v := range hl {
-				if v&ui.log[i].highlight != 0 {
-					prefix += string(hl[v])
+				if v&ui.log[i].highlight == 0 {
+					continue
+				}
+				if hl[v].which&partMeta != 0 {
+					prefix += hl[v].v
+				}
+				if hl[v].which&partMsg != 0 {
+					between += hl[v].v
 				}
 			}
 			suffix = string(clrReset)
@@ -461,7 +483,10 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 		maxw := w - ui.log[i].pwidth - 2
 
 		if width <= w || maxw <= 8 {
-			logs = append(logs, suffpref(w, prefix, suffix, both, width))
+			logs = append(
+				logs,
+				suffpref(w, prefix, suffix, meta, between, msgPrefix+log, width),
+			)
 			continue
 		}
 
@@ -485,8 +510,8 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 			if cwidth >= maxw {
 				if lastSpace > lastCut {
 					width := ui.log[i].pwidth
-					width += ui.log[i].mwidths[lastCutIx:lastSpaceIx].Sum()
-					clean := suffpref(w, prefix, suffix, meta+log[lastCut:lastSpace], width)
+					width += ui.log[i].mwidths[lastCutIx:lastSpaceIx].Sum() + extra
+					clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:lastSpace], width)
 					logs = append(logs, clean)
 					cwidth = ui.log[i].mwidths[lastSpaceIx:ix].Sum()
 					lastCut = lastSpace + 1
@@ -495,8 +520,8 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 				}
 
 				width := ui.log[i].pwidth
-				width += ui.log[i].mwidths[lastCutIx:ix-2].Sum() + 1
-				clean := suffpref(w, prefix, suffix, meta+log[lastCut:bi2ago]+"-", width)
+				width += ui.log[i].mwidths[lastCutIx:ix-2].Sum() + 1 + extra
+				clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:bi2ago]+"-", width)
 				logs = append(logs, clean)
 				cwidth = ui.log[i].mwidths[ix-2:ix].Sum() + 1
 				lastCut = bi2ago
@@ -506,8 +531,8 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 
 		if lastCut < ui.log[i].mwidth {
 			width := ui.log[i].pwidth
-			width += ui.log[i].mwidths[lastCutIx:].Sum()
-			clean := suffpref(w, prefix, suffix, meta+log[lastCut:], width)
+			width += ui.log[i].mwidths[lastCutIx:].Sum() + extra
+			clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:], width)
 			logs = append(logs, clean)
 		}
 	}
