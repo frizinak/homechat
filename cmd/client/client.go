@@ -713,6 +713,9 @@ func main() {
 					inputs = inputs[len(inputs)-max:]
 				}
 				current = len(inputs) - 1
+				if s == "" {
+					return false
+				}
 				if strings.HasPrefix(s, "?") {
 					tui.Search(strings.TrimSpace(s[1:]))
 					tui.SetInput(s)
@@ -720,16 +723,18 @@ func main() {
 				}
 				if strings.HasPrefix(s, "%") {
 					u, ok := tui.Link(strings.TrimSpace(s[1:]))
-					if ok {
-						go func() {
-							err := f.Opener.OpenURL(u.String())
-							if err != nil {
-								tui.Flash(fmt.Sprintf("failed to open url: %s", err), 0)
-							}
-						}()
+					if !ok {
 						return false
 					}
+					go func() {
+						err := f.Opener.OpenURL(u.String())
+						if err != nil {
+							tui.Flash(fmt.Sprintf("failed to open url: %s", err), 0)
+						}
+					}()
+					return false
 				}
+
 				send(s)
 				return false
 			},
