@@ -36,6 +36,19 @@ type user struct {
 	typing bool
 }
 
+type cache struct {
+	invalid bool
+	w, h    int
+	log     []string
+}
+
+func (c *cache) Invalidate() { c.invalid = true }
+func (c *cache) Update(w, h int) bool {
+	b := c.invalid || c.w != w || c.h != h
+	c.w, c.h, c.invalid = w, h, false
+	return b
+}
+
 // assumes utf-8
 type TermUI struct {
 	metaPrefix bool
@@ -48,8 +61,11 @@ type TermUI struct {
 
 	latency *time.Duration
 
-	sem   sync.Mutex
-	log   []msg
+	sem sync.Mutex
+
+	log []msg
+
+	cache *cache
 	input []byte
 	users []*user
 
@@ -75,10 +91,24 @@ type TermUI struct {
 	disabled bool
 }
 
+type widths []uint8
+
+func (w widths) Sum() int {
+	t := 0
+	for _, v := range w {
+		t += int(v)
+	}
+	return t
+}
+
 type msg struct {
 	prefix    string
 	msg       string
 	highlight Highlight
+	pwidths   widths
+	mwidths   widths
+	pwidth    int
+	mwidth    int
 }
 
 func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visible) *TermUI {
@@ -91,6 +121,7 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visi
 		disabled:    true,
 		links:       make([]*url.URL, 0),
 		cursorHide:  visible&VisibleInput == 0,
+		cache:       &cache{invalid: true},
 	}
 }
 
@@ -173,6 +204,7 @@ func (ui *TermUI) Err(err error)     { ui.ErrStr(err.Error()) }
 func (ui *TermUI) Clear() {
 	ui.sem.Lock()
 	ui.log = make([]msg, 0)
+	ui.cache.Invalidate()
 	ui.sem.Unlock()
 }
 
@@ -211,7 +243,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 				return fmt.Sprintf("\033[1m[%d]\033[0m%s", len(ui.links), m)
 			})
 
-			msg := msg{"", text, m.Highlight}
+			msg := msg{"", text, m.Highlight, nil, nil, 0, 0}
 			if ui.metaPrefix {
 				msg.prefix = fmt.Sprintf(
 					"%s %s",
@@ -220,6 +252,29 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 				)
 				msg.prefix = runewidth.FillRight(msg.prefix, len(stampFormat)+15+1) + "│ "
 			}
+
+			pwidths := make([]uint8, 0, len(msg.prefix))
+			ptotal := 0
+			for _, r := range msg.prefix {
+				w := runewidth.RuneWidth(r)
+				pwidths = append(pwidths, uint8(w))
+				ptotal += w
+			}
+			msg.pwidths = pwidths
+			msg.pwidth = ptotal
+
+			mwidths := make([]uint8, 0, len(msg.msg))
+			mtotal := 0
+			c := 0
+			for _, r := range msg.msg {
+				c++
+				w := runewidth.RuneWidth(r)
+				mwidths = append(mwidths, uint8(w))
+				mtotal += w
+			}
+			msg.mwidths = mwidths
+			msg.mwidth = mtotal
+
 			ui.log = append(ui.log, msg)
 		}
 	}
@@ -230,6 +285,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 	if ui.scrollTop && scroll {
 		ui.scroll = math.MaxInt32
 	}
+	ui.cache.Invalidate()
 	ui.sem.Unlock()
 	ui.Flush()
 }
@@ -278,19 +334,6 @@ func (ui *TermUI) setcursor(val int) {
 	}
 }
 
-func (ui *TermUI) width(str string, runes int) (width int) {
-	c := 0
-	for _, n := range str {
-		if runes > -1 && c >= runes {
-			break
-		}
-		width += runewidth.RuneWidth(n)
-		c++
-	}
-
-	return width
-}
-
 func (ui *TermUI) Left() {
 	ui.sem.Lock()
 	ui.setcursor(ui.cursorcol - 1)
@@ -335,6 +378,141 @@ const (
 	chrBar     = "\u2500" //\u23AF" //"\u22EF"
 	chrLine    = "\u2E3B"
 )
+
+func width(str string, runes int) int {
+	c := 0
+	width := 0
+	for _, n := range str {
+		if runes > -1 && c >= runes {
+			break
+		}
+		width += runewidth.RuneWidth(n)
+		c++
+	}
+
+	return width
+}
+
+func pad(n, padchr string, total int, nWidth int) string {
+	if nWidth < 0 {
+		nWidth = width(n, -1)
+	}
+	padwidth := width(padchr, -1)
+	count := total - nWidth
+	rcount := count / padwidth
+	padbyt := []byte(padchr)
+
+	if rcount <= 0 {
+		return n
+	}
+
+	b := make([]byte, 0, rcount*len(padbyt))
+	for i := 0; i < rcount; i++ {
+		b = append(b, padbyt...)
+	}
+	return n + string(b)
+}
+
+func suffpref(w int, prefix, suffix, str string, strWidth int) string {
+	if prefix == "" && suffix == "" {
+		return str
+	}
+	str = pad(str, " ", w, strWidth)
+	str = prefix + str
+	str = str + suffix
+	return str
+}
+
+func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
+	logs := make([]string, 0, len(ui.log))
+	for i := 0; i < len(ui.log); i++ {
+		meta := ui.log[i].prefix
+		log := ui.log[i].msg
+		both := meta + log
+
+		width := ui.log[i].pwidth + ui.log[i].mwidth
+
+		if ui.jumpToActive && ui.log[i].highlight&HLActive != 0 {
+			ui.jumpToActive = false
+			*scrollMsg = len(logs) + 1
+		}
+
+		if ui.jumpToQueryUpdate {
+			ui.log[i].highlight &= ^HLTemporary
+			if ui.jumpToQuery != "" && strings.Contains(strings.ToLower(log), ui.jumpToQuery) {
+				*searchMatches++
+				if *searchMatches == ui.jumpToQueryCount {
+					*scrollMsg = len(logs) + 1
+					ui.log[i].highlight |= HLTemporary
+				}
+			}
+		}
+
+		var prefix, suffix string
+		if ui.log[i].highlight > 0 {
+			for v := range hl {
+				if v&ui.log[i].highlight != 0 {
+					prefix += string(hl[v])
+				}
+			}
+			suffix = string(clrReset)
+		}
+
+		if width <= w {
+			logs = append(logs, suffpref(w, prefix, suffix, both, width))
+			continue
+		}
+		maxw := w - ui.log[i].pwidth - 2
+
+		cwidth := 0
+		lastSpace, lastSpaceIx := 0, 0
+		lastCut, lastCutIx := 0, 0
+		ix := -1
+		byteIndex1Ago, byteIndex2Ago := 0, 0
+		for byteIndex, c := range log {
+			ix++
+			cwidth += int(ui.log[i].mwidths[ix])
+			if c == ' ' {
+				lastSpace = byteIndex
+				lastSpaceIx = ix
+			}
+
+			bi2ago := byteIndex2Ago
+			byteIndex2Ago = byteIndex1Ago
+			byteIndex1Ago = byteIndex
+
+			if cwidth >= maxw {
+				if lastSpace > lastCut {
+					width := ui.log[i].pwidth
+					width += ui.log[i].mwidths[lastCutIx:lastSpaceIx].Sum()
+					clean := suffpref(w, prefix, suffix, meta+log[lastCut:lastSpace], width)
+					logs = append(logs, clean)
+					cwidth = ui.log[i].mwidths[lastSpaceIx:ix].Sum()
+					lastCut = lastSpace + 1
+					lastCutIx = lastSpaceIx + 1
+					continue
+				}
+
+				width := ui.log[i].pwidth
+				width += ui.log[i].mwidths[lastCutIx:ix-2].Sum() + 1
+				clean := suffpref(w, prefix, suffix, meta+log[lastCut:bi2ago]+"-", -1)
+				logs = append(logs, clean)
+				cwidth = ui.log[i].mwidths[ix-2:ix].Sum() + 1
+				lastCut = bi2ago
+				lastCutIx = ix - 2
+			}
+		}
+
+		if lastCut < ui.log[i].mwidth {
+			width := ui.log[i].pwidth
+			width += ui.log[i].mwidths[lastCutIx:].Sum()
+			clean := suffpref(w, prefix, suffix, meta+log[lastCut:], width)
+			logs = append(logs, clean)
+		}
+	}
+
+	return logs
+}
 
 func (ui *TermUI) Flush() {
 	if ui.disabled {
@@ -381,106 +559,13 @@ func (ui *TermUI) Flush() {
 		nmsgs = 0
 	}
 
-	pad := func(n, padchr string, total int) string {
-		width := runewidth.StringWidth(n)
-		padwidth := runewidth.StringWidth(padchr)
-		count := total - width
-		rcount := count / padwidth
-		padbyt := []byte(padchr)
-
-		if rcount <= 0 {
-			return n
-		}
-
-		b := make([]byte, 0, rcount*len(padbyt))
-		for i := 0; i < rcount; i++ {
-			b = append(b, padbyt...)
-		}
-		return n + string(b)
-	}
-
-	suffpref := func(prefix, suffix, str string) string {
-		if prefix == "" && suffix == "" {
-			return str
-		}
-		str = pad(str, " ", w)
-		str = prefix + str
-		str = str + suffix
-		return str
-	}
-
-	logs := make([]string, 0, len(ui.log))
+	logs := ui.cache.log
 	scrollMsg := -1
 	var searchMatches uint16
 
-	for i := 0; i < len(ui.log); i++ {
-		meta := ui.log[i].prefix
-		log := ui.log[i].msg
-		both := meta + log
-
-		ln := runewidth.StringWidth(both)
-
-		if ui.jumpToActive && ui.log[i].highlight&HLActive != 0 {
-			ui.jumpToActive = false
-			scrollMsg = len(logs) + 1
-		}
-
-		if ui.jumpToQueryUpdate {
-			ui.log[i].highlight &= ^HLTemporary
-			if ui.jumpToQuery != "" && strings.Contains(strings.ToLower(log), ui.jumpToQuery) {
-				searchMatches++
-				if searchMatches == ui.jumpToQueryCount {
-					scrollMsg = len(logs) + 1
-					ui.log[i].highlight |= HLTemporary
-				}
-			}
-		}
-
-		var prefix, suffix string
-		if ui.log[i].highlight > 0 {
-			for v := range hl {
-				if v&ui.log[i].highlight != 0 {
-					prefix += string(hl[v])
-				}
-			}
-			suffix = string(clrReset)
-		}
-
-		if ln <= w {
-			logs = append(logs, suffpref(prefix, suffix, both))
-			continue
-		}
-		maxw := w - runewidth.StringWidth(meta) - 2
-
-		count := 0
-		lastSpace := 0
-		lastCut := 0
-		for ci, c := range log {
-			count += runewidth.RuneWidth(c)
-			if c == ' ' {
-				lastSpace = ci
-			}
-
-			if count >= maxw {
-				if lastSpace > lastCut {
-					clean := suffpref(prefix, suffix, meta+log[lastCut:lastSpace])
-					logs = append(logs, clean)
-					count = ci - lastSpace
-					lastCut = lastSpace + 1
-					continue
-				}
-
-				clean := suffpref(prefix, suffix, meta+log[lastCut:ci-2]+"-")
-				logs = append(logs, clean)
-				count = 0
-				lastCut = ci - 2
-			}
-		}
-
-		if lastCut < runewidth.StringWidth(log) {
-			clean := suffpref(prefix, suffix, meta+log[lastCut:])
-			logs = append(logs, clean)
-		}
+	if logs == nil || ui.jumpToActive || ui.jumpToQueryUpdate || ui.cache.Update(w, h) {
+		logs = ui.logs(w, &scrollMsg, &searchMatches)
+		ui.cache.log = logs
 	}
 
 	ui.jumpToQueryUpdate = false
@@ -521,7 +606,7 @@ func (ui *TermUI) Flush() {
 	}
 
 	status = runewidth.Truncate(status, w-len(lat), "…")
-	status = pad(status, " ", w-len(lat))
+	status = pad(status, " ", w-len(lat), -1)
 	users := make([]string, 0, len(ui.users))
 	for _, u := range ui.users {
 		typ := " "
@@ -530,7 +615,7 @@ func (ui *TermUI) Flush() {
 		}
 		users = append(users, fmt.Sprintf("%s%s", u.name, typ))
 	}
-	user := pad(strings.Join(users, " "), " ", w)
+	user := pad(strings.Join(users, " "), " ", w, -1)
 
 	indent := make([]byte, ui.indent)
 	for i := range indent {
@@ -570,7 +655,7 @@ func (ui *TermUI) Flush() {
 	if state.Song != "" && ui.visible&VisibleSeek != 0 {
 		if ui.visible&VisibleBrowser != 0 {
 			s = append(s, clrLine...)
-			s = append(s, pad("", chrLine, rw)...)
+			s = append(s, pad("", chrLine, rw, -1)...)
 			s = append(s, clrReset...)
 		}
 		s = append(s, '\r')
@@ -627,14 +712,14 @@ func (ui *TermUI) Flush() {
 
 	if ui.visible&VisibleInput != 0 {
 		s = append(s, clrLine...)
-		s = append(s, pad("", chrLine, rw)...)
+		s = append(s, pad("", chrLine, rw, -1)...)
 		s = append(s, clrReset...)
 		s = append(s, '\r')
 		s = append(s, '\n')
 		s = append(s, indent...)
 
 		input := string(ui.input)
-		inputCW := ui.width(input, ui.cursorcol)
+		inputCW := width(input, ui.cursorcol)
 		off := 0
 		max := w - 2
 		if inputCW > max {
