@@ -59,6 +59,7 @@ type Flags struct {
 		Linemode   bool
 
 		uiHideStatus  bool
+		uiHideUsers   bool
 		uiHideBrowser bool
 		uiHideSeek    bool
 		uiHideInput   bool
@@ -132,6 +133,46 @@ func NewFlags(output io.Writer, defaultConfigDir, defaultCacheDir string, intera
 }
 
 func (f *Flags) Flags() {
+	hides := func(fl *flag.FlagSet, music bool) {
+		fl.BoolVar(
+			&f.All.uiHideStatus,
+			"hide-status",
+			false,
+			"hide status bar",
+		)
+		fl.BoolVar(
+			&f.All.uiHideUsers,
+			"hide-users",
+			false,
+			"hide users bar",
+		)
+
+		name := "chat"
+		if music {
+			name = "browser"
+		}
+		fl.BoolVar(
+			&f.All.uiHideBrowser,
+			"hide-"+name,
+			false,
+			"hide "+name,
+		)
+		if music {
+			fl.BoolVar(
+				&f.All.uiHideSeek,
+				"hide-seek",
+				false,
+				"hide seek bar",
+			)
+		}
+		fl.BoolVar(
+			&f.All.uiHideInput,
+			"hide-input",
+			false,
+			"hide input",
+		)
+	}
+
 	f.flags.Define(func(fl *flag.FlagSet) flags.HelpCB {
 		fl.StringVar(&f.All.ConfigDir, "c", f.All.ConfigDir, "config directory")
 
@@ -171,6 +212,8 @@ func (f *Flags) Flags() {
 	})
 
 	f.flags.Add("chat").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		hides(fl, false)
+
 		fl.BoolVar(
 			&f.All.Linemode,
 			"l",
@@ -237,30 +280,7 @@ func (f *Flags) Flags() {
 	})
 
 	music := f.flags.Add("music").Define(func(fl *flag.FlagSet) flags.HelpCB {
-		fl.BoolVar(
-			&f.All.uiHideStatus,
-			"hide-status",
-			false,
-			"hide status bar",
-		)
-		fl.BoolVar(
-			&f.All.uiHideBrowser,
-			"hide-browser",
-			false,
-			"hide browser",
-		)
-		fl.BoolVar(
-			&f.All.uiHideSeek,
-			"hide-seek",
-			false,
-			"hide seek bar",
-		)
-		fl.BoolVar(
-			&f.All.uiHideInput,
-			"hide-input",
-			false,
-			"hide input",
-		)
+		hides(fl, true)
 
 		return func(h *flags.Help) {
 			h.Add("Commands:")
@@ -517,6 +537,9 @@ func (f *Flags) Parse() error {
 	f.All.UIVisible = ui.VisibleDefault
 	if f.All.uiHideStatus {
 		f.All.UIVisible &= ^ui.VisibleStatus
+	}
+	if f.All.uiHideUsers {
+		f.All.UIVisible &= ^ui.VisibleUsers
 	}
 	if f.All.uiHideBrowser {
 		f.All.UIVisible &= ^ui.VisibleBrowser

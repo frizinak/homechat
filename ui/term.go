@@ -20,11 +20,12 @@ type Visible uint8
 
 const (
 	VisibleStatus Visible = 1 << iota
+	VisibleUsers
 	VisibleBrowser
 	VisibleSeek
 	VisibleInput
 
-	VisibleDefault = VisibleStatus | VisibleBrowser | VisibleSeek | VisibleInput
+	VisibleDefault = VisibleStatus | VisibleUsers | VisibleBrowser | VisibleSeek | VisibleInput
 )
 
 var linkRE = regexp.MustCompile(`https?://[^\s]+`)
@@ -252,7 +253,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 
 			ptotal := 0
 			for _, r := range msg.prefix {
-				w := runewidth.RuneWidth(r)
+				w := rwidth(r)
 				ptotal += w
 			}
 			msg.pwidth = ptotal
@@ -262,7 +263,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 			c := 0
 			for _, r := range msg.msg {
 				c++
-				w := runewidth.RuneWidth(r)
+				w := rwidth(r)
 				mwidths = append(mwidths, uint8(w))
 				mtotal += w
 			}
@@ -384,6 +385,8 @@ const (
 	chrLine    = "\u2E3B"
 )
 
+func rwidth(r rune) int { return runewidth.RuneWidth(r) }
+
 func width(str string, runes int) int {
 	c := 0
 	width := 0
@@ -391,7 +394,7 @@ func width(str string, runes int) int {
 		if runes > -1 && c >= runes {
 			break
 		}
-		width += runewidth.RuneWidth(n)
+		width += rwidth(n)
 		c++
 	}
 
@@ -422,6 +425,7 @@ func suffpref(w int, prefix, suffix, meta, between, msg string, strWidth int) st
 	if prefix == "" && suffix == "" {
 		return meta + between + msg
 	}
+
 	return prefix + pad(meta+between+msg, " ", w, strWidth) + suffix
 }
 
@@ -551,17 +555,19 @@ func (ui *TermUI) Flush() {
 		w, h = int(size.Width), int(size.Height)
 	}
 
-	h -= 4
 	state := ui.s
 	if state.Song != "" && ui.visible&VisibleSeek != 0 {
 		h -= 3
 	}
 
-	if ui.visible&VisibleStatus == 0 {
-		h += 2
+	if ui.visible&VisibleStatus != 0 {
+		h -= 1
 	}
-	if ui.visible&VisibleInput == 0 {
-		h += 3
+	if ui.visible&VisibleUsers != 0 {
+		h -= 1
+	}
+	if ui.visible&VisibleInput != 0 {
+		h -= 2
 	}
 
 	ui.scroll += ui.scrollPage * h / 2
@@ -656,6 +662,8 @@ func (ui *TermUI) Flush() {
 		s = append(s, clrReset...)
 		s = append(s, '\r')
 		s = append(s, '\n')
+	}
+	if ui.visible&VisibleUsers != 0 {
 		s = append(s, clrUser...)
 		s = append(s, indent...)
 		s = append(s, user...)
@@ -664,19 +672,31 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\n')
 	}
 
-	for _, l := range logs {
+	nls := 0
+	for i, l := range logs {
 		s = append(s, indent...)
 		s = append(s, l...)
+		if i != len(logs)-1 {
+			nls++
+			s = append(s, '\r')
+			s = append(s, '\n')
+		}
+	}
+
+	for i := 0; i < h-len(logs)-1; i++ {
+		nls++
 		s = append(s, '\r')
 		s = append(s, '\n')
 	}
 
-	for i := 0; i < h-len(logs); i++ {
+	if nls < h-1 {
 		s = append(s, '\r')
 		s = append(s, '\n')
 	}
 
 	if state.Song != "" && ui.visible&VisibleSeek != 0 {
+		s = append(s, '\r')
+		s = append(s, '\n')
 		if ui.visible&VisibleBrowser != 0 {
 			s = append(s, clrLine...)
 			s = append(s, pad("", chrLine, rw, -1)...)
@@ -728,13 +748,11 @@ func (ui *TermUI) Flush() {
 		s = append(s, clrDuration...)
 		s = append(s, fmt.Sprintf(" %s/%s", position, duration)...)
 		s = append(s, clrReset...)
-		if ui.visible&VisibleInput != 0 {
-			s = append(s, '\r')
-			s = append(s, '\n')
-		}
 	}
 
 	if ui.visible&VisibleInput != 0 {
+		s = append(s, '\r')
+		s = append(s, '\n')
 		s = append(s, clrLine...)
 		s = append(s, pad("", chrLine, rw, -1)...)
 		s = append(s, clrReset...)
@@ -754,7 +772,7 @@ func (ui *TermUI) Flush() {
 		cw := 0
 		sliceMin, sliceMax := len(ui.input), len(ui.input)
 		for i, r := range input {
-			rw := runewidth.RuneWidth(r)
+			rw := rwidth(r)
 			cw += rw
 			if cw >= off+rw && i < sliceMin {
 				inputCW += off + rw - cw
