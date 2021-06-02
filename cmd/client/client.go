@@ -557,7 +557,7 @@ func main() {
 	}
 
 	tui := ui.Term(
-		f.All.Mode == ModeDefault,
+		true,
 		max,
 		indent,
 		f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient,

@@ -22,6 +22,7 @@ const (
 type Msg struct {
 	From      string
 	Stamp     time.Time
+	Meta      string
 	Message   string
 	Notify    chatdata.Notify
 	Highlight Highlight

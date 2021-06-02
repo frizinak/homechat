@@ -35,9 +35,8 @@ func (p *PlainUI) Broadcast(msgs []Msg, scroll bool) {
 func (p *PlainUI) broadcast(msg Msg) {
 	fmt.Fprintf(
 		p.Writer,
-		"%s %-15s: %s\n",
-		msg.Stamp.Format("2006-01-02 15:04:05"),
-		StripUnprintable(msg.From),
+		"%s: %s\n",
+		StripUnprintable(msg.Meta),
 		StripUnprintable(msg.Message),
 	)
 }

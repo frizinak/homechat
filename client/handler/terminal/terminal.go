@@ -2,7 +2,6 @@ package terminal
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/frizinak/homechat/client"
@@ -161,8 +160,13 @@ func (h *Handler) Run(notify chan ui.Msg) {
 	go func() {
 		for msg := range h.msgs {
 			m := ui.Msg{
-				From:    msg.From,
-				Stamp:   msg.Stamp,
+				From:  msg.From,
+				Stamp: msg.Stamp,
+				Meta: fmt.Sprintf(
+					"%s %15s",
+					msg.Stamp.Format("01-02 15:04"),
+					msg.From,
+				),
 				Message: msg.Data,
 				Notify:  msg.Notify,
 			}
@@ -204,8 +208,6 @@ func (h *Handler) Run(notify chan ui.Msg) {
 				msgs = append(msgs, ui.Msg{Message: ""})
 			}
 
-			n := strconv.Itoa(len(strconv.Itoa(len(msg.Songs))))
-			format := "%" + n + "d) %s"
 			for i, song := range msg.Songs {
 				hl := ui.HLNone
 				if song.Active {
@@ -219,7 +221,8 @@ func (h *Handler) Run(notify chan ui.Msg) {
 				msgs = append(
 					msgs,
 					ui.Msg{
-						Message:   fmt.Sprintf(format, i+1, song.Title()),
+						Meta:      fmt.Sprintf("%d", i+1),
+						Message:   song.Title(),
 						Highlight: hl,
 					},
 				)

@@ -16,8 +16,6 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-const stampFormat = "01-02 15:04"
-
 type Visible uint8
 
 const (
@@ -52,6 +50,7 @@ func (c *cache) Update(w, h int) bool {
 // assumes utf-8
 type TermUI struct {
 	metaPrefix bool
+	metaWidth  int
 	indent     int
 	scrollTop  bool
 
@@ -105,7 +104,6 @@ type msg struct {
 	prefix    string
 	msg       string
 	highlight Highlight
-	pwidths   widths
 	mwidths   widths
 	pwidth    int
 	mwidth    int
@@ -204,6 +202,7 @@ func (ui *TermUI) Err(err error)     { ui.ErrStr(err.Error()) }
 func (ui *TermUI) Clear() {
 	ui.sem.Lock()
 	ui.log = make([]msg, 0)
+	ui.metaWidth = 0
 	ui.cache.Invalidate()
 	ui.sem.Unlock()
 }
@@ -230,7 +229,6 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 	}
 	ui.sem.Lock()
 	for _, m := range msgs {
-		m.From = StripUnprintable(m.From)
 		m.Message = StripUnprintable(m.Message)
 		texts := strings.Split(strings.ReplaceAll(m.Message, "\r", ""), "\n")
 		for _, text := range texts {
@@ -243,24 +241,20 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 				return fmt.Sprintf("[%d]%s", len(ui.links), m)
 			})
 
-			msg := msg{"", text, m.Highlight, nil, nil, 0, 0}
+			msg := msg{"", text, m.Highlight, nil, 0, 0}
 			if ui.metaPrefix {
-				msg.prefix = fmt.Sprintf(
-					"%s %s",
-					m.Stamp.Format(stampFormat),
-					m.From,
-				)
-				msg.prefix = runewidth.FillRight(msg.prefix, len(stampFormat)+15+1)
+				msg.prefix = StripUnprintable(m.Meta)
+				width := width(msg.prefix, -1)
+				if width > ui.metaWidth {
+					ui.metaWidth = width
+				}
 			}
 
-			pwidths := make([]uint8, 0, len(msg.prefix))
 			ptotal := 0
 			for _, r := range msg.prefix {
 				w := runewidth.RuneWidth(r)
-				pwidths = append(pwidths, uint8(w))
 				ptotal += w
 			}
-			msg.pwidths = pwidths
 			msg.pwidth = ptotal
 
 			mwidths := make([]uint8, 0, len(msg.msg))
@@ -433,11 +427,15 @@ func suffpref(w int, prefix, suffix, meta, between, msg string, strWidth int) st
 
 func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 	logs := make([]string, 0, len(ui.log))
+	var meta string
+	var metaW int
 	for i := 0; i < len(ui.log); i++ {
-		meta := ui.log[i].prefix
+		if ui.metaWidth != 0 {
+			metaW = ui.metaWidth + 1
+			meta = pad(ui.log[i].prefix, " ", metaW, ui.log[i].pwidth)
+		}
 		log := ui.log[i].msg
-
-		width := ui.log[i].pwidth + ui.log[i].mwidth
+		width := metaW + ui.log[i].mwidth
 
 		if ui.jumpToActive && ui.log[i].highlight&HLActive != 0 {
 			ui.jumpToActive = false
@@ -458,7 +456,7 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 		extra := 0
 		msgPrefix := ""
 		between := string(clrReset)
-		if ui.metaPrefix {
+		if meta != "" {
 			between += "│"
 			msgPrefix = " "
 			extra = 2
@@ -480,7 +478,7 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 			suffix = string(clrReset)
 		}
 
-		maxw := w - ui.log[i].pwidth - 2
+		maxw := w - metaW - 2
 
 		if width <= w || maxw <= 8 {
 			logs = append(
@@ -509,7 +507,7 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 
 			if cwidth >= maxw {
 				if lastSpace > lastCut {
-					width := ui.log[i].pwidth
+					width := metaW
 					width += ui.log[i].mwidths[lastCutIx:lastSpaceIx].Sum() + extra
 					clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:lastSpace], width)
 					logs = append(logs, clean)
@@ -519,7 +517,7 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 					continue
 				}
 
-				width := ui.log[i].pwidth
+				width := metaW
 				width += ui.log[i].mwidths[lastCutIx:ix-2].Sum() + 1 + extra
 				clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:bi2ago]+"-", width)
 				logs = append(logs, clean)
@@ -530,7 +528,7 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 		}
 
 		if lastCut < ui.log[i].mwidth {
-			width := ui.log[i].pwidth
+			width := metaW
 			width += ui.log[i].mwidths[lastCutIx:].Sum() + extra
 			clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:], width)
 			logs = append(logs, clean)
@@ -871,6 +869,7 @@ func (ui *TermUI) ResetInput() []byte {
 	copy(d, ui.input)
 	ui.input = ui.input[0:0]
 	ui.setcursor(0)
+	ui.metaWidth = 0
 	ui.sem.Unlock()
 	ui.Flush()
 	return d
