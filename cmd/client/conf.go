@@ -24,6 +24,8 @@ type Config struct {
 	MusicDownloads    string
 	MusicSocketFile   string
 	OpenURLCommand    string
+
+	resave bool
 }
 
 func (c *Config) Help() []string {
@@ -63,9 +65,36 @@ func (c *Config) Decode(file string) error {
 		return err
 	}
 	defer f.Close()
-	if err := json.NewDecoder(f).Decode(c); err != nil {
-		return fmt.Errorf("Failed to parse client config %s: %w", file, err)
+
+	d := make(map[string]json.RawMessage)
+	if err := json.NewDecoder(f).Decode(&d); err != nil {
+		return fmt.Errorf("failed to parse client config %s: %w", file, err)
 	}
+
+	m := map[string]interface{}{
+		"NotifyCommand":     &c.NotifyCommand,
+		"NotifyWhen":        &c.NotifyWhen,
+		"ServerAddress":     &c.ServerAddress,
+		"ServerTCPAddress":  &c.ServerTCPAddress,
+		"ServerFingerprint": &c.ServerFingerprint,
+		"Username":          &c.Username,
+		"MaxMessages":       &c.MaxMessages,
+		"MusicDownloads":    &c.MusicDownloads,
+		"MusicSocketFile":   &c.MusicSocketFile,
+		"OpenURLCommand":    &c.OpenURLCommand,
+	}
+
+	for k, field := range m {
+		if v, ok := d[k]; ok {
+			err = json.Unmarshal(v, field)
+			if err != nil {
+				return fmt.Errorf("failed to parse client config %s: %w", file, err)
+			}
+			continue
+		}
+		c.resave = true
+	}
+
 	return nil
 }
 
@@ -92,35 +121,41 @@ func (c *Config) Encode(file string) error {
 }
 
 func (c *Config) Merge(def *Config) bool {
-	resave := false
+	resave := c.resave
+
 	if c.NotifyCommand == nil {
 		resave = true
 		c.NotifyCommand = def.NotifyCommand
 	}
-	if c.NotifyWhen == "" {
+	if c.NotifyWhen == "" && def.NotifyWhen != "" {
 		resave = true
 		c.NotifyWhen = def.NotifyWhen
 	}
-	if c.ServerAddress == "" {
+	if c.ServerAddress == "" && def.ServerAddress != "" {
 		resave = true
 		c.ServerAddress = def.ServerAddress
 	}
-	if c.ServerTCPAddress == "" {
+	if c.ServerTCPAddress == "" && def.ServerTCPAddress != "" {
 		resave = true
 		c.ServerTCPAddress = def.ServerTCPAddress
 	}
-	if c.MaxMessages <= 0 {
+	if c.MaxMessages < 0 {
+		resave = true
+		c.MaxMessages = 0
+	}
+	if c.MaxMessages == 0 && def.MaxMessages > 0 {
 		resave = true
 		c.MaxMessages = def.MaxMessages
 	}
-	if c.MusicDownloads == "" {
+	if c.MusicDownloads == "" && def.MusicDownloads != "" {
 		resave = true
 		c.MusicDownloads = def.MusicDownloads
 	}
-	if c.MusicSocketFile == "" {
+	if c.MusicSocketFile == "" && def.MusicSocketFile != "" {
 		resave = true
 		c.MusicSocketFile = def.MusicSocketFile
 	}
+
 	return resave
 }
 

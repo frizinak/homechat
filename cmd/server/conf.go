@@ -30,6 +30,8 @@ type Config struct {
 
 	HueIP   string
 	HuePass string
+
+	resave bool
 }
 
 func (c *Config) Help() []string {
@@ -97,9 +99,42 @@ func (c *Config) Decode(file string) error {
 		return err
 	}
 	defer f.Close()
-	if err := json.NewDecoder(f).Decode(c); err != nil {
-		return fmt.Errorf("Failed to parse server config %s: %w", file, err)
+
+	d := make(map[string]json.RawMessage)
+	if err := json.NewDecoder(f).Decode(&d); err != nil {
+		return fmt.Errorf("failed to parse server config %s: %w", file, err)
 	}
+
+	m := map[string]interface{}{
+		"Directory":                 &c.Directory,
+		"YMDir":                     &c.YMDir,
+		"AcoustIDKey":               &c.AcoustIDKey,
+		"ChatMessagesAppendOnlyDir": &c.ChatMessagesAppendOnlyDir,
+		"ClientPolicy":              &c.ClientPolicy,
+		"ClientPolicyFile":          &c.ClientPolicyFile,
+		"HTTPPublicAddr":            &c.HTTPPublicAddr,
+		"HTTPBindAddr":              &c.HTTPBindAddr,
+		"TCPBindAddr":               &c.TCPBindAddr,
+		"BandwidthIntervalSeconds":  &c.BandwidthIntervalSeconds,
+		"MaxUploadKBytes":           &c.MaxUploadKBytes,
+		"MaxChatMessages":           &c.MaxChatMessages,
+		"WttrCity":                  &c.WttrCity,
+		"HolidayCountryCode":        &c.HolidayCountryCode,
+		"HueIP":                     &c.HueIP,
+		"HuePass":                   &c.HuePass,
+	}
+
+	for k, field := range m {
+		if v, ok := d[k]; ok {
+			err = json.Unmarshal(v, field)
+			if err != nil {
+				return fmt.Errorf("failed to parse client config %s: %w", file, err)
+			}
+			continue
+		}
+		c.resave = true
+	}
+
 	return nil
 }
 
@@ -126,33 +161,33 @@ func (c *Config) Encode(file string) error {
 }
 
 func (c *Config) Merge(def *Config) bool {
-	resave := false
+	resave := c.resave
 
-	if c.WttrCity == "" {
+	if c.WttrCity == "" && def.WttrCity != "" {
 		resave = true
 		c.WttrCity = def.WttrCity
 	}
-	if c.AcoustIDKey == "" {
+	if c.AcoustIDKey == "" && def.AcoustIDKey != "" {
 		resave = true
 		c.AcoustIDKey = def.AcoustIDKey
 	}
-	if c.HolidayCountryCode == "" {
+	if c.HolidayCountryCode == "" && def.HolidayCountryCode != "" {
 		resave = true
 		c.HolidayCountryCode = def.HolidayCountryCode
 	}
-	if c.YMDir == "" {
+	if c.YMDir == "" && def.YMDir != "" {
 		resave = true
 		c.YMDir = def.YMDir
 	}
-	if c.Directory == "" {
+	if c.Directory == "" && def.Directory != "" {
 		resave = true
 		c.Directory = def.Directory
 	}
-	if c.HTTPPublicAddr == "" {
+	if c.HTTPPublicAddr == "" && def.HTTPPublicAddr != "" {
 		resave = true
 		c.HTTPPublicAddr = def.HTTPPublicAddr
 	}
-	if c.HTTPBindAddr == "" {
+	if c.HTTPBindAddr == "" && def.HTTPBindAddr != "" {
 		resave = true
 		c.HTTPBindAddr = def.HTTPBindAddr
 	}
@@ -164,7 +199,11 @@ func (c *Config) Merge(def *Config) bool {
 		resave = true
 		c.MaxUploadKBytes = def.MaxUploadKBytes
 	}
-	if c.MaxChatMessages <= 0 {
+	if c.MaxChatMessages < 0 {
+		resave = true
+		c.MaxChatMessages = 0
+	}
+	if c.MaxChatMessages == 0 && def.MaxChatMessages > 0 {
 		resave = true
 		c.MaxChatMessages = def.MaxChatMessages
 	}
@@ -172,15 +211,15 @@ func (c *Config) Merge(def *Config) bool {
 		resave = true
 		c.ChatMessagesAppendOnlyDir = def.ChatMessagesAppendOnlyDir
 	}
-	if c.TCPBindAddr == "" {
+	if c.TCPBindAddr == "" && def.TCPBindAddr != "" {
 		resave = true
 		c.TCPBindAddr = def.TCPBindAddr
 	}
-	if c.ClientPolicy == "" {
+	if c.ClientPolicy == "" && def.ClientPolicy != "" {
 		resave = true
 		c.ClientPolicy = def.ClientPolicy
 	}
-	if c.ClientPolicyFile == "" {
+	if c.ClientPolicyFile == "" && def.ClientPolicyFile != "" {
 		resave = true
 		c.ClientPolicyFile = def.ClientPolicyFile
 	}
