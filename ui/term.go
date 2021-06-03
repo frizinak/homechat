@@ -735,7 +735,9 @@ func (ui *TermUI) Flush() {
 	if state.Song != "" && ui.visible&VisibleSeek != 0 {
 		s = append(s, '\r')
 		s = append(s, '\n')
-		s = append(s, makeLine()...)
+		if ui.visible&VisibleBrowser != 0 {
+			s = append(s, makeLine()...)
+		}
 		s = append(s, '\r')
 		s = append(s, '\n')
 		mw := w
