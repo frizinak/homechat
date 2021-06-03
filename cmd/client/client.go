@@ -549,17 +549,15 @@ func main() {
 		exitClean()
 	}
 
-	indent := 1
 	max := f.AppConf.MaxMessages
 	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient {
-		indent = 2
 		max = 1e9
 	}
 
 	tui := ui.Term(
 		true,
 		max,
-		indent,
+		1,
 		f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient,
 		f.All.UIVisible,
 	)

@@ -378,11 +378,27 @@ var hl = map[Highlight]hlSetting{
 	HLTemporary: {"\033[1;32m", partMeta | partMsg},
 }
 
+type chr struct {
+	v []byte
+	w int
+}
+
 const (
-	chrPlaying = "\u25B8" //"\u25BA" //"\u22D7" //"\u2023" //"‣▶"
-	chrPause   = "\u2016" //"\u2225" // ⏸"
-	chrBar     = "\u2500" //\u23AF" //"\u22EF"
-	chrLine    = "\u2E3B"
+	_chrPlaying   = "\u25B8" //"\u25BA" //"\u22D7" //"\u2023" //"‣▶"
+	_chrPause     = "\u2016" //"\u2225" // ⏸"
+	_chrBar       = "\u2500"
+	_chrLine      = "\u2500" // "\u2E3B"
+	_chrMetaSplit = "\u2502"
+	_chrBottomT   = "\u2534" //"\u2538"
+)
+
+var (
+	chrPlaying   = chr{[]byte(_chrPlaying), runewidth.StringWidth(_chrPlaying)}
+	chrPause     = chr{[]byte(_chrPause), runewidth.StringWidth(_chrPause)}
+	chrBar       = chr{[]byte(_chrBar), runewidth.StringWidth(_chrBar)}
+	chrLine      = chr{[]byte(_chrLine), runewidth.StringWidth(_chrLine)}
+	chrMetaSplit = chr{[]byte(_chrMetaSplit), runewidth.StringWidth(_chrMetaSplit)}
+	chrBottomT   = chr{[]byte(_chrBottomT), runewidth.StringWidth(_chrBottomT)}
 )
 
 func rwidth(r rune) int { return runewidth.RuneWidth(r) }
@@ -401,14 +417,14 @@ func width(str string, runes int) int {
 	return width
 }
 
-func pad(n, padchr string, total int, nWidth int) string {
+func padc(n string, padchr chr, total int, nWidth int) string {
 	if nWidth < 0 {
 		nWidth = width(n, -1)
 	}
-	padwidth := width(padchr, -1)
+	padwidth := padchr.w
 	count := total - nWidth
 	rcount := count / padwidth
-	padbyt := []byte(padchr)
+	padbyt := padchr.v
 
 	if rcount <= 0 {
 		return n
@@ -419,6 +435,10 @@ func pad(n, padchr string, total int, nWidth int) string {
 		b = append(b, padbyt...)
 	}
 	return n + string(b)
+}
+
+func pad(n, padchr string, total int, nWidth int) string {
+	return padc(n, chr{[]byte(padchr), width(padchr, -1)}, total, nWidth)
 }
 
 func suffpref(w int, prefix, suffix, meta, between, msg string, strWidth int) string {
@@ -461,9 +481,9 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 		msgPrefix := ""
 		between := string(clrReset)
 		if meta != "" {
-			between += "│"
+			between += string(chrMetaSplit.v)
 			msgPrefix = " "
-			extra = 2
+			extra = 1 + chrMetaSplit.w
 			width += extra
 		}
 		var prefix, suffix string
@@ -694,33 +714,47 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\n')
 	}
 
+	linesConnected := false
+	makeLine := func() []byte {
+		lineWidth := rw
+		s := make([]byte, 0, lineWidth)
+		if !linesConnected && ui.metaWidth != 0 {
+			linesConnected = true
+			p := ui.indent + ui.metaWidth + chrMetaSplit.w
+			s = append(s, padc("", chrLine, p, 0)...)
+			s = append(s, chrBottomT.v...)
+			lineWidth -= p + chrBottomT.w
+		}
+		s = append(s, clrLine...)
+		s = append(s, padc("", chrLine, lineWidth, 0)...)
+		s = append(s, clrReset...)
+
+		return s
+	}
+
 	if state.Song != "" && ui.visible&VisibleSeek != 0 {
 		s = append(s, '\r')
 		s = append(s, '\n')
-		if ui.visible&VisibleBrowser != 0 {
-			s = append(s, clrLine...)
-			s = append(s, pad("", chrLine, rw, -1)...)
-			s = append(s, clrReset...)
-		}
+		s = append(s, makeLine()...)
 		s = append(s, '\r')
 		s = append(s, '\n')
-		mw := rw
+		mw := w
 
 		duration, timeParts := FormatDuration(state.Duration, 2)
 		position, _ := FormatDuration(state.Position, timeParts)
-		mw -= len(duration) + len(position) + 4 + 3
+		mw -= len(duration) + len(position) + 1 + 3
 
 		p := int(state.Pos() * float64(mw))
 		if p > mw {
 			p = mw
 		}
-		progress, rest := "", ""
+		progress, rest := []byte{}, []byte{}
 
-		for i := p; i > 0; i-- {
-			progress += chrBar
+		for i := p; i > 0; i -= chrBar.w {
+			progress = append(progress, chrBar.v...)
 		}
-		for i := mw - 1 - p; i > 0; i-- {
-			rest += chrBar
+		for i := mw - 1 - p; i > 0; i -= chrBar.w {
+			rest = append(rest, chrBar.v...)
 		}
 
 		playStatus := chrPlaying
@@ -729,7 +763,7 @@ func (ui *TermUI) Flush() {
 		}
 
 		vol := fmt.Sprintf(" %3.f%%", state.Volume*100)
-		songW := w - ui.indent - len(vol)
+		songW := w - len(vol) - 1
 		song := runewidth.Truncate(state.Song, songW, "…")
 		song = runewidth.FillRight(song, songW)
 		s = append(s, indent...)
@@ -739,7 +773,7 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\n')
 		s = append(s, clrMusicIcon...)
 		s = append(s, indent...)
-		s = append(s, playStatus...)
+		s = append(s, playStatus.v...)
 		s = append(s, ' ')
 		s = append(s, clrMusicSeekPlayed...)
 		s = append(s, progress...)
@@ -753,9 +787,7 @@ func (ui *TermUI) Flush() {
 	if ui.visible&VisibleInput != 0 {
 		s = append(s, '\r')
 		s = append(s, '\n')
-		s = append(s, clrLine...)
-		s = append(s, pad("", chrLine, rw, -1)...)
-		s = append(s, clrReset...)
+		s = append(s, makeLine()...)
 		s = append(s, '\r')
 		s = append(s, '\n')
 		s = append(s, indent...)
