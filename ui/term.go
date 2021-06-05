@@ -13,6 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/containerd/console"
+	"github.com/frizinak/zug"
+	"github.com/frizinak/zug/cli"
+	"github.com/frizinak/zug/img"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -28,7 +31,10 @@ const (
 	VisibleDefault = VisibleStatus | VisibleUsers | VisibleBrowser | VisibleSeek | VisibleInput
 )
 
-var linkRE = regexp.MustCompile(`https?://[^\s]+`)
+var (
+	linkRE  = regexp.MustCompile(`https?://[^\s]+`)
+	imageRE = regexp.MustCompile(`(?i)https?://[^\s]+?\.(jpe?g|gif|png)`)
+)
 
 type user struct {
 	name   string
@@ -60,6 +66,12 @@ type TermUI struct {
 	flashExpiry time.Time
 
 	latency *time.Duration
+
+	z          *zug.Zug
+	zLayers    []*zug.Layer
+	images     []string
+	imagePos   []int
+	imageCount int
 
 	sem sync.Mutex
 
@@ -111,6 +123,7 @@ type msg struct {
 }
 
 func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visible) *TermUI {
+	imageCount := 5
 	return &TermUI{
 		metaPrefix:  metaPrefix,
 		indent:      indent,
@@ -119,6 +132,9 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visi
 		maxMessages: maxMessages,
 		disabled:    true,
 		links:       make([]*url.URL, 0),
+		imageCount:  imageCount,
+		images:      make([]string, imageCount),
+		imagePos:    make([]int, imageCount),
 		cursorHide:  visible&VisibleInput == 0,
 		cache:       &cache{invalid: true},
 	}
@@ -126,7 +142,24 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visi
 
 func (ui *TermUI) Start() {
 	ui.disabled = false
-	ui.Flush()
+	defer ui.Flush()
+
+	uzug := cli.New(cli.Config{
+		UeberzugBinary: "ueberzug",
+		OnError: func(err error) {
+			ui.Flash(err.Error(), time.Second)
+		},
+	})
+
+	if err := uzug.Init(); err != nil {
+		ui.Flash(err.Error(), time.Second*5)
+		return
+	}
+
+	ui.z = zug.New(img.DefaultManager, uzug)
+	for i := 0; i < ui.imageCount; i++ {
+		ui.zLayers = append(ui.zLayers, ui.z.Layer(strconv.Itoa(i)))
+	}
 }
 
 func (ui *TermUI) Users(users []string) {
@@ -609,18 +642,40 @@ func (ui *TermUI) Flush() {
 		nmsgs = 0
 	}
 
-	logs := ui.cache.log
+	slogs := ui.cache.log
 	scrollMsg := -1
 	var searchMatches uint16
 
-	if logs == nil || ui.jumpToActive || ui.jumpToQueryUpdate || ui.cache.Update(w, h) {
-		logs = ui.logs(w, &scrollMsg, &searchMatches)
-		ui.cache.log = logs
+	if slogs == nil || ui.jumpToActive || ui.jumpToQueryUpdate || ui.cache.Update(w, h) {
+		slogs = ui.logs(w, &scrollMsg, &searchMatches)
+		ui.cache.log = slogs
 	}
 
 	ui.jumpToQueryUpdate = false
 	if searchMatches > 0 && scrollMsg < 0 {
 		ui.jumpToQueryCount = 0
+	}
+
+	logs := slogs
+
+	imageHeight := 25
+	if imageHeight > h/2 {
+		imageHeight = h / 2
+	}
+	imageWidth := rw - ui.metaWidth - 4 - 1
+	if ui.z != nil {
+		logs = make([]string, len(slogs))
+		copy(logs, slogs)
+
+		for i := 1; i < len(logs); i++ {
+			if imageRE.MatchString(logs[i-1]) {
+				logs = append(logs[:i+imageHeight], logs[i:]...)
+				for j := i; j < i+imageHeight; j++ {
+					logs[j] = ""
+				}
+				i += imageHeight
+			}
+		}
 	}
 
 	if scrollMsg >= 0 {
@@ -640,6 +695,56 @@ func (ui *TermUI) Flush() {
 		till = len(logs)
 	}
 	logs = logs[offset:till]
+
+	if ui.z != nil {
+		imageC := 0
+		imageCh := false
+		minDist := imageHeight
+		if ui.visible&VisibleInput != 0 {
+			//minDist += 2
+		}
+
+		for i := len(logs) - minDist; i >= 0 && imageC < ui.imageCount; i-- {
+			match := imageRE.FindString(logs[i])
+			if match == "" {
+				continue
+			}
+
+			imageCh = imageCh || ui.imagePos[imageC] != i || ui.images[imageC] != match
+			ui.images[imageC] = match
+			ui.imagePos[imageC] = i
+			imageC++
+		}
+
+		for i, l := range ui.zLayers {
+			if i >= imageC {
+				l.Hide()
+				continue
+			}
+			l.Show()
+		}
+
+		for i := 0; i < imageC; i++ {
+			img := ui.images[i]
+			l := ui.zLayers[i]
+			l.SetSource(img)
+			l.Width, l.Height = imageWidth, imageHeight-1
+			l.X = ui.metaWidth + 4
+			l.Y = ui.imagePos[i] + 1
+			if ui.visible&VisibleStatus != 0 {
+				l.Y++
+			}
+			if ui.visible&VisibleUsers != 0 {
+				l.Y++
+			}
+
+			if imageCh {
+				l.QueueDraw()
+			}
+		}
+
+		_ = ui.z.Render()
+	}
 
 	lat := "?ms"
 	if ui.latency != nil {
