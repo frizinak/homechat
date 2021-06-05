@@ -15,7 +15,7 @@ random list of features:
 - [wttr.in](http://wttr.in/)
 - hue lights control using [amimof/huego](https://github.com/amimof/huego) and simple wrapper [frizinak/hue](https://github.com/frizinak/hue)
 - homechat musicnode [-low-latency]: run a replicated music player in sync with the server
-- inline images using ueberzug (ueberzug branch) (X11 only)
+- inline images using ueberzug (X11 only)
 
 non features:
 

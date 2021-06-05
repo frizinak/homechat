@@ -28,7 +28,10 @@ const (
 	VisibleDefault = VisibleStatus | VisibleUsers | VisibleBrowser | VisibleSeek | VisibleInput
 )
 
-var linkRE = regexp.MustCompile(`https?://[^\s]+`)
+var (
+	linkRE  = regexp.MustCompile(`https?://[^\s]+`)
+	imageRE = regexp.MustCompile(`(?i)https?://[^\s]+?\.(jpe?g|gif|png|webp)`)
+)
 
 type user struct {
 	name   string
@@ -55,11 +58,19 @@ type TermUI struct {
 	indent     int
 	scrollTop  bool
 
+	ueberzugBin string
+
 	status      string
 	flash       string
 	flashExpiry time.Time
 
 	latency *time.Duration
+
+	z          Zug
+	zLayers    []Layer
+	images     []string
+	imagePos   []int
+	imageCount int
 
 	sem sync.Mutex
 
@@ -110,7 +121,15 @@ type msg struct {
 	mwidth    int
 }
 
-func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visible) *TermUI {
+func Term(
+	metaPrefix bool,
+	maxMessages,
+	indent int,
+	scrollTop bool,
+	visible Visible,
+	ueberzugBin string,
+) *TermUI {
+	imageCount := 5
 	return &TermUI{
 		metaPrefix:  metaPrefix,
 		indent:      indent,
@@ -119,14 +138,24 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visi
 		maxMessages: maxMessages,
 		disabled:    true,
 		links:       make([]*url.URL, 0),
+		imageCount:  imageCount,
+		images:      make([]string, imageCount),
+		imagePos:    make([]int, imageCount),
 		cursorHide:  visible&VisibleInput == 0,
 		cache:       &cache{invalid: true},
+		ueberzugBin: ueberzugBin,
 	}
 }
 
 func (ui *TermUI) Start() {
 	ui.disabled = false
-	ui.Flush()
+	defer ui.Flush()
+
+	ui.z = ui.newZug(ui.ueberzugBin)
+	for i := 0; i < ui.imageCount; i++ {
+		l := ui.z.Layer(strconv.Itoa(i))
+		ui.zLayers = append(ui.zLayers, l)
+	}
 }
 
 func (ui *TermUI) Users(users []string) {
@@ -609,18 +638,62 @@ func (ui *TermUI) Flush() {
 		nmsgs = 0
 	}
 
-	logs := ui.cache.log
+	slogs := ui.cache.log
 	scrollMsg := -1
 	var searchMatches uint16
 
-	if logs == nil || ui.jumpToActive || ui.jumpToQueryUpdate || ui.cache.Update(w, h) {
-		logs = ui.logs(w, &scrollMsg, &searchMatches)
-		ui.cache.log = logs
+	if slogs == nil || ui.jumpToActive || ui.jumpToQueryUpdate || ui.cache.Update(w, h) {
+		slogs = ui.logs(w, &scrollMsg, &searchMatches)
+		ui.cache.log = slogs
 	}
 
 	ui.jumpToQueryUpdate = false
 	if searchMatches > 0 && scrollMsg < 0 {
 		ui.jumpToQueryCount = 0
+	}
+
+	logs := slogs
+
+	imageHeight := 25
+	if imageHeight > h/3 {
+		imageHeight = h/3 - 1
+	}
+
+	imageWidth := rw - ui.metaWidth - 4 - 1
+	if !ui.z.IsNOOP() {
+		metaPrefix := ""
+		if ui.metaWidth != 0 {
+			between := string(chrMetaSplit.v)
+			meta := pad("", " ", ui.metaWidth+1, 0)
+			metaPrefix = meta + between
+		}
+		logs = make([]string, len(slogs))
+		copy(logs, slogs)
+		currentImageHeight := imageHeight
+
+		for i := len(logs) - 1; i >= 0 && i < len(logs); i-- {
+			match := imageRE.FindString(logs[i])
+			if match == "" {
+				continue
+			}
+			till := i + 1 + currentImageHeight + 1
+			diff := 0
+			if till > len(logs) {
+				diff = till - len(logs)
+				till = len(logs)
+			}
+			dst := logs[:till]
+			extend := make([]string, diff)
+			for i := range extend {
+				extend[i] = metaPrefix
+			}
+			dst = append(dst, extend...)
+			src := logs[i+1:]
+			logs = append(dst, src...)
+			for j := i + 1; j < till; j++ {
+				logs[j] = metaPrefix
+			}
+		}
 	}
 
 	if scrollMsg >= 0 {
@@ -640,6 +713,53 @@ func (ui *TermUI) Flush() {
 		till = len(logs)
 	}
 	logs = logs[offset:till]
+
+	if !ui.z.IsNOOP() {
+		imageC := 0
+		imageCh := false
+		minDist := imageHeight + 2
+		for i := len(logs) - minDist; i >= 0 && i < len(logs) && imageC < ui.imageCount; i-- {
+			match := imageRE.FindString(logs[i])
+			if match == "" {
+				continue
+			}
+
+			imageCh = imageCh || ui.imagePos[imageC] != i || ui.images[imageC] != match
+			ui.images[imageC] = match
+			ui.imagePos[imageC] = i
+			imageC++
+		}
+
+		for i, l := range ui.zLayers {
+			if i >= imageC {
+				l.Hide()
+				continue
+			}
+			l.Show()
+		}
+
+		for i := 0; i < imageC; i++ {
+			img := ui.images[i]
+			l := ui.zLayers[i]
+			l.SetSource(img)
+			width, height := imageWidth, imageHeight
+			x := ui.metaWidth + 4
+			y := ui.imagePos[i] + 1
+			if ui.visible&VisibleStatus != 0 {
+				y++
+			}
+			if ui.visible&VisibleUsers != 0 {
+				y++
+			}
+
+			l.Set(x, y, width, height)
+			if imageCh {
+				l.QueueDraw()
+			}
+		}
+
+		_ = ui.z.Render()
+	}
 
 	lat := "?ms"
 	if ui.latency != nil {

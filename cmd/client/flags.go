@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -627,6 +628,12 @@ func (f *Flags) Parse() error {
 }
 
 func (f *Flags) validateAppConf() error {
+	ueberzug := ""
+	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
+		ueberzug = "ueberzug"
+	}
+	f.AppConf.UeberzugBinary = ueberzug
+
 	if err := f.AppConf.Decode(f.All.ConfigFile); err != nil {
 		if os.IsNotExist(err) {
 			if err := f.AppConf.Encode(f.All.ConfigFile); err != nil {
