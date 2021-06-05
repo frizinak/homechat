@@ -1026,7 +1026,6 @@ func (ui *TermUI) ResetInput() []byte {
 	copy(d, ui.input)
 	ui.input = ui.input[0:0]
 	ui.setcursor(0)
-	ui.metaWidth = 0
 	ui.sem.Unlock()
 	ui.Flush()
 	return d
