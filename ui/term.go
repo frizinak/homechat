@@ -33,7 +33,7 @@ const (
 
 var (
 	linkRE  = regexp.MustCompile(`https?://[^\s]+`)
-	imageRE = regexp.MustCompile(`(?i)https?://[^\s]+?\.(jpe?g|gif|png)`)
+	imageRE = regexp.MustCompile(`(?i)https?://[^\s]+?\.(jpe?g|gif|png|webp)`)
 )
 
 type user struct {
@@ -158,7 +158,8 @@ func (ui *TermUI) Start() {
 
 	ui.z = zug.New(img.DefaultManager, uzug)
 	for i := 0; i < ui.imageCount; i++ {
-		ui.zLayers = append(ui.zLayers, ui.z.Layer(strconv.Itoa(i)))
+		l := ui.z.Layer(strconv.Itoa(i))
+		ui.zLayers = append(ui.zLayers, l)
 	}
 }
 
@@ -667,10 +668,19 @@ func (ui *TermUI) Flush() {
 		logs = make([]string, len(slogs))
 		copy(logs, slogs)
 
-		for i := 1; i < len(logs); i++ {
-			if imageRE.MatchString(logs[i-1]) {
-				logs = append(logs[:i+imageHeight], logs[i:]...)
-				for j := i; j < i+imageHeight; j++ {
+		for i := 0; i < len(logs); i++ {
+			if imageRE.MatchString(logs[i]) {
+				till := i + 1 + imageHeight
+				diff := 0
+				if till > len(logs) {
+					diff = till - len(logs)
+					till = len(logs)
+				}
+				dst := logs[:till]
+				dst = append(dst, make([]string, diff)...)
+				src := logs[i+1:]
+				logs = append(dst, src...)
+				for j := i + 1; j < till; j++ {
 					logs[j] = ""
 				}
 				i += imageHeight
