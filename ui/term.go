@@ -709,12 +709,11 @@ func (ui *TermUI) Flush() {
 	if ui.z != nil {
 		imageC := 0
 		imageCh := false
-		minDist := imageHeight
-		if ui.visible&VisibleInput != 0 {
-			//minDist += 2
-		}
-
+		minDist := imageHeight + 1
 		for i := len(logs) - minDist; i >= 0 && imageC < ui.imageCount; i-- {
+			if i >= len(logs) {
+				continue
+			}
 			match := imageRE.FindString(logs[i])
 			if match == "" {
 				continue
