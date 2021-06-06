@@ -665,6 +665,12 @@ func (ui *TermUI) Flush() {
 	}
 	imageWidth := rw - ui.metaWidth - 4 - 1
 	if ui.z != nil {
+		metaPrefix := ""
+		if ui.metaWidth != 0 {
+			between := string(chrMetaSplit.v)
+			meta := pad("", " ", ui.metaWidth+1, 0)
+			metaPrefix = meta + between
+		}
 		logs = make([]string, len(slogs))
 		copy(logs, slogs)
 
@@ -677,11 +683,15 @@ func (ui *TermUI) Flush() {
 					till = len(logs)
 				}
 				dst := logs[:till]
-				dst = append(dst, make([]string, diff)...)
+				extend := make([]string, diff)
+				for i := range extend {
+					extend[i] = metaPrefix
+				}
+				dst = append(dst, extend...)
 				src := logs[i+1:]
 				logs = append(dst, src...)
 				for j := i + 1; j < till; j++ {
-					logs[j] = ""
+					logs[j] = metaPrefix
 				}
 				i += imageHeight
 			}
