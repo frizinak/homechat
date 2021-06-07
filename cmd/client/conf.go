@@ -24,6 +24,7 @@ type Config struct {
 	MusicDownloads    string
 	MusicSocketFile   string
 	OpenURLCommand    string
+	UeberzugBinary    string
 
 	resave bool
 }
@@ -56,6 +57,9 @@ func (c *Config) Help() []string {
 		"",
 		"OpenURLCommand:   command to run to open urls (%u will be replaced with the url)",
 		"                  leave empty to use system defaults",
+		"UeberzugBinary:   path to your ueberzug binary",
+		"                  leave empty to disable rendering images with ueberzug",
+		"                  only works if you run X11",
 	}
 }
 
@@ -82,6 +86,7 @@ func (c *Config) Decode(file string) error {
 		"MusicDownloads":    &c.MusicDownloads,
 		"MusicSocketFile":   &c.MusicSocketFile,
 		"OpenURLCommand":    &c.OpenURLCommand,
+		"UeberzugBinary":    &c.UeberzugBinary,
 	}
 
 	for k, field := range m {
@@ -154,6 +159,10 @@ func (c *Config) Merge(def *Config) bool {
 	if c.MusicSocketFile == "" && def.MusicSocketFile != "" {
 		resave = true
 		c.MusicSocketFile = def.MusicSocketFile
+	}
+	if c.UeberzugBinary == "" && def.UeberzugBinary != "" {
+		resave = true
+		c.UeberzugBinary = def.UeberzugBinary
 	}
 
 	return resave

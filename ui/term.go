@@ -13,9 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/containerd/console"
-	"github.com/frizinak/zug"
-	"github.com/frizinak/zug/cli"
-	"github.com/frizinak/zug/img"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -61,14 +58,16 @@ type TermUI struct {
 	indent     int
 	scrollTop  bool
 
+	ueberzugBin string
+
 	status      string
 	flash       string
 	flashExpiry time.Time
 
 	latency *time.Duration
 
-	z          *zug.Zug
-	zLayers    []*zug.Layer
+	z          Zug
+	zLayers    []Layer
 	images     []string
 	imagePos   []int
 	imageCount int
@@ -122,7 +121,14 @@ type msg struct {
 	mwidth    int
 }
 
-func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visible) *TermUI {
+func Term(
+	metaPrefix bool,
+	maxMessages,
+	indent int,
+	scrollTop bool,
+	visible Visible,
+	ueberzugBin string,
+) *TermUI {
 	imageCount := 5
 	return &TermUI{
 		metaPrefix:  metaPrefix,
@@ -137,6 +143,7 @@ func Term(metaPrefix bool, maxMessages, indent int, scrollTop bool, visible Visi
 		imagePos:    make([]int, imageCount),
 		cursorHide:  visible&VisibleInput == 0,
 		cache:       &cache{invalid: true},
+		ueberzugBin: ueberzugBin,
 	}
 }
 
@@ -144,19 +151,7 @@ func (ui *TermUI) Start() {
 	ui.disabled = false
 	defer ui.Flush()
 
-	uzug := cli.New(cli.Config{
-		UeberzugBinary: "ueberzug",
-		OnError: func(err error) {
-			ui.Flash(err.Error(), time.Second)
-		},
-	})
-
-	if err := uzug.Init(); err != nil {
-		ui.Flash(err.Error(), time.Second*5)
-		return
-	}
-
-	ui.z = zug.New(img.DefaultManager, uzug)
+	ui.z = ui.newZug(ui.ueberzugBin)
 	for i := 0; i < ui.imageCount; i++ {
 		l := ui.z.Layer(strconv.Itoa(i))
 		ui.zLayers = append(ui.zLayers, l)
@@ -660,11 +655,12 @@ func (ui *TermUI) Flush() {
 	logs := slogs
 
 	imageHeight := 25
-	if imageHeight > h/2 {
-		imageHeight = h / 2
+	if imageHeight > h/3 {
+		imageHeight = h/3 - 1
 	}
+
 	imageWidth := rw - ui.metaWidth - 4 - 1
-	if ui.z != nil {
+	if !ui.z.IsNOOP() {
 		metaPrefix := ""
 		if ui.metaWidth != 0 {
 			between := string(chrMetaSplit.v)
@@ -673,27 +669,29 @@ func (ui *TermUI) Flush() {
 		}
 		logs = make([]string, len(slogs))
 		copy(logs, slogs)
+		currentImageHeight := imageHeight
 
-		for i := 0; i < len(logs); i++ {
-			if imageRE.MatchString(logs[i]) {
-				till := i + 1 + imageHeight
-				diff := 0
-				if till > len(logs) {
-					diff = till - len(logs)
-					till = len(logs)
-				}
-				dst := logs[:till]
-				extend := make([]string, diff)
-				for i := range extend {
-					extend[i] = metaPrefix
-				}
-				dst = append(dst, extend...)
-				src := logs[i+1:]
-				logs = append(dst, src...)
-				for j := i + 1; j < till; j++ {
-					logs[j] = metaPrefix
-				}
-				i += imageHeight
+		for i := len(logs) - 1; i >= 0 && i < len(logs); i-- {
+			match := imageRE.FindString(logs[i])
+			if match == "" {
+				continue
+			}
+			till := i + 1 + currentImageHeight + 1
+			diff := 0
+			if till > len(logs) {
+				diff = till - len(logs)
+				till = len(logs)
+			}
+			dst := logs[:till]
+			extend := make([]string, diff)
+			for i := range extend {
+				extend[i] = metaPrefix
+			}
+			dst = append(dst, extend...)
+			src := logs[i+1:]
+			logs = append(dst, src...)
+			for j := i + 1; j < till; j++ {
+				logs[j] = metaPrefix
 			}
 		}
 	}
@@ -716,14 +714,11 @@ func (ui *TermUI) Flush() {
 	}
 	logs = logs[offset:till]
 
-	if ui.z != nil {
+	if !ui.z.IsNOOP() {
 		imageC := 0
 		imageCh := false
-		minDist := imageHeight + 1
-		for i := len(logs) - minDist; i >= 0 && imageC < ui.imageCount; i-- {
-			if i >= len(logs) {
-				continue
-			}
+		minDist := imageHeight + 2
+		for i := len(logs) - minDist; i >= 0 && i < len(logs) && imageC < ui.imageCount; i-- {
 			match := imageRE.FindString(logs[i])
 			if match == "" {
 				continue
@@ -747,16 +742,17 @@ func (ui *TermUI) Flush() {
 			img := ui.images[i]
 			l := ui.zLayers[i]
 			l.SetSource(img)
-			l.Width, l.Height = imageWidth, imageHeight-1
-			l.X = ui.metaWidth + 4
-			l.Y = ui.imagePos[i] + 1
+			width, height := imageWidth, imageHeight
+			x := ui.metaWidth + 4
+			y := ui.imagePos[i] + 1
 			if ui.visible&VisibleStatus != 0 {
-				l.Y++
+				y++
 			}
 			if ui.visible&VisibleUsers != 0 {
-				l.Y++
+				y++
 			}
 
+			l.Set(x, y, width, height)
 			if imageCh {
 				l.QueueDraw()
 			}

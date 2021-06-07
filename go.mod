@@ -10,7 +10,7 @@ require (
 	github.com/frizinak/gotls v0.2.0
 	github.com/frizinak/hue v0.1.0
 	github.com/frizinak/libym v0.9.5
-	github.com/frizinak/zug v0.1.2
+	github.com/frizinak/zug v0.1.3
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/mattn/go-runewidth v0.0.13
