@@ -74,6 +74,9 @@ type Flags struct {
 	}
 	Chat struct {
 		NotifyCommand []string
+		Zug           bool
+		ForceZug      bool
+		ForceNoZug    bool
 	}
 	Upload struct {
 		Msg string
@@ -214,6 +217,20 @@ func (f *Flags) Flags() {
 
 	f.flags.Add("chat").Define(func(fl *flag.FlagSet) flags.HelpCB {
 		hides(fl, false)
+
+		fl.BoolVar(
+			&f.Chat.ForceNoZug,
+			"no-zug",
+			false,
+			"force zug off, see `homechat config`",
+		)
+
+		fl.BoolVar(
+			&f.Chat.ForceZug,
+			"zug",
+			false,
+			"force zug on, see `homechat config`",
+		)
 
 		fl.BoolVar(
 			&f.All.Linemode,
@@ -434,6 +451,8 @@ func (f *Flags) Parse() error {
 	if f.All.ConfigDir == "" {
 		return errors.New("please specify a config directory")
 	}
+
+	f.Chat.Zug = (f.Chat.ForceZug || f.AppConf.Zug) && !f.Chat.ForceNoZug
 
 	f.All.ConfigFile = filepath.Join(f.All.ConfigDir, "client.json")
 	f.All.KeymapFile = filepath.Join(f.All.ConfigDir, "keymap.json")

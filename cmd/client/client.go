@@ -560,7 +560,7 @@ func main() {
 		1,
 		f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicNode || f.All.Mode == ModeMusicClient,
 		f.All.UIVisible,
-		f.AppConf.Zug,
+		f.Chat.Zug && f.All.Mode == ModeDefault,
 	)
 
 	onExits = append(onExits, func() {
