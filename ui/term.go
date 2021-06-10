@@ -691,14 +691,13 @@ func (ui *TermUI) Flush() {
 		}
 		logs = make([]string, len(slogs))
 		copy(logs, slogs)
-		currentImageHeight := imageHeight
 
 		for i := len(logs) - 1; i >= 0 && i < len(logs); i-- {
 			match := imageRE.FindString(logs[i])
 			if match == "" {
 				continue
 			}
-			till := i + 1 + currentImageHeight + 1
+			till := i + 1 + imageHeight + 1
 			diff := 0
 			if till > len(logs) {
 				diff = till - len(logs)
@@ -779,9 +778,9 @@ func (ui *TermUI) Flush() {
 				if ctx.Err() != nil {
 					return
 				}
-				width, height := imageWidth, imageHeight
+				width, height := imageWidth, imageHeight-1
 				x := ui.metaWidth + 4
-				y := ui.imagePos[i] + 1
+				y := ui.imagePos[i] + 2
 				if ui.visible&VisibleStatus != 0 {
 					y++
 				}
