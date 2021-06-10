@@ -2,12 +2,20 @@ package ui
 
 import (
 	"image"
-	"time"
 
 	"github.com/frizinak/zug"
-	"github.com/frizinak/zug/cli"
 	"github.com/frizinak/zug/img"
+	"github.com/frizinak/zug/x"
 )
+
+type ZugDimensions struct {
+	W, H int
+}
+
+type ZugGeometry struct {
+	Image  ZugDimensions
+	Window ZugDimensions
+}
 
 type Zug interface {
 	IsNOOP() bool
@@ -19,9 +27,9 @@ type Layer interface {
 	Hide()
 	Show()
 	SetSource(string) error
-	Set(x, y, width, height int)
-	QueueDraw()
-	Geometry(image.Point) (image.Rectangle, error)
+	Render()
+	SetGeometryTerminal(image.Rectangle) error
+	GeometryTerminal() (ZugGeometry, error)
 }
 
 type zugWrap struct {
@@ -33,24 +41,17 @@ type layerWrap struct {
 	*zug.Layer
 }
 
-func (ui *TermUI) newZug(bin string) Zug {
-	if bin == "" {
+func (ui *TermUI) newZug(noop bool) Zug {
+	if noop {
 		return &zugWrap{noop: true}
 	}
 
-	uzug := cli.New(cli.Config{
-		UeberzugBinary: bin,
-		OnError: func(err error) {
-			ui.Flash(err.Error(), time.Second*5)
-		},
-	})
-
-	if err := uzug.Init(); err != nil {
-		ui.Flash(err.Error(), time.Second*5)
+	term, err := x.NewFromEnv()
+	if err != nil {
 		return &zugWrap{noop: true}
 	}
 
-	return &zugWrap{noop: false, Zug: zug.New(img.DefaultManager, uzug)}
+	return &zugWrap{noop: false, Zug: zug.New(img.DefaultManager, term)}
 }
 
 func (z *zugWrap) IsNOOP() bool { return z.noop }
@@ -63,6 +64,12 @@ func (z *zugWrap) Layer(name string) Layer {
 	return &layerWrap{l}
 }
 
-func (l *layerWrap) Set(x, y, w, h int) {
-	l.X, l.Y, l.Width, l.Height = x, y, w, h
+func (l *layerWrap) GeometryTerminal() (ZugGeometry, error) {
+	geom, err := l.Layer.GeometryTerminal()
+	g := ZugGeometry{
+		Image:  ZugDimensions{W: geom.Image.W, H: geom.Image.H},
+		Window: ZugDimensions{W: geom.Window.W, H: geom.Image.H},
+	}
+
+	return g, err
 }

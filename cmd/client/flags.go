@@ -628,11 +628,11 @@ func (f *Flags) Parse() error {
 }
 
 func (f *Flags) validateAppConf() error {
-	ueberzug := ""
+	zug := false
 	if runtime.GOOS == "linux" && runtime.GOARCH == "amd64" {
-		ueberzug = "ueberzug"
+		zug = true
 	}
-	f.AppConf.UeberzugBinary = ueberzug
+	f.AppConf.Zug = zug
 
 	if err := f.AppConf.Decode(f.All.ConfigFile); err != nil {
 		if os.IsNotExist(err) {

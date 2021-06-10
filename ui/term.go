@@ -1,7 +1,9 @@
 package ui
 
 import (
+	"context"
 	"fmt"
+	"image"
 	"math"
 	"net/url"
 	"os"
@@ -58,7 +60,7 @@ type TermUI struct {
 	indent     int
 	scrollTop  bool
 
-	ueberzugBin string
+	zug bool
 
 	status      string
 	flash       string
@@ -99,6 +101,9 @@ type TermUI struct {
 
 	s State
 
+	renderCtx context.Context
+	renderCcl context.CancelFunc
+
 	disabled bool
 }
 
@@ -127,7 +132,7 @@ func Term(
 	indent int,
 	scrollTop bool,
 	visible Visible,
-	ueberzugBin string,
+	zug bool,
 ) *TermUI {
 	imageCount := 5
 	return &TermUI{
@@ -143,7 +148,7 @@ func Term(
 		imagePos:    make([]int, imageCount),
 		cursorHide:  visible&VisibleInput == 0,
 		cache:       &cache{invalid: true},
-		ueberzugBin: ueberzugBin,
+		zug:         zug,
 	}
 }
 
@@ -151,11 +156,23 @@ func (ui *TermUI) Start() {
 	ui.disabled = false
 	defer ui.Flush()
 
-	ui.z = ui.newZug(ui.ueberzugBin)
+	ui.z = ui.newZug(!ui.zug)
 	for i := 0; i < ui.imageCount; i++ {
 		l := ui.z.Layer(strconv.Itoa(i))
 		ui.zLayers = append(ui.zLayers, l)
 	}
+
+	go func() {
+		if ui.z.IsNOOP() {
+			return
+		}
+		for {
+			if err := ui.z.Render(); err != nil {
+				ui.Flash(err.Error(), time.Second*5)
+			}
+			time.Sleep(time.Millisecond * 50)
+		}
+	}()
 }
 
 func (ui *TermUI) Users(users []string) {
@@ -592,6 +609,11 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 }
 
 func (ui *TermUI) Flush() {
+	if ui.renderCcl != nil {
+		ui.renderCcl()
+	}
+	ui.renderCtx, ui.renderCcl = context.WithCancel(context.Background())
+
 	if ui.disabled {
 		return
 	}
@@ -696,7 +718,9 @@ func (ui *TermUI) Flush() {
 		}
 	}
 
+	scrolling := false
 	if scrollMsg >= 0 {
+		scrolling = true
 		ui.scroll = len(logs) - scrollMsg - h/2 + 1
 		if ui.scroll < 0 {
 			ui.scroll = 0
@@ -716,8 +740,8 @@ func (ui *TermUI) Flush() {
 
 	if !ui.z.IsNOOP() {
 		imageC := 0
-		imageCh := false
 		minDist := imageHeight + 2
+		imageCh := false
 		for i := len(logs) - minDist; i >= 0 && i < len(logs) && imageC < ui.imageCount; i-- {
 			match := imageRE.FindString(logs[i])
 			if match == "" {
@@ -738,27 +762,42 @@ func (ui *TermUI) Flush() {
 			l.Show()
 		}
 
-		for i := 0; i < imageC; i++ {
-			img := ui.images[i]
-			l := ui.zLayers[i]
-			l.SetSource(img)
-			width, height := imageWidth, imageHeight
-			x := ui.metaWidth + 4
-			y := ui.imagePos[i] + 1
-			if ui.visible&VisibleStatus != 0 {
-				y++
+		ctx := ui.renderCtx
+		go func() {
+			if scrolling {
+				return
 			}
-			if ui.visible&VisibleUsers != 0 {
-				y++
-			}
+			for i := 0; i < imageC; i++ {
+				if ctx.Err() != nil {
+					return
+				}
+				img := ui.images[i]
+				l := ui.zLayers[i]
+				if l.SetSource(img) != nil {
+					continue
+				}
+				if ctx.Err() != nil {
+					return
+				}
+				width, height := imageWidth, imageHeight
+				x := ui.metaWidth + 4
+				y := ui.imagePos[i] + 1
+				if ui.visible&VisibleStatus != 0 {
+					y++
+				}
+				if ui.visible&VisibleUsers != 0 {
+					y++
+				}
 
-			l.Set(x, y, width, height)
-			if imageCh {
-				l.QueueDraw()
+				err := l.SetGeometryTerminal(image.Rect(x, y, x+width, y+height))
+				if err != nil {
+					ui.Flash(err.Error(), time.Second*5)
+				}
+				if imageCh {
+					l.Render()
+				}
 			}
-		}
-
-		_ = ui.z.Render()
+		}()
 	}
 
 	lat := "?ms"
