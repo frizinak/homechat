@@ -452,8 +452,6 @@ func (f *Flags) Parse() error {
 		return errors.New("please specify a config directory")
 	}
 
-	f.Chat.Zug = (f.Chat.ForceZug || f.AppConf.Zug) && !f.Chat.ForceNoZug
-
 	f.All.ConfigFile = filepath.Join(f.All.ConfigDir, "client.json")
 	f.All.KeymapFile = filepath.Join(f.All.ConfigDir, "keymap.json")
 	if len(trail) == 1 && trail[len(trail)-1] == "config" {
@@ -492,6 +490,8 @@ func (f *Flags) Parse() error {
 	if f.ClientConf.Name == "" {
 		return fmt.Errorf("please specify your desired username in %s", f.All.ConfigFile)
 	}
+
+	f.Chat.Zug = (f.Chat.ForceZug || f.AppConf.Zug) && !f.Chat.ForceNoZug
 
 	notify, err := shlex.Split(*f.AppConf.NotifyCommand)
 	if err != nil {
