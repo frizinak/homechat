@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/containerd/console"
+	"github.com/frizinak/zug"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -68,10 +69,8 @@ type TermUI struct {
 
 	latency *time.Duration
 
-	z          Zug
-	zLayers    []Layer
-	images     []string
-	imagePos   []int
+	z          *Zug
+	zLayers    []*zug.Layer
 	imageCount int
 
 	sem sync.Mutex
@@ -134,7 +133,6 @@ func Term(
 	visible Visible,
 	zug bool,
 ) *TermUI {
-	imageCount := 5
 	return &TermUI{
 		metaPrefix:  metaPrefix,
 		indent:      indent,
@@ -143,9 +141,7 @@ func Term(
 		maxMessages: maxMessages,
 		disabled:    true,
 		links:       make([]*url.URL, 0),
-		imageCount:  imageCount,
-		images:      make([]string, imageCount),
-		imagePos:    make([]int, imageCount),
+		imageCount:  5,
 		cursorHide:  visible&VisibleInput == 0,
 		cache:       &cache{invalid: true},
 		zug:         zug,
@@ -157,10 +153,6 @@ func (ui *TermUI) Start() {
 	defer ui.Flush()
 
 	ui.z = ui.newZug(!ui.zug)
-	for i := 0; i < ui.imageCount; i++ {
-		l := ui.z.Layer(strconv.Itoa(i))
-		ui.zLayers = append(ui.zLayers, l)
-	}
 
 	go func() {
 		if ui.z.IsNOOP() {
@@ -741,24 +733,17 @@ func (ui *TermUI) Flush() {
 		imageC := 0
 		minDist := imageHeight + 2
 		imageCh := false
+		//images := make(map[string]string, ui.imageCount)
+		imagePos := make(map[string]int, ui.imageCount)
 		for i := len(logs) - minDist; i >= 0 && i < len(logs) && imageC < ui.imageCount; i-- {
 			match := imageRE.FindString(logs[i])
 			if match == "" {
 				continue
 			}
 
-			imageCh = imageCh || ui.imagePos[imageC] != i || ui.images[imageC] != match
-			ui.images[imageC] = match
-			ui.imagePos[imageC] = i
+			imageCh = imageCh || imagePos[match] != i
+			imagePos[match] = i
 			imageC++
-		}
-
-		for i, l := range ui.zLayers {
-			if i >= imageC {
-				l.Hide()
-				continue
-			}
-			l.Show()
 		}
 
 		ctx := ui.renderCtx
@@ -766,12 +751,17 @@ func (ui *TermUI) Flush() {
 			if scrolling {
 				return
 			}
-			for i := 0; i < imageC; i++ {
+			for _, img := range ui.z.Layers() {
+				if _, ok := imagePos[img]; !ok {
+					ui.z.DelLayer(img)
+				}
+			}
+			for img, pos := range imagePos {
 				if ctx.Err() != nil {
 					return
 				}
-				img := ui.images[i]
-				l := ui.zLayers[i]
+				l := ui.z.Layer(img)
+				l.Show()
 				if l.SetSource(img) != nil {
 					continue
 				}
@@ -780,7 +770,7 @@ func (ui *TermUI) Flush() {
 				}
 				width, height := imageWidth, imageHeight-1
 				x := ui.metaWidth + 4
-				y := ui.imagePos[i] + 2
+				y := pos + 2
 				if ui.visible&VisibleStatus != 0 {
 					y++
 				}
