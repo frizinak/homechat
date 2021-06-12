@@ -45,6 +45,7 @@ type cache struct {
 	invalid bool
 	w, h    int
 	log     []string
+	images  map[int]string
 }
 
 func (c *cache) Invalidate() { c.invalid = true }
@@ -487,7 +488,11 @@ func suffpref(w int, prefix, suffix, meta, between, msg string, strWidth int) st
 	return prefix + pad(meta+between+msg, " ", w, strWidth) + suffix
 }
 
-func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
+func (ui *TermUI) logs(
+	w int, imageHeight int,
+	scrollMsg *int, searchMatches *uint16,
+	images map[int]string,
+) []string {
 	logs := make([]string, 0, len(ui.log))
 	var meta string
 	var metaW int
@@ -515,6 +520,7 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 			}
 		}
 
+		maxw := w - metaW - 2
 		extra := 0
 		msgPrefix := ""
 		between := string(clrReset)
@@ -540,13 +546,27 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 			suffix = string(clrReset)
 		}
 
-		maxw := w - metaW - 2
+		var placeholder []string
+		var imageMatch string
+		if !ui.z.IsNOOP() {
+			imageMatch = imageRE.FindString(log)
+			if imageMatch != "" {
+				placeholder = make([]string, imageHeight)
+				for i := range placeholder {
+					placeholder[i] = suffpref(w, prefix, suffix, meta, between, msgPrefix, metaW+extra)
+				}
+			}
+		}
 
 		if width <= w || maxw <= 8 {
 			logs = append(
 				logs,
 				suffpref(w, prefix, suffix, meta, between, msgPrefix+log, width),
 			)
+			if imageMatch != "" {
+				images[len(logs)-1] = imageMatch
+				logs = append(logs, placeholder...)
+			}
 			continue
 		}
 
@@ -595,6 +615,11 @@ func (ui *TermUI) logs(w int, scrollMsg *int, searchMatches *uint16) []string {
 			clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:], width)
 			logs = append(logs, clean)
 		}
+
+		if imageMatch != "" {
+			images[len(logs)-1] = imageMatch
+			logs = append(logs, placeholder...)
+		}
 	}
 
 	return logs
@@ -605,6 +630,7 @@ func (ui *TermUI) Flush() {
 		ui.renderCcl()
 	}
 	ui.renderCtx, ui.renderCcl = context.WithCancel(context.Background())
+	ctx := ui.renderCtx
 
 	if ui.disabled {
 		return
@@ -653,12 +679,20 @@ func (ui *TermUI) Flush() {
 	}
 
 	slogs := ui.cache.log
+	imagePos := ui.cache.images
 	scrollMsg := -1
 	var searchMatches uint16
 
+	imageHeight := 25
+	if imageHeight > h/3 {
+		imageHeight = h/3 - 1
+	}
+
 	if slogs == nil || ui.jumpToActive || ui.jumpToQueryUpdate || ui.cache.Update(w, h) {
-		slogs = ui.logs(w, &scrollMsg, &searchMatches)
+		imagePos = make(map[int]string)
+		slogs = ui.logs(w, imageHeight+1, &scrollMsg, &searchMatches, imagePos)
 		ui.cache.log = slogs
+		ui.cache.images = imagePos
 	}
 
 	ui.jumpToQueryUpdate = false
@@ -667,47 +701,6 @@ func (ui *TermUI) Flush() {
 	}
 
 	logs := slogs
-
-	imageHeight := 25
-	if imageHeight > h/3 {
-		imageHeight = h/3 - 1
-	}
-
-	imageWidth := rw - ui.metaWidth - 4 - 1
-	if !ui.z.IsNOOP() {
-		metaPrefix := ""
-		if ui.metaWidth != 0 {
-			between := string(chrMetaSplit.v)
-			meta := pad("", " ", ui.metaWidth+1, 0)
-			metaPrefix = meta + between
-		}
-		logs = make([]string, len(slogs))
-		copy(logs, slogs)
-
-		for i := len(logs) - 1; i >= 0 && i < len(logs); i-- {
-			match := imageRE.FindString(logs[i])
-			if match == "" {
-				continue
-			}
-			till := i + 1 + imageHeight + 1
-			diff := 0
-			if till > len(logs) {
-				diff = till - len(logs)
-				till = len(logs)
-			}
-			dst := logs[:till]
-			extend := make([]string, diff)
-			for i := range extend {
-				extend[i] = metaPrefix
-			}
-			dst = append(dst, extend...)
-			src := logs[i+1:]
-			logs = append(dst, src...)
-			for j := i + 1; j < till; j++ {
-				logs[j] = metaPrefix
-			}
-		}
-	}
 
 	scrolling := false
 	if scrollMsg >= 0 {
@@ -732,31 +725,28 @@ func (ui *TermUI) Flush() {
 	if !ui.z.IsNOOP() {
 		imageC := 0
 		minDist := imageHeight + 2
-		imageCh := false
-		//images := make(map[string]string, ui.imageCount)
-		imagePos := make(map[string]int, ui.imageCount)
+		_imagePos := make(map[string]int, ui.imageCount)
 		for i := len(logs) - minDist; i >= 0 && i < len(logs) && imageC < ui.imageCount; i-- {
-			match := imageRE.FindString(logs[i])
-			if match == "" {
+			img, ok := imagePos[offset+i]
+			if !ok {
 				continue
 			}
 
-			imageCh = imageCh || imagePos[match] != i
-			imagePos[match] = i
+			_imagePos[img] = i
 			imageC++
 		}
 
-		ctx := ui.renderCtx
+		imageWidth := rw - ui.metaWidth - 4 - 1
 		go func() {
 			if scrolling {
 				return
 			}
 			for _, img := range ui.z.Layers() {
-				if _, ok := imagePos[img]; !ok {
+				if _, ok := _imagePos[img]; !ok {
 					ui.z.DelLayer(img)
 				}
 			}
-			for img, pos := range imagePos {
+			for img, pos := range _imagePos {
 				if ctx.Err() != nil {
 					return
 				}
@@ -782,9 +772,10 @@ func (ui *TermUI) Flush() {
 				if err != nil {
 					ui.Flash(err.Error(), time.Second*5)
 				}
-				if imageCh {
-					l.Render()
+				if ctx.Err() != nil {
+					return
 				}
+				l.Render()
 			}
 		}()
 	}
