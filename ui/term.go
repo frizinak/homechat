@@ -502,6 +502,22 @@ func (ui *TermUI) logs(
 		max = h
 	}
 	for i := 0; i < max; i++ {
+		if i < len(ui.log) && ui.jumpToActive && ui.log[i].highlight&HLActive != 0 {
+			ui.jumpToActive = false
+			*scrollMsg = len(logs) + 1
+		}
+
+		if i < len(ui.log) && ui.jumpToQueryUpdate {
+			ui.log[i].highlight &= ^HLTemporary
+			if ui.jumpToQuery != "" && strings.Contains(strings.ToLower(ui.log[i].msg), ui.jumpToQuery) {
+				*searchMatches++
+				if *searchMatches == ui.jumpToQueryCount {
+					*scrollMsg = len(logs) + 1
+					ui.log[i].highlight |= HLTemporary
+				}
+			}
+		}
+
 		var log msg
 		if i < len(ui.log) {
 			log = ui.log[i]
@@ -512,22 +528,6 @@ func (ui *TermUI) logs(
 		}
 		msg := log.msg
 		width := metaW + log.mwidth
-
-		if ui.jumpToActive && log.highlight&HLActive != 0 {
-			ui.jumpToActive = false
-			*scrollMsg = len(logs) + 1
-		}
-
-		if ui.jumpToQueryUpdate {
-			log.highlight &= ^HLTemporary
-			if ui.jumpToQuery != "" && strings.Contains(strings.ToLower(msg), ui.jumpToQuery) {
-				*searchMatches++
-				if *searchMatches == ui.jumpToQueryCount {
-					*scrollMsg = len(logs) + 1
-					log.highlight |= HLTemporary
-				}
-			}
-		}
 
 		maxw := w - metaW - 2
 		extra := 0
