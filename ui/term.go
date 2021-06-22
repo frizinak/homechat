@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/containerd/console"
+	"github.com/frizinak/homechat/str"
 	"github.com/frizinak/zug"
 	"github.com/mattn/go-runewidth"
 )
@@ -172,7 +173,7 @@ func (ui *TermUI) Users(users []string) {
 	ui.sem.Lock()
 
 	for i := range users {
-		users[i] = StripUnprintable(users[i])
+		users[i] = str.StripUnprintable(users[i])
 	}
 
 	nm := make(map[string]*user, len(users))
@@ -198,7 +199,7 @@ func (ui *TermUI) Users(users []string) {
 func (ui *TermUI) UserTyping(who string, is bool) {
 	ui.sem.Lock()
 	for _, u := range ui.users {
-		if u.name == StripUnprintable(who) {
+		if u.name == str.StripUnprintable(who) {
 			u.typing = is
 		}
 	}
@@ -231,12 +232,12 @@ func (ui *TermUI) Flash(msg string, dur time.Duration) {
 		dur = time.Second * 5
 	}
 	ui.flashExpiry = time.Now().Add(dur)
-	ui.flash = StripUnprintable(msg)
+	ui.flash = str.StripUnprintable(msg)
 	ui.Flush()
 }
 
-func (ui *TermUI) Log(msg string)    { ui.status = StripUnprintable(msg); ui.Flush() }
-func (ui *TermUI) ErrStr(err string) { ui.status = StripUnprintable(err); ui.Flush() }
+func (ui *TermUI) Log(msg string)    { ui.status = str.StripUnprintable(msg); ui.Flush() }
+func (ui *TermUI) ErrStr(err string) { ui.status = str.StripUnprintable(err); ui.Flush() }
 func (ui *TermUI) Err(err error)     { ui.ErrStr(err.Error()) }
 
 func (ui *TermUI) Clear() {
@@ -269,7 +270,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 	}
 	ui.sem.Lock()
 	for _, m := range msgs {
-		m.Message = StripUnprintable(m.Message)
+		m.Message = str.StripUnprintable(m.Message)
 		texts := strings.Split(strings.ReplaceAll(m.Message, "\r", ""), "\n")
 		for _, text := range texts {
 			text = linkRE.ReplaceAllStringFunc(text, func(m string) string {
@@ -283,7 +284,7 @@ func (ui *TermUI) Broadcast(msgs []Msg, scroll bool) {
 
 			msg := msg{"", text, m.Highlight, nil, 0, 0}
 			if ui.metaPrefix {
-				msg.prefix = StripUnprintable(m.Meta)
+				msg.prefix = str.StripUnprintable(m.Meta)
 				width := width(msg.prefix, -1)
 				if width > ui.metaWidth {
 					ui.metaWidth = width
@@ -329,7 +330,7 @@ func (ui *TermUI) MusicState(s State) {
 		return
 	}
 
-	s.Song = StripUnprintable(s.Song)
+	s.Song = str.StripUnprintable(s.Song)
 
 	ui.s = s
 	ui.Flush()
@@ -889,8 +890,8 @@ func (ui *TermUI) Flush() {
 		s = append(s, '\n')
 		mw := w
 
-		duration, timeParts := FormatDuration(state.Duration, 2)
-		position, _ := FormatDuration(state.Position, timeParts)
+		duration, timeParts := str.FormatDuration(state.Duration, 2)
+		position, _ := str.FormatDuration(state.Position, timeParts)
 		mw -= len(duration) + len(position) + 1 + 3
 
 		p := int(state.Pos() * float64(mw))

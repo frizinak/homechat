@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/frizinak/homechat/str"
 )
 
 type PlainUI struct {
@@ -17,11 +19,11 @@ func Plain(w io.Writer) *PlainUI {
 func (p *PlainUI) Users([]string)          {}
 func (p *PlainUI) UserTyping(string, bool) {}
 func (p *PlainUI) Latency(time.Duration)   {}
-func (p *PlainUI) Log(msg string)          { fmt.Fprintln(p.Writer, StripUnprintable(msg)) }
-func (p *PlainUI) Err(err error)           { fmt.Fprintln(p.Writer, "[err]", StripUnprintable(err.Error())) }
+func (p *PlainUI) Log(msg string)          { fmt.Fprintln(p.Writer, str.StripUnprintable(msg)) }
+func (p *PlainUI) Err(err error)           { fmt.Fprintln(p.Writer, "[err]", str.StripUnprintable(err.Error())) }
 
 func (p *PlainUI) Flash(msg string, dur time.Duration) {
-	fmt.Fprintln(p.Writer, "[notice]", StripUnprintable(msg))
+	fmt.Fprintln(p.Writer, "[notice]", str.StripUnprintable(msg))
 }
 
 func (p *PlainUI) Clear()        {}
@@ -36,8 +38,8 @@ func (p *PlainUI) broadcast(msg Msg) {
 	fmt.Fprintf(
 		p.Writer,
 		"%s: %s\n",
-		StripUnprintable(msg.Meta),
-		StripUnprintable(msg.Message),
+		str.StripUnprintable(msg.Meta),
+		str.StripUnprintable(msg.Message),
 	)
 }
 

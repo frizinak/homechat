@@ -28,6 +28,7 @@ import (
 	musicclient "github.com/frizinak/homechat/client/handler/music/client"
 	musicnode "github.com/frizinak/homechat/client/handler/music/node"
 	"github.com/frizinak/homechat/client/handler/terminal"
+	"github.com/frizinak/homechat/str"
 	"github.com/frizinak/homechat/ui"
 	"github.com/frizinak/homechat/vars"
 	"github.com/frizinak/libym/collection"
@@ -329,7 +330,7 @@ func musicInfoDownloads(f *Flags) error {
 		}
 		uniq[gid] = struct{}{}
 		if !s.Local() {
-			fmt.Printf("[%s] %s\n", gid, ui.StripUnprintable(s.Title()))
+			fmt.Printf("[%s] %s\n", gid, str.StripUnprintable(s.Title()))
 			count++
 		}
 	}
@@ -373,7 +374,7 @@ func musicInfoSongs(f *Flags) error {
 			return fmt.Errorf("song error: %s: %s: %w", gid, s.Title(), err)
 		}
 
-		title := ui.StripUnprintable(s.Title())
+		title := str.StripUnprintable(s.Title())
 		if f.MusicInfoSongs.Stat {
 			stat, err := os.Stat(path)
 			if err != nil {
@@ -929,8 +930,8 @@ func main() {
 		rcmd := make([]string, len(f.Chat.NotifyCommand))
 		copy(rcmd, f.Chat.NotifyCommand)
 		for i := range rcmd {
-			rcmd[i] = strings.ReplaceAll(rcmd[i], "%u", ui.StripUnprintable(meta))
-			rcmd[i] = strings.ReplaceAll(rcmd[i], "%m", ui.StripUnprintable(data))
+			rcmd[i] = strings.ReplaceAll(rcmd[i], "%u", str.StripUnprintable(meta))
+			rcmd[i] = strings.ReplaceAll(rcmd[i], "%m", str.StripUnprintable(data))
 		}
 
 		cmd := exec.Command(rcmd[0], rcmd[1:]...)

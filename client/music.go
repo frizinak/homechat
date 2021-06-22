@@ -8,7 +8,7 @@ import (
 
 	"github.com/frizinak/homechat/server/channel"
 	musicdata "github.com/frizinak/homechat/server/channel/music/data"
-	"github.com/frizinak/homechat/ui"
+	"github.com/frizinak/homechat/str"
 )
 
 type MusicState struct {
@@ -52,8 +52,8 @@ func (m MusicState) FromJSON(r io.Reader) (channel.Msg, io.Reader, error) {
 }
 
 func (m MusicState) Format(delimiter string) string {
-	dur, p := ui.FormatDuration(m.Duration, 3)
-	pos, _ := ui.FormatDuration(m.Position, p)
+	dur, p := str.FormatDuration(m.Duration, 3)
+	pos, _ := str.FormatDuration(m.Position, p)
 	var pct float64
 	if m.Duration > 0 {
 		pct = float64(m.Position/time.Second) /
@@ -73,7 +73,7 @@ func (m MusicState) Format(delimiter string) string {
 		m.Song.NS(),
 		m.Song.ID(),
 		delimiter,
-		ui.StripUnprintable(m.Song.Title()),
+		str.StripUnprintable(m.Song.Title()),
 		delimiter,
 		pause,
 		delimiter,
