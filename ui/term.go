@@ -489,33 +489,41 @@ func suffpref(w int, prefix, suffix, meta, between, msg string, strWidth int) st
 }
 
 func (ui *TermUI) logs(
-	w int, imageHeight int,
+	w, h int, imageHeight int,
 	scrollMsg *int, searchMatches *uint16,
 	images map[int]string,
 ) []string {
 	logs := make([]string, 0, len(ui.log))
 	var meta string
 	var metaW int
-	for i := 0; i < len(ui.log); i++ {
+	max := len(ui.log)
+	if max < h {
+		max = h
+	}
+	for i := 0; i < max; i++ {
+		var log msg
+		if i < len(ui.log) {
+			log = ui.log[i]
+		}
 		if ui.metaWidth != 0 {
 			metaW = ui.metaWidth + 1
-			meta = pad(ui.log[i].prefix, " ", metaW, ui.log[i].pwidth)
+			meta = pad(log.prefix, " ", metaW, log.pwidth)
 		}
-		log := ui.log[i].msg
-		width := metaW + ui.log[i].mwidth
+		msg := log.msg
+		width := metaW + log.mwidth
 
-		if ui.jumpToActive && ui.log[i].highlight&HLActive != 0 {
+		if ui.jumpToActive && log.highlight&HLActive != 0 {
 			ui.jumpToActive = false
 			*scrollMsg = len(logs) + 1
 		}
 
 		if ui.jumpToQueryUpdate {
-			ui.log[i].highlight &= ^HLTemporary
-			if ui.jumpToQuery != "" && strings.Contains(strings.ToLower(log), ui.jumpToQuery) {
+			log.highlight &= ^HLTemporary
+			if ui.jumpToQuery != "" && strings.Contains(strings.ToLower(msg), ui.jumpToQuery) {
 				*searchMatches++
 				if *searchMatches == ui.jumpToQueryCount {
 					*scrollMsg = len(logs) + 1
-					ui.log[i].highlight |= HLTemporary
+					log.highlight |= HLTemporary
 				}
 			}
 		}
@@ -531,9 +539,9 @@ func (ui *TermUI) logs(
 			width += extra
 		}
 		var prefix, suffix string
-		if ui.log[i].highlight > 0 {
+		if log.highlight > 0 {
 			for v := range hl {
-				if v&ui.log[i].highlight == 0 {
+				if v&log.highlight == 0 {
 					continue
 				}
 				if hl[v].which&partMeta != 0 {
@@ -549,7 +557,7 @@ func (ui *TermUI) logs(
 		var placeholder []string
 		var imageMatch string
 		if !ui.z.IsNOOP() {
-			imageMatch = imageRE.FindString(log)
+			imageMatch = imageRE.FindString(msg)
 			if imageMatch != "" {
 				placeholder = make([]string, imageHeight)
 				for i := range placeholder {
@@ -561,7 +569,7 @@ func (ui *TermUI) logs(
 		if width <= w || maxw <= 8 {
 			logs = append(
 				logs,
-				suffpref(w, prefix, suffix, meta, between, msgPrefix+log, width),
+				suffpref(w, prefix, suffix, meta, between, msgPrefix+msg, width),
 			)
 			if imageMatch != "" {
 				images[len(logs)-1] = imageMatch
@@ -575,9 +583,9 @@ func (ui *TermUI) logs(
 		lastCut, lastCutIx := 0, 0
 		ix := -1
 		byteIndex1Ago, byteIndex2Ago := 0, 0
-		for byteIndex, c := range log {
+		for byteIndex, c := range msg {
 			ix++
-			cwidth += int(ui.log[i].mwidths[ix])
+			cwidth += int(log.mwidths[ix])
 			if c == ' ' {
 				lastSpace = byteIndex
 				lastSpaceIx = ix
@@ -590,29 +598,29 @@ func (ui *TermUI) logs(
 			if cwidth >= maxw {
 				if lastSpace > lastCut {
 					width := metaW
-					width += ui.log[i].mwidths[lastCutIx:lastSpaceIx].Sum() + extra
-					clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:lastSpace], width)
+					width += log.mwidths[lastCutIx:lastSpaceIx].Sum() + extra
+					clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+msg[lastCut:lastSpace], width)
 					logs = append(logs, clean)
-					cwidth = ui.log[i].mwidths[lastSpaceIx:ix].Sum()
+					cwidth = log.mwidths[lastSpaceIx:ix].Sum()
 					lastCut = lastSpace + 1
 					lastCutIx = lastSpaceIx + 1
 					continue
 				}
 
 				width := metaW
-				width += ui.log[i].mwidths[lastCutIx:ix-2].Sum() + 1 + extra
-				clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:bi2ago]+"-", width)
+				width += log.mwidths[lastCutIx:ix-2].Sum() + 1 + extra
+				clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+msg[lastCut:bi2ago]+"-", width)
 				logs = append(logs, clean)
-				cwidth = ui.log[i].mwidths[ix-2:ix].Sum() + 1
+				cwidth = log.mwidths[ix-2:ix].Sum() + 1
 				lastCut = bi2ago
 				lastCutIx = ix - 2
 			}
 		}
 
-		if lastCut < ui.log[i].mwidth {
+		if lastCut < log.mwidth {
 			width := metaW
-			width += ui.log[i].mwidths[lastCutIx:].Sum() + extra
-			clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+log[lastCut:], width)
+			width += log.mwidths[lastCutIx:].Sum() + extra
+			clean := suffpref(w, prefix, suffix, meta, between, msgPrefix+msg[lastCut:], width)
 			logs = append(logs, clean)
 		}
 
@@ -690,7 +698,7 @@ func (ui *TermUI) Flush() {
 
 	if slogs == nil || ui.jumpToActive || ui.jumpToQueryUpdate || ui.cache.Update(w, h) {
 		imagePos = make(map[int]string)
-		slogs = ui.logs(w, imageHeight+1, &scrollMsg, &searchMatches, imagePos)
+		slogs = ui.logs(w, h, imageHeight+1, &scrollMsg, &searchMatches, imagePos)
 		ui.cache.log = slogs
 		ui.cache.images = imagePos
 	}
