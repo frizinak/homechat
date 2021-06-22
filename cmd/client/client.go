@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -36,6 +37,8 @@ import (
 )
 
 var onExits []func()
+
+const musicClientAddr = "127.0.0.1:58336"
 
 func upload(f *Flags, backend client.Backend) error {
 	args := f.CurrentFlag.Args()
@@ -178,12 +181,38 @@ func update(f *Flags, backend client.Backend) error {
 	return gerr
 }
 
+func musicClientCurrent(f *Flags) error {
+	n := f.MusicClientCurrent.N
+	neverQuit := n == 0
+
+	conn, err := net.Dial("tcp", musicClientAddr)
+	if err != nil {
+		return err
+	}
+	scan := bufio.NewScanner(conn)
+	scan.Split(bufio.ScanLines)
+
+	for scan.Scan() {
+		fmt.Println(scan.Text())
+		if neverQuit {
+			continue
+		}
+		n--
+		if n <= 0 {
+			return nil
+		}
+	}
+
+	return scan.Err()
+}
+
 func musicRemoteCurrent(f *Flags, backend client.Backend) error {
 	updates := make(chan client.MusicState, 8)
 	handler := music.NewCurrentSongHandler(handler.NoopHandler{}, updates)
 	log := ui.Plain(os.Stderr)
 	cl := client.New(backend, handler, log, f.ClientConf)
 	n := f.MusicRemoteCurrent.N
+	neverQuit := n == 0
 	first := true
 
 	errs := make(chan error, 1)
@@ -198,29 +227,14 @@ func musicRemoteCurrent(f *Flags, backend client.Backend) error {
 		case m := <-updates:
 			if first {
 				first = false
+				// current song messages are split into state and song
+				// wait until we have both.
 				continue
 			}
-			dur, p := ui.FormatDuration(m.Duration, 2)
-			pos, _ := ui.FormatDuration(m.Position, p)
-			var pct float64
-			if m.Duration > 0 {
-				pct = float64(m.Position/time.Second) /
-					float64(m.Duration/time.Second)
+			fmt.Println(m.Format("\t"))
+			if neverQuit {
+				continue
 			}
-			if pct > 1 {
-				pct = 1
-			}
-
-			fmt.Printf(
-				"%s:%s\t%s\t%s|%s\t%d\t%d\n",
-				m.Song.NS(),
-				m.Song.ID(),
-				ui.StripUnprintable(m.Song.Title()),
-				pos,
-				dur,
-				int(100*pct),
-				int(100*m.Volume),
-			)
 			n--
 			if n <= 0 {
 				cl.Close()
@@ -524,6 +538,8 @@ func main() {
 		err = upload(f, backend)
 	case ModeMusicRemoteCurrent:
 		err = musicRemoteCurrent(f, backend)
+	case ModeMusicClientCurrent:
+		err = musicClientCurrent(f)
 	case ModeMusicDownload:
 		err = musicDownload(f, backend)
 	case ModeMusicInfoFiles:
@@ -612,6 +628,11 @@ func main() {
 		}
 
 		musicClientUI = musicclient.NewUI(f.MusicClient.Offline, handler, tui, di, cl)
+		go func() {
+			if err := musicClientUI.ListenAndServe(musicClientAddr); err != nil {
+				conf.CustomError.Err(err)
+			}
+		}()
 		rhandler = musicClientUI.Handler()
 
 		onExits = append(onExits, func() {

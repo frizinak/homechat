@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 
@@ -170,6 +171,13 @@ type UI struct {
 	p       *player.Player
 	q       *collection.Queue
 	closed  bool
+
+	lsong  musicdata.ServerSongMessage
+	lstate musicdata.ServerStateMessage
+
+	connSem sync.RWMutex
+	conns   []net.Conn
+	server  net.Listener
 }
 
 func NewUI(offline bool, handler client.Handler, logger client.Logger, di *di.DI, cl *client.Client) *UI {
@@ -189,6 +197,30 @@ func NewUI(offline bool, handler client.Handler, logger client.Logger, di *di.DI
 	return &UI{UI: ui, handler: rhandler, p: p, q: q}
 }
 
+func (ui *UI) ListenAndServe(addr string) error {
+	server, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	ui.server = server
+
+	for {
+		conn, err := server.Accept()
+		if err != nil {
+			continue
+		}
+
+		ms := client.MusicState{ui.lstate, ui.lsong}
+		if _, err := fmt.Fprintln(conn, ms.Format("\t")); err != nil {
+			continue
+		}
+		ui.connSem.Lock()
+		ui.conns = append(ui.conns, conn)
+		ui.connSem.Unlock()
+	}
+
+}
+
 func (ui *UI) Flush() {
 	if ui.closed {
 		return
@@ -206,12 +238,32 @@ func (ui *UI) Flush() {
 	state.Position = ui.p.Position()
 	state.Volume = ui.p.Volume()
 
-	ui.handler.HandleMusicStateMessage(client.MusicState{state, song})
+	if ui.lstate.Equal(state) && ui.lsong.Equal(song) {
+		return
+	}
+	ui.lstate, ui.lsong = state, song
+
+	ms := client.MusicState{state, song}
+	ui.handler.HandleMusicStateMessage(ms)
+
+	ui.connSem.RLock()
+	for i := 0; i < len(ui.conns); i++ {
+		c := ui.conns[i]
+		if _, err := fmt.Fprintln(c, ms.Format("\t")); err != nil {
+			ui.conns = append(ui.conns[:i], ui.conns[i+1:]...)
+			i--
+		}
+	}
+	ui.connSem.RUnlock()
 }
 
 func (ui *UI) Close() error {
 	ui.closed = true
-	ui.p.SavePosition()
+	_ = ui.p.SavePosition()
+	if ui.server != nil {
+		_ = ui.server.Close()
+	}
+
 	return ui.p.Close()
 }
 

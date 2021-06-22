@@ -40,6 +40,7 @@ const (
 	ModeMusicDownload
 
 	ModeMusicRemoteCurrent
+	ModeMusicClientCurrent
 
 	ModeMusicInfoFiles
 	ModeMusicInfoDownloads
@@ -103,6 +104,9 @@ type Flags struct {
 		KiB  bool
 	}
 	MusicRemoteCurrent struct {
+		N uint
+	}
+	MusicClientCurrent struct {
 		N uint
 	}
 	Update struct {
@@ -330,7 +334,7 @@ func (f *Flags) Flags() {
 	})
 
 	musicRemote.Add("current").Define(func(fl *flag.FlagSet) flags.HelpCB {
-		fl.UintVar(&f.MusicRemoteCurrent.N, "n", 0, "Amount of time")
+		fl.UintVar(&f.MusicRemoteCurrent.N, "n", 0, "Amount of times")
 
 		return func(h *flags.Help) {
 			h.Add("Continuously logs the current song or -n times")
@@ -351,7 +355,7 @@ func (f *Flags) Flags() {
 		return nil
 	})
 
-	music.Add("client").Define(func(fl *flag.FlagSet) flags.HelpCB {
+	musicClient := music.Add("client").Define(func(fl *flag.FlagSet) flags.HelpCB {
 		fl.BoolVar(&f.MusicClient.Offline, "offline", false, "Dont connect to server")
 
 		return func(h *flags.Help) {
@@ -359,6 +363,17 @@ func (f *Flags) Flags() {
 		}
 	}).Handler(func(set *flags.Set, args []string) error {
 		f.All.Mode = ModeMusicClient
+		return nil
+	})
+
+	musicClient.Add("current").Define(func(fl *flag.FlagSet) flags.HelpCB {
+		fl.UintVar(&f.MusicClientCurrent.N, "n", 0, "Amount of times")
+
+		return func(h *flags.Help) {
+			h.Add("Continuously logs the current song or -n times")
+		}
+	}).Handler(func(set *flags.Set, args []string) error {
+		f.All.Mode = ModeMusicClientCurrent
 		return nil
 	})
 
