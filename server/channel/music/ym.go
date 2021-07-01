@@ -214,8 +214,12 @@ func (c *YMChannel) flush() {
 		s.Songs = make([]data.Song, len(c.state.songs))
 		for i, song := range c.state.songs {
 			title := strings.TrimSpace(song.Title())
+			extra := song.Extra()
 			if title == "" {
 				title = fmt.Sprintf("- no title - [%s %s]", song.NS(), song.ID())
+			}
+			if extra != "" {
+				title += extra
 			}
 			s.Songs[i] = data.Song{
 				song.NS(),

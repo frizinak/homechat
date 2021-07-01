@@ -84,10 +84,15 @@ func (s *output) flush() {
 	case modeSongs:
 		msg.Songs = make([]musicdata.Song, len(s.songs))
 		for i, song := range s.songs {
+			t := song.Title()
+			e := song.Extra()
+			if e != "" {
+				t += e
+			}
 			msg.Songs[i] = musicdata.Song{
 				song.NS(),
 				song.ID(),
-				song.Title(),
+				t,
 				song.Active(),
 				s.problematics.Reason(song),
 			}
