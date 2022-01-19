@@ -728,8 +728,10 @@ func main() {
 			},
 			Submit: func() bool {
 				s := string(tui.ResetInput())
-				inputs = append(inputs, "")
-				const max = 30
+				if inputs[len(inputs)-1] != "" {
+					inputs = append(inputs, "")
+				}
+				const max = 100
 				if len(inputs) > max {
 					inputs = inputs[len(inputs)-max:]
 				}
