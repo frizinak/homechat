@@ -72,7 +72,7 @@ func (h *DownloadHandler) HandleMusicPlaylistSongsMessage(m musicdata.ServerPlay
 	return nil
 }
 
-func (h *DownloadHandler) HandleMusicNodeMessage(m musicdata.SongDataMessage) error {
+func (h *DownloadHandler) HandleMusicNodeMessage(m *musicdata.SongDataMessage) error {
 	defer h.wg.Done()
 
 	if h.Handler != nil {
@@ -97,7 +97,11 @@ func (h *DownloadHandler) HandleMusicNodeMessage(m musicdata.SongDataMessage) er
 			return err
 		}
 		defer f.Close()
-		_, err = io.Copy(f, m.Upload())
+		upl, err := m.Upload()
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(f, upl)
 		return err
 	}()
 	if err != nil {

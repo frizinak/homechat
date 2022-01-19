@@ -58,8 +58,8 @@ func (c *MusicNodeChannel) sendSong(f channel.ClientFilter, s collection.Song) e
 		return err
 	}
 
-	fh, err := os.Open(path)
-	if os.IsNotExist(err) {
+	stat, err := os.Stat(path)
+	if os.IsNotExist(err) || (stat != nil && stat.IsDir()) {
 		return c.sender.Broadcast(f, data.NewNoSongDataMessage())
 	}
 
@@ -67,18 +67,11 @@ func (c *MusicNodeChannel) sendSong(f channel.ClientFilter, s collection.Song) e
 		return err
 	}
 
-	stat, err := fh.Stat()
-	if err != nil {
-		fh.Close()
-		return err
-	}
-
 	song := data.Song{P_NS: s.NS(), P_ID: s.ID(), P_Title: s.Title()}
 
-	// sending is async, .Binary will take care of closing
 	return c.sender.Broadcast(
 		f,
-		data.NewSongDataMessage(song, stat.Size(), fh),
+		data.NewSongDataMessage(song, stat.Size(), path),
 	)
 }
 

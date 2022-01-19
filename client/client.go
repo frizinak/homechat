@@ -39,7 +39,7 @@ type Handler interface {
 	HandleMusicStateMessage(MusicState) error
 	HandleMusicPlaylistSongsMessage(musicdata.ServerPlaylistSongsMessage) error
 	HandleUsersMessage(usersdata.ServerMessage, Users) error
-	HandleMusicNodeMessage(musicdata.SongDataMessage) error
+	HandleMusicNodeMessage(*musicdata.SongDataMessage) error
 	HandleTypingMessage(typingdata.ServerMessage) error
 	HandleUpdateMessage(updatedata.ServerMessage) error
 }
@@ -575,11 +575,11 @@ func (c *Client) Run() error {
 			}
 			c.log.Flash(msg.Err, 0)
 		case vars.MusicNodeChannel:
-			msg, r, err = c.read(r, musicdata.SongDataMessage{})
+			msg, r, err = c.read(r, &musicdata.SongDataMessage{})
 			if err != nil {
 				return r, err
 			}
-			return r, c.handler.HandleMusicNodeMessage(msg.(musicdata.SongDataMessage))
+			return r, c.handler.HandleMusicNodeMessage(msg.(*musicdata.SongDataMessage))
 		case vars.UpdateChannel:
 			msg, r, err = c.read(r, updatedata.ServerMessage{})
 			if err != nil {
