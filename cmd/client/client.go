@@ -404,31 +404,26 @@ func oneoff(f *Flags, backend client.Backend) error {
 	handler := terminal.New(log, handler.NoopHandler{})
 	cl := client.New(backend, handler, log, f.ClientConf)
 	defer cl.Close()
+	var method func(msg string) error
+	switch f.All.Mode {
+	case ModeMusicRemote, ModeMusicClient:
+		method = cl.Music
+	default:
+		method = cl.Chat
+	}
+
 	if f.All.OneOff == "" {
-		r := io.LimitReader(os.Stdin, 1024*1024)
-		if f.All.Linemode {
-			s := bufio.NewScanner(r)
-			s.Split(bufio.ScanLines)
-			for s.Scan() {
-				if err := cl.Chat(s.Text()); err != nil {
-					return err
-				}
+		s := bufio.NewScanner(os.Stdin)
+		s.Split(bufio.ScanLines)
+		for s.Scan() {
+			if err := method(s.Text()); err != nil {
+				return err
 			}
-			return s.Err()
 		}
-
-		d, err := ioutil.ReadAll(r)
-		if err != nil {
-			return err
-		}
-		f.All.OneOff = string(d)
+		return s.Err()
 	}
 
-	if f.All.Mode == ModeMusicRemote || f.All.Mode == ModeMusicClient {
-		return cl.Music(f.All.OneOff)
-	}
-
-	return cl.Chat(f.All.OneOff)
+	return method(f.All.OneOff)
 }
 
 func fingerprint(f *Flags, remoteAddress string) error {
