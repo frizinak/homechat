@@ -412,6 +412,7 @@ func oneoff(f *Flags, backend client.Backend) error {
 		method = cl.Chat
 	}
 
+	go cl.Run()
 	if f.All.OneOff == "" {
 		s := bufio.NewScanner(os.Stdin)
 		s.Split(bufio.ScanLines)

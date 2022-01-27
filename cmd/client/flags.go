@@ -655,7 +655,9 @@ func (f *Flags) Parse() error {
 
 	if f.All.OneOff != "" || !f.All.Interactive {
 		f.ClientConf.History = 0
-		f.ClientConf.Channels = []string{}
+		f.ClientConf.Channels = []string{
+			vars.PingChannel,
+		}
 	}
 
 	return nil
