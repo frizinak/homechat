@@ -24,6 +24,8 @@ github.com/frizinak/libym v0.12.3 h1:sNrTQgq02u1RiInjZ7J11WeBj9JraoOoVDTzysthcac
 github.com/frizinak/libym v0.12.3/go.mod h1:Ryo2QYzWr+KlspS3Y/TwwPP3YMcRIpnI09DVuqqm9H4=
 github.com/frizinak/libym v0.12.4 h1:SPNFZ2xVQyN8kcEeqJldNem2UhUt5skE3QVHC4JKCBg=
 github.com/frizinak/libym v0.12.4/go.mod h1:Ryo2QYzWr+KlspS3Y/TwwPP3YMcRIpnI09DVuqqm9H4=
+github.com/frizinak/libym v0.12.5 h1:qvWxp9Ai/c3dyni/KxW9rdyUvMmc3r+DjhXgEGaPDdI=
+github.com/frizinak/libym v0.12.5/go.mod h1:Ryo2QYzWr+KlspS3Y/TwwPP3YMcRIpnI09DVuqqm9H4=
 github.com/frizinak/zug v0.2.4 h1:Adr23+ut1JPtpleXpXlJgNjPG89x6cUq657WkduyNlg=
 github.com/frizinak/zug v0.2.4/go.mod h1:Q6Odqe4YS05J2Z/RFEMWMRrop3NSs3TqnTTpMwrrZds=
 github.com/go-bindata/go-bindata v3.1.2+incompatible h1:5vjJMVhowQdPzjE1LdxyFF7YFTXg5IgGVW4gBr5IbvE=
