@@ -9,7 +9,7 @@ require (
 	github.com/frizinak/bitstamp v0.0.0-20210312140402-4fba808b9650
 	github.com/frizinak/gotls v0.2.0
 	github.com/frizinak/hue v0.1.0
-	github.com/frizinak/libym v0.12.7
+	github.com/frizinak/libym v0.12.8
 	github.com/frizinak/zug v0.2.4
 	github.com/go-bindata/go-bindata v3.1.2+incompatible
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
